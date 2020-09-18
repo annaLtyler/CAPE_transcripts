@@ -44,7 +44,7 @@ locus:
 save_results:
  - true
 use_saved_results:
- - false
+ - true
 
 #================================================
 # Single Scan Parameters 

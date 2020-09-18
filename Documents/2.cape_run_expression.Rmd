@@ -20,7 +20,9 @@ library("here")
 exp.name = "all_gene_int"
 ex.path <- here("Results", exp.name)
 if(!file.exists(ex.path)){(dir.create(ex.path))}
-delete.old.results = FALSE
+
+args <- commandArgs(trailingOnly=T)
+delete.old.results <- as.logical(args[1])
 ```
 
 ```{r load_code}

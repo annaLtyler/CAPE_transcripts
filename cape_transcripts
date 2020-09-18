@@ -6,9 +6,12 @@
 #SBATCH -t 0-72:00 # time (D-HH:MM)
 #SBATCH -o slurm.%N.%j.out # STDOUT
 #SBATCH -e slurm.%N.%j.err # STDERR
+#SBATCH --mail-user=anna.tyler@jax.org
+#SBATCH --mail-type=END
+# example use: sbatch --export=delete_previous="TRUE" cape_transcripts
 
 cd $SLURM_SUBMIT_DIR
 
 module load singularity
 
-singularity exec cape_transcripts_latest.sif Rscript -e 'source("Documents/2.cape_run_expression.R")'
+singularity exec cape_transcripts_latest.sif Rscript -e 'source(here::here("Documents", "2.cape_run_expression.R"))' --args "$delete_previous"
