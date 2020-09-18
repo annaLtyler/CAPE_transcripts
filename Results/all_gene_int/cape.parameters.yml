@@ -1,0 +1,76 @@
+#================================================
+# General Parameters 
+#================================================
+traits:
+ - num_islets
+ - Ins_per_islet
+ - WPIC
+ - HOMA_B_0min
+ - HOMA_IR_0min
+ - Ins_tAUC
+ - Ins_6wk
+ - Ins_10wk
+ - Ins_14wk
+ - Glu_6wk
+ - Glu_tAUC
+ - Glu_10wk
+ - Glu_14wk
+ - TG_6wk
+ - TG_10wk
+ - TG_14wk
+ - food_ave
+covariates:
+ - sexM
+scan_what:
+ - eigentraits 
+traits_scaled:
+ - true
+traits_normalized:
+ - true
+eig_which:
+ - 1
+ - 2 
+ - 3
+pval_correction:
+ - fdr 
+use_kinship:
+ - false
+kinship_type:
+ - overall
+pop:
+ - MPP
+locus:
+ - char
+save_results:
+ - true
+use_saved_results:
+ - false
+
+#================================================
+# Single Scan Parameters 
+#================================================
+ref_allele:
+ - A
+singlescan_perm:
+ - 0
+
+#================================================
+# Marker Selection Parameters 
+#================================================
+marker_selection_method:
+ - top.effects
+peak_density:
+ - 1 
+tolerance:
+ - 5 
+num_alleles_in_pairscan:
+ - 1500
+#================================================
+# Pairscan Parameters 
+#================================================
+max_pair_cor:
+ - 1
+pairscan_null_size:
+ - 1500000
+transform_to_phenospace:
+ - false

@@ -1,0 +1,89 @@
+---
+title: "CAPE with Transcripts as Genotypes"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+
+The purpose of this workflow is to run CAPE using the output from 
+cape_setup_expression.Rmd. That workflow creates different data sets
+using gene expression in place of, or in addition to, true genotypes.
+
+```{r set_exp}
+library("here")
+exp.name = "all_gene_int"
+ex.path <- here("Results", exp.name)
+if(!file.exists(ex.path)){(dir.create(ex.path))}
+delete.old.results = FALSE
+```
+
+```{r load_code}
+code.dir <- list.files(here("Code"), full.names = TRUE)
+for(i in 1:length(code.dir)){
+    all.fun <- list.files(code.dir[i], full.names = TRUE, pattern = ".R")
+    for(j in 1:length(all.fun)){
+        source(all.fun[j])    
+    }
+}
+```
+
+```{r load_libraries}
+needed.packages <- c("cape", "pheatmap", "gprofiler2")
+load_libraries(needed.packages)
+```
+
+
+```{r load_data}
+data.obj <- readRDS(here("Data", paste0("data_", exp.name, ".RDS")))
+geno.obj <- readRDS(here("Data", paste0("geno_", exp.name, ".RDS")))
+geno.names <- dimnames(geno.obj)
+names(geno.names) <- c("mouse", "allele", "locus")
+data.obj$geno_names <- geno.names
+#tail(data.obj$geno_names[[3]], 15)
+```
+
+
+Subsample the cross for testing if requested
+
+```{r num}
+cross <- data.obj
+geno <- geno.obj
+
+num.pheno <- apply(cross$pheno, 2, as.numeric)
+dimnames(num.pheno) <- dimnames(cross$pheno)
+cross$pheno <- num.pheno
+```
+
+
+```{r run.cape}
+#remove all previous file except the 
+#kinship file and the yml file
+if(delete.old.results){
+    results.files <- list.files(ex.path, full.names = TRUE)
+    to.keep <- file.path(ex.path, c("cape.parameters.yml", "cross_kinship.RData", "SNPlist.txt"))
+    to.delete <- setdiff(results.files, to.keep)
+    if(length(to.delete) > 0){
+        unlink(to.delete)
+    }
+}
+
+sink(file.path(ex.path, "progress.txt"))
+
+final.cross <- run.cape(pheno.obj = cross, geno.obj = geno, p.or.q = 0.05, 
+verbose = TRUE, results.path = ex.path, 
+param.file = file.path(ex.path, "cape.parameters.yml"))
+
+sink(NULL)
+
+final.cross <- readRDS(file.path(ex.path, "cross.RData"))
+final.geno <- readRDS(file.path(ex.path, "cross_geno.RData"))
+write.data.for.shiny(data.obj = final.cross, geno.obj = final.geno, 
+name = paste0(exp.name, "_for_shiny"), path = ex.path)
+```
+

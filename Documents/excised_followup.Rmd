@@ -1,0 +1,184 @@
+
+## Grouping By Main Effects {.tabset .tabset-fade .tabset-pills}
+
+The following heatmap shows that the transcripts can be grouped into 
+six groups with distinct patterns of main effect.
+
+The second tab shows the interactions sorted by main effect groups.
+the interaction patterns are also distinct in each group.
+
+```{r main_effects}
+n.groups = 6
+just.main <- var.inf[,(nrow(var.inf)+1):ncol(var.inf)]
+just.main[which(is.na(just.main))] <- 0
+#pheatmap(just.main, cutree_rows = n.groups)
+
+dist.mat <- dist(just.main)
+clust.mat <- as.dendrogram(hclust(dist.mat))
+trans.groups <- cutree(clust.mat, k = n.groups)
+
+group.locale <- lapply(1:max(trans.groups), 
+function(x) which(trans.groups == x))
+
+#I tried doing the following with lapply, but there was 
+#some weird behavior that I couldn't figure out. Below,
+#I just go group by group to sort the transcripts.
+
+ordered.int <- NULL
+ordered.main <- NULL
+group.mem <- NULL
+group.genes <- NULL
+nets <- vector(mode = "list", length = n.groups)
+for(i in 1:length(group.locale)){
+  int.group <- just.int[group.locale[[i]],]
+  int.adj <- just.int
+  out.group <- setdiff(1:nrow(var.inf), group.locale[[i]])
+  int.adj[out.group,] <- 0
+  int.adj[which(is.na(int.adj))] <- 0
+  net <- graph_from_adjacency_matrix(int.adj, mode = "directed", weighted = TRUE)  
+  pos.neg <- rep(1, ecount(net))
+  neg.locale <- which(E(net)$weight < 0)
+  pos.neg[neg.locale] <- -1
+  E(net)$weight <- abs(E(net)$weight)
+  E(net)$pos.neg <- pos.neg
+  no.deg <- which(degree(net) == 0)
+  nets[[i]] <- delete.vertices(net, no.deg)
+
+  main.group <- just.main[group.locale[[i]],]
+  ordered.int <- rbind(ordered.int, int.group)
+  ordered.main <- rbind(ordered.main, main.group)
+  group.mem <- c(group.mem, rep(i, length(group.locale[[i]])))
+  group.genes <- c(group.genes, names(group.locale[[i]]))
+}
+group.df <- data.frame(as.factor(group.mem))
+rownames(group.df) <- group.genes
+colnames(group.df) <- "group"
+```
+
+### Grouped Main Effects
+
+```{r grouped_main, fig.width = 4, fig.height = 7}
+pheatmap(ordered.main, cluster_rows = FALSE, cluster_cols = FALSE,
+annotation_row = group.df)
+```
+
+
+### Interactions Grouped by Main Effect
+
+The interactions are also distinct among these groups.
+
+```{r grouped_int, fig.width = 7, fig.height = 7}
+pheatmap(ordered.int, cluster_rows = FALSE, cluster_cols = FALSE,
+annotation_row = group.df)
+```
+
+## Transcript Group Networks {.tabset .tabset-fade .tabset-pills}
+
+The following plots show the interaction networks associated with 
+each of these groups. They also show three additional plots showing
+in-degree, out-degree, and total degree vs. betweenness for each network.
+These plots give us an idea of how the transcripts are interacting, and which
+might be central to the function of the group. Keep in mind that the different
+networks contain many of the same transcripts. The networks interact with each
+other.
+
+
+```{r net_plots, results = "asis", fig.width = 8, fig.height = 8}
+for(i in 1:length(nets)){
+  
+  cat("### Group", i, "\n")
+  
+  simp.net <- nets[[i]]
+  par(mfrow = c(2,2))
+
+  par(mar = c(0,0,0,0))
+  edge.weights <- E(simp.net)$weight
+  pos.neg <- E(simp.net)$pos.neg
+  edge.col <- colors.from.values(edge.weights*pos.neg, split.at.vals = TRUE,
+  split.point = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
+  plot(simp.net, vertex.size = 3, layout = layout_nicely, edge.color = edge.col)
+  par(mar = c(4,4,2,2))
+  #barplot(degree(net))
+  in.deg <- degree(simp.net, mode = "in")
+  out.deg <- degree(simp.net, mode = "out")
+  all.deg <- degree(simp.net, mode = "all")
+  bet <- betweenness(simp.net)
+  
+  max.deg <- max(c(in.deg, out.deg, all.deg))
+  max.bet <- max(bet)
+  xmax <- max.deg*1.05
+  ymax <- max.bet*1.05
+
+  plot(in.deg, bet, xlab = "In Degree", ylab = "Betweenness", pch = 16, 
+  col = "darkgray", xlim = c(0, xmax), ylim = c(0, ymax))
+  text(in.deg, bet, labels = V(simp.net)$name, pos = 3)
+
+  plot(out.deg, bet, xlab = "Out Degree", ylab = "Betweenness", pch = 16, 
+  col = "darkgray", xlim = c(0, xmax), ylim = c(0, ymax))
+  text(out.deg, bet, labels = V(simp.net)$name, pos = 3)
+
+  plot(all.deg, bet, xlab = "Total Degree", ylab = "Betweenness", pch = 16, 
+  col = "darkgray", xlim = c(0, xmax), ylim = c(0, ymax))
+  text(all.deg, bet, labels = V(simp.net)$name, pos = 3)
+
+  cat("\n\n")
+
+}
+```
+
+
+## Transcript Group Enrichment
+
+The following heat map shows functional enrichments for the 
+different groups of transcripts.
+
+Group1, which has positive effects on ET1 and negative effects on the other
+two ETs, is the most obviously related to diabetes. ET1 describes how all 
+the traits in the trait matrix vary together. The traits include insulin 
+homeostasis measurements, triglycerides, glucose, and islet counts. Group1 
+also has the majority of the positive interactions. 
+
+Group2, which has negative effects on ET1 and positive effects on the two 
+other ETs, seems to be mostly enriched for transcription factors and the 
+Swr1 complex, which is involved in chromatin remodeling. This is the group
+that has the bulk of the negative interaction banding.
+
+
+
+```{r main_enrich, fig.height = 7, fig.width = 7}
+group.enrich <- lapply(group.locale, 
+function(x) gost(names(x), organism = "mmusculus"))
+names(group.enrich) <- paste0("Group", 1:max(trans.groups))
+plot.enrichment.group(group.enrich, n.terms = 40)
+```
+
+## Gene group expression with ETs
+
+```{r, eval = FALSE}
+expr <- readRDS(here("Results", "all_gene_int", "cross_geno.RData"))
+
+et1 <- data.frame(cross$ET[,1])
+colnames(et1) <- "ET1"
+
+layout(get.layout.mat(n.groups))
+for(i in 1:length(nets)){
+  vnames <- V(nets[[i]])$name
+  v.locale <- match(vnames, dimnames(expr)[[3]])
+  v.locale <- v.locale[which(!is.na(v.locale))]
+  net.expr <- expr[,2,v.locale]  
+  #pheatmap(net.expr, show_rownames = FALSE)
+  #plot.decomp(t(net.expr))
+  #with.ET <- cbind(cross$ET, net.expr)
+  ET.cor <- lapply(1:ncol(cross$ET), function(y) apply(net.expr, 2, function(x) cor(x, cross$ET[,y])))
+  names(ET.cor) <- colnames(cross$ET)
+  stripchart(ET.cor, vertical = TRUE, pch = 16, method = "jitter", main = paste("Group", i))
+  #pheatmap(net.expr[order(cross$ET[,1], decreasing = TRUE),], cluster_rows = FALSE, 
+  #show_rownames = FALSE, annotation_row = et1, main = paste("Group", i))
+
+  #pheatmap(cor(net.expr))
+}
+
+plotEffects(cross, expr, "BC003331_B", "Mrpl19_B", pheno.type = "ET",
+plot.type ="l")
+
+```

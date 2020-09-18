@@ -1,0 +1,478 @@
+---
+title: "Analysis of CAPE in using individual transcripts in pancreatic islets"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+
+The purpose of this workflow is to analyze the results from 
+2.cape_run_expression.Rmd
+
+```{r load_libraries}
+library(cape);library(gprofiler2);library(pheatmap);library(cluster)
+plot.mod.net = FALSE
+```
+
+
+```{r load_code}
+code.dir <- list.files(here("Code"), full.names = TRUE)
+for(i in 1:length(code.dir)){
+    all.fun <- list.files(code.dir[i], full.names = TRUE, pattern = ".R")
+    for(j in 1:length(all.fun)){
+        source(all.fun[j])    
+    }
+}
+```
+
+The following heat map shows the results from the cape run for 
+the 100 transcripts with the top main effects. 
+
+The two things that jump out from this plot are that (1) most of the 
+interactions are negative, and (2) there are horizontal stripes in the 
+plot indicating that some transcripts "suppress" the effects of other
+transcripts. In other words, when some transcripts are expressed at high
+levels, the variation in levels of other transcripts have reduced phenotypic
+effects. 
+
+There are a few transcripts that are sources for multiple positive interactions.
+These transcripts tend to have mostly positive interactions. In other words,
+when these transcripts are expressed at high levels, the levels of other 
+transcripts become more important to the phenotype. 
+
+```{r load_results, fig_height = 5, fig.width = 5}
+gene.info <- as.matrix(read.table(here("Data", "mouse_gene_info.txt"), sep = "\t", 
+header = TRUE, stringsAsFactors = FALSE))
+
+cross <- readRDS(here("Results", "all_gene_int", "cross.RData"))
+var.inf <- plotVariantInfluences(cross, covar.width = 1, pheno.width = 1)
+#take out the allele names
+rownames(var.inf) <- gsub("_B", "", rownames(var.inf))
+colnames(var.inf) <- gsub("_B", "", colnames(var.inf))
+```
+
+The following boxplot shows the influences of each transcript ordered
+by the mean of all its influences. The majority of transcripts have 
+negative effects on other transcripts. A few have positive effects.
+
+```{r just_int, fig.width = 10, fig.height = 4}
+just.int <- var.inf[,1:nrow(var.inf)]
+mean.int <- apply(just.int, 1, function(x) mean(x, na.rm = TRUE))
+mean.order <- order(mean.int)
+#barplot(med.int[med.order], las = 2)
+boxplot(t(just.int[mean.order,]), las = 2);abline(h = 0)
+```
+
+## Main Effects
+We used the first three eigentraits of the full trait matrix as our traits.
+The SVD plot is below. It shows only the traits that we used in this analysis.
+
+```{r svdplot, fig.height = 7.5, fig.width = 5}
+#quartz(width = 5, height = 7.5)
+plotSVD(cross)
+```
+
+The first ET represents the concordance among all the traits, and is dominated
+by insulin levels and HOMA_IR. The second trait contrasts the pancreatic 
+measurements, like WPIC, number of islets, and the HOMA traits with the
+rest of the traits. The third ET represents the contrast between in-vivo 
+insulin measurements and the rest of the traits. 
+
+The following heatmap shows the main effects for all transcripts included here.
+Most transcripts have main effects on all three eigentraits. 
+
+```{r main_effects, fig.width = 4, fig.height = 8}
+#quartz(width = 4, height = 8)
+just.main <- var.inf[,(nrow(var.inf)+1):ncol(var.inf)]
+just.main[which(is.na(just.main))] <- 0
+pheatmap(just.main)
+```
+
+## Main Effect Transcript Enrichment  {.tabset .tabset-fade .tabset-pills}
+
+We will go through each trait and examine the networks associated with
+upregulation and downregulation of each. The following heatmaps show
+functional enrichments for ordered lists of transcripts that are associated
+with up and down regulation of each eigentrait. There is a lot of overlap 
+because the same transcripts are represented in each eigentrait.
+
+```{r trait_networks, results = "asis"}
+up.down.trans <- vector(mode = "list", length = ncol(just.main))
+names(up.down.trans) <- colnames(just.main)
+for(i in 1:ncol(just.main)){
+  cat("### ET", i, "\n")
+  up.locale <- which(just.main[,i] > 0)
+  down.locale <- which(just.main[,i] < 0)
+  up.order <- order(just.main[up.locale,i], decreasing = TRUE)
+  down.order <- order(just.main[down.locale,i], decreasing = FALSE)
+  up.transcripts <- rownames(just.main)[up.locale[up.order]]
+  down.transcripts <- rownames(just.main)[down.locale[down.order]]
+  trans.list <- list("up" = just.main[up.locale,i], "down" = just.main[down.locale,i])
+  up.down.trans[[i]] <- trans.list
+  up.down.enrich <- lapply(list(up.transcripts, down.transcripts), 
+  function(x) gost(x, organism = "mmusculus", ordered_query = TRUE))
+  names(up.down.enrich) <- c("up", "down")
+
+  plot.enrichment.group(up.down.enrich, n.terms = 40, max.char = 100)
+  up.id <- gene.info[match(up.transcripts, gene.info[,"external_gene_name"]), "ensembl_gene_id"]  
+  up.id <- up.id[which(!is.na(up.id))]
+
+  #par(mfrow = c(1,2))
+  #delete.words <- c("of", "and", "the", "to", "in", "from", "motif:", "class:", 
+  #"match", "1", "Factor:")
+  #up.words <- unlist(strsplit(up.down.enrich[[1]]$result[,"term_name"], " "))
+  #u_up.words <- setdiff(unique(up.words), delete.words)
+  #up.word.freq <- sapply(u_up.words, function(x) length(which(up.words == x))/length(up.words))
+  #wordcloud(u_up.words, up.word.freq, rot.per=0.2, colors=brewer.pal(8, "Dark2"))
+  
+  #down.words <- unlist(strsplit(up.down.enrich[[2]]$result[,"term_name"], " "))
+  #u_down.words <- setdiff(unique(down.words), delete.words)
+  #down.word.freq <- sapply(u_down.words, function(x) length(which(down.words == x))/length(down.words))
+  #wordcloud(u_down.words, down.word.freq, rot.per=0.2, colors=brewer.pal(8, "Dark2"))
+
+  cat("\n\n")
+}
+
+
+
+```
+
+## ET networks {.tabset .tabset-fade .tabset-pills}
+
+For each ET we can generate networks among the transcripts that
+are associated with an increase in the ET, and those that are
+associated with a decrease in the ET.
+
+
+```{r ET_nets}
+et.nets <- vector(mode = "list", length = ncol(just.main))
+names(et.nets) <- colnames(just.main)
+
+for(i in 1:ncol(just.main)){
+  non.zero.locale <- which(just.main[,i] != 0)
+  et.adj <- just.int
+  out.group <- setdiff(1:nrow(just.int), non.zero.locale)
+  et.adj[out.group,] <- 0
+  et.adj[which(is.na(et.adj))] <- 0
+  net <- graph_from_adjacency_matrix(et.adj, mode = "directed", weighted = TRUE)  
+  V(net)$main.effect <- just.main[,i]
+  pos.neg <- rep(1, ecount(net))
+  neg.locale <- which(E(net)$weight < 0)
+  pos.neg[neg.locale] <- -1
+  E(net)$weight <- abs(E(net)$weight)
+  E(net)$pos.neg <- pos.neg  
+  no.deg <- which(degree(net) == 0)
+  if(length(no.deg) > 0){
+    et.nets[[i]] <- delete.vertices(net, no.deg)
+  }else{
+    et.nets[[i]] <- net
+  }
+}
+```
+
+The following plots show the networks for each ET. The network edges
+are identical in each case, but which vertices are included is based
+on the main effects for each ET.
+
+We separated each network into modules by using kmeans clustering to
+cluster the network layout into two groups. I tried other clustering
+methods as well, but they yielded much stranger looking clusters. 
+I'm not sure how the layout_nicely algorithm embeds a network into 
+2D space, but it does it in a way that looks biologically interesting. 
+
+We made the following observations about the networks:
+
+**Module main effect:** The ET1 and ET3 networks separate into two modules, 
+one with primarily positive effects and the other with primarily negative
+main effects. The ET2 network modules were more mixed.
+
+**Module directed effects:** We looked the edge weights between modules to
+see if the modules suppressed or enhanced the other module. In general,
+it looks as if the module with positive main effects both enhances and 
+suppresses the module with negative main effects with a trend toward 
+enhancing it. The module with negative main effects tends to suppress
+the module with positive main effects.
+
+**Within and Between Module Edges:** We also compared the within-module 
+edge weights to the between-module edge weights. The within-module weights 
+were consistently negative across all three networks. The between-module 
+weights were mixed, but trended positive. As mentioned above, this didn't
+differ based on direction. 
+
+**Degree and Betweenness:** We examined both degree and betweenness for 
+vertices in each module. We looked at in degree, out degree, and total
+degree. Vertices with high out degree are potential regulators of a 
+module, while vertices with high in degree are regulated by the module.
+Vertices with high betweenness may affect how modules interact with each
+other. Sex had a very high betweenness, and is situated between the modules.
+
+```{r dir_fun}
+#This function gets directed edge weights from a graph
+#based on module assignments
+dir_weights <- function(net, mods, source.mod, target.mod){
+  
+  vnames <- V(net)$name
+  eweights <- E(net)$weight*E(net)$pos.neg
+  elist <- as_edgelist(net)
+
+  #find all edges that go from the source module to the 
+  #target module
+
+  source.mod.v <- vnames[which(mods == source.mod)]
+  target.mod.v <- vnames[which(mods == target.mod)]
+
+
+  source.v.locale <- which(elist[,1] %in% source.mod.v)
+  target.v.locale <- which(elist[,2] %in% target.mod.v)
+
+  spanning.edges <- intersect(source.v.locale, target.v.locale)
+  spanning.weights <- eweights[spanning.edges]
+  return(spanning.weights)
+}
+
+#This function takes in a network with assigned modules and 
+#looks at the relationship between a single vertex and the
+#modules
+ind_weights <- function(net, mods, vertex.name){
+
+  vnames <- V(net)$name
+  eweights <- E(net)$weight*E(net)$pos.neg
+  elist <- as_edgelist(net)
+
+  v.as.source <- which(elist[,1] == vertex.name)
+  v.as.target <- which(elist[,2] == vertex.name)
+
+  n.out <- length(v.as.source)
+  n.in <- length(v.as.target)
+  
+  targets <- elist[v.as.source,2]
+  sources <- elist[v.as.target,1]
+
+  target.mods <- mods[which(vnames %in% targets)]
+  source.mods <- mods[which(vnames %in% sources)]
+
+  out.weights <- eweights[v.as.source]
+  in.weights <- eweights[v.as.target]
+
+  results.list <- list("num.in.out" = c("in" = n.in, "out" = n.out), 
+  "mods.in.out" = list("in" = target.mods, "out" = source.mods),
+  "weights.in.out" = list("in" = in.weights, "out" = out.weights))
+
+  return(results.list)
+}
+
+plot_ind_vert <- function(vertex.name, vert.results){
+  layout.mat <- matrix(c(1,1,2,3,4,5), ncol = 2, byrow = TRUE)
+  layout(layout.mat, heights = c(0.2, 1,1))
+  
+  par(mar = c(0,0,0,0))
+  plot.text(paste("Source -->", vertex.name, "--> Target"), cex = 2)
+  n.in.out <- vert.results$num.in.out
+  mods <- vert.results$mods.in.out
+  u_mods <- sort(unique(unlist(mods)))
+  mod.count <- lapply(mods, function(x) sapply(u_mods, function(y) length(which(x == y))))
+  par(mar = c(4,4,3,2))
+  
+  barplot(mod.count[[1]], names = paste("Mod", u_mods), 
+  main = paste("Modules Targeting", vertex.name))
+  barplot(mod.count[[2]], names = paste("Mod", u_mods), 
+  main = paste("Modules", vertex.name, "Targets"))
+
+  boxplot(vert.results$weights.in.out, ylab = "Edge Weights", 
+  main = paste("Edge Weights for", vertex.name))
+  par(xpd = FALSE)
+  abline(h = 0)
+
+  toy.edges.in <- cbind(paste0("Mod", mods[[1]]), rep(vertex.name, length(mods[[1]])))
+  toy.edges.out <- cbind(rep(vertex.name, length(mods[[2]])), paste0("Mod", mods[[2]]))
+  toy.edges <- rbind(toy.edges.in, toy.edges.out)
+  toy.net <- graph_from_edgelist(toy.edges)
+  eweights <- unlist(vert.results$weights.in.out)
+  weight.pos.neg <- sign(eweights)
+  E(toy.net)$weight <- abs(eweights)
+
+  if(length(unique(sign(eweights))) > 1){
+    edge.col <- colors.from.values(eweights, split.at.vals = TRUE, col.scale = c("blue", "brown"), grad.dir = "ends")
+  }else{
+    edge.col = colors.from.values(eweights, col.scale = c("purple"), grad.dir = "high")
+  }
+
+  par(mar = c(0,0,0,0))
+  plot(toy.net, edge.color = edge.col)
+}
+
+```
+
+```{r net_plots, results = "asis", fig.width = 6, fig.height = 9}
+all.net.mods <- vector(mode = "list", length = ncol(just.main))
+
+for(i in 1:length(et.nets)){
+  
+  cat("### ET", i, "\n")
+  
+  simp.net <- et.nets[[i]]
+  par(mfrow = c(3,2))
+
+  par(mar = c(0,0,0,0))
+  vert.weights <- V(simp.net)$main.effect
+  edge.weights <- E(simp.net)$weight
+  pos.neg <- E(simp.net)$pos.neg
+  edge.col <- colors.from.values(edge.weights*pos.neg, split.at.vals = TRUE,
+  split.point = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
+  vertex.col <- colors.from.values(vert.weights, split.at.vals = TRUE,
+  split.point = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
+  
+  plot(simp.net, vertex.size = 5, vertex.color = vertex.col, 
+  layout = layout_with_kk, edge.color = edge.col, vertex.label.dist = 1,
+  vertex.label.cex = 0.5, edge.arrow.size = 0.3)
+
+  #cluster based on layout
+  net.layout <- layout_with_kk(simp.net)  
+  km <- pam(net.layout, 2, diss = FALSE, metric = "euclidean")
+	net.mods <- km$clustering
+  
+  #modules based on main effects
+  #net.mods <- just.main[match(V(simp.net)$name, rownames(just.main)),i]
+  #net.mods[which(net.mods >= 0)] <- 1
+  #net.mods[which(net.mods < 0)] <- 2
+  
+  #modules based on walktrap clustering
+  #net.mods <- cluster_walktrap(simp.net)$membership
+
+  #modules based on fast greedy clustering
+  #net.mods <- cluster_fast_greedy(as.undirected(simp.net))$membership
+
+  all.net.mods[[i]] <- net.mods
+  
+  plot(simp.net, vertex.size = 5, vertex.color = net.mods+2, 
+  layout = layout_with_kk, edge.color = edge.col, vertex.label.dist = 1,
+  vertex.label.cex = 0.5, edge.arrow.size = 0.3)
+
+  par(mar = c(4,4,2,2), xpd = FALSE)
+
+  u_mods <- unique(net.mods)
+  
+  mod.main <- lapply(u_mods, function(x) V(simp.net)$main.effect[which(net.mods == x)])
+  stripchart(mod.main, vertical = TRUE, pch = 16, method = "jitter", 
+  group.names = paste0("Mod", 1:2), main = "Main Effects by Module")
+  points(x = c(1:length(u_mods)), y = sapply(mod.main, mean), pch = "*",
+  cex = 2, col = "red")
+  abline(h = 0)
+
+  within.mod.weight <- lapply(u_mods, function(x) dir_weights(simp.net, net.mods, x, x))
+  
+  mod.pairs <- pair.matrix(u_mods)  
+  forward.mod.names <- apply(mod.pairs, 1, function(x) paste("Mod", x[1], "-> Mod", x[2]))
+  backward.mod.names <- apply(mod.pairs, 1, function(x) paste("Mod", x[1], "<- Mod", x[2]))
+  between.mod.forward <- lapply(1:nrow(mod.pairs), function(x) dir_weights(simp.net, net.mods, mod.pairs[x,1], mod.pairs[x,2]))
+  between.mod.backward <- lapply(1:nrow(mod.pairs), function(x) dir_weights(simp.net, net.mods, mod.pairs[x,2], mod.pairs[x,1]))
+  stripchart(c(between.mod.forward, between.mod.backward), vertical = TRUE, 
+  pch = 16, method = "jitter", las = 2,
+  group.names = c(forward.mod.names, backward.mod.names),
+  main = "Directed Edge Weighted Between Modules") 
+  points(x = c(1:(length(between.mod.forward)+length(between.mod.backward))), y = c(sapply(between.mod.forward, mean), sapply(between.mod.backward, mean)),
+  pch = "*", col = "red", cex = 2)
+  abline(h = 0)
+  
+  between.mod.weight <- lapply(1:length(between.mod.forward), 
+  function(x) c(between.mod.forward[[x]], between.mod.backward[[x]]))
+  mod.names = paste0("Mod", 1:length(u_mods))
+  bet.mod.names <- apply(pair.matrix(mod.names), 1, function(x) paste(x, collapse = "-"))
+
+  all.weights <- c(within.mod.weight, between.mod.weight)
+  all.names <- c(mod.names, bet.mod.names)
+  
+  mod.cols <- c("#7fc97f", "#beaed4")
+  mod.weights <- c(within.mod.weight, between.mod.weight)
+  weight.col <- c(rep(mod.cols[1], length(within.mod.weight)), rep(mod.cols[2], length(between.mod.weight)))
+  stripchart(all.weights, vertical = TRUE, pch = 16, col = weight.col, 
+  method = "jitter", group.names =  all.names, main = "Module Edge Weights")
+  mean.weights <- sapply(all.weights, mean)
+  points(x = 1:length(all.weights), y = mean.weights, pch = "*", cex = 1.5, 
+  col = "red")
+  abline(h = 0)
+  legend("topleft", fill = mod.cols, legend = c("Within Modules", "Between Modules"))
+
+  #barplot(degree(net))
+  in.deg <- degree(simp.net, mode = "in")
+  out.deg <- degree(simp.net, mode = "out")
+  all.deg <- degree(simp.net, mode = "all")
+  bet <- betweenness(simp.net)
+  
+  max.deg <- max(c(in.deg, out.deg, all.deg))
+  max.bet <- max(bet)
+  xmax <- max.deg*1.05
+  ymax <- max.bet*1.05
+
+  plot(out.deg, bet, xlab = "Out Degree", ylab = "Betweenness", pch = 16, 
+  col = vertex.col, xlim = c(0, xmax), ylim = c(0, ymax), main = "Out Degree")
+  text(out.deg, bet, labels = V(simp.net)$name, pos = 3, cex = 0.7)
+
+  plot(in.deg, bet, xlab = "In Degree", ylab = "Betweenness", pch = 16, 
+  col = vertex.col, xlim = c(0, xmax), ylim = c(0, ymax), main = "In Degree")
+  text(in.deg, bet, labels = V(simp.net)$name, pos = 3, cex = 0.7)
+
+  plot(all.deg, bet, xlab = "Total Degree", ylab = "Betweenness", pch = 16, 
+  col = vertex.col, xlim = c(0, xmax), ylim = c(0, ymax), main = "All Degree")
+  text(all.deg, bet, labels = V(simp.net)$name, pos = 3, cex = 0.7)
+
+  cat("\n\n")
+
+}
+```
+
+## Individual Vertices of Interest
+
+Sex had a very high betweenness in this network and was in between the
+two modules. We looked more specifically at how that variable fit into 
+the network.
+
+The plots below show that Sex had equal numbers of in and out edges,
+but they were completely sorted by module. All the edges going into 
+sex were from module 2 and were negative. All edges coming out of 
+sex go to module 1 and are positive. That is true for all networks,
+although I do not show them below.
+
+```{r, ind_verts, fig.width = 6, fig.height = 6}
+vert.name <- "sexM"
+i = 1
+vert.results <- ind_weights(et.nets[[i]], all.net.mods[[i]], vert.name)
+plot_ind_vert(vert.name, vert.results) 
+```
+
+```{r check_other, eval = FALSE}
+vert.name <- "Fkbp11"
+i = 1
+vert.results <- ind_weights(et.nets[[i]], all.net.mods[[i]], vert.name)
+plot_ind_vert(vert.name, vert.results) 
+```
+
+
+Further quesetions
+  which genes are only in 1 module or the other 
+  which genes have connections to both modules
+
+```{r all_verts}
+i = 1
+vnames <- V(et.nets[[i]])$name
+all.vert.results <- lapply(vnames, 
+function(x) ind_weights(et.nets[[i]], all.net.mods[[i]], x))
+
+all.in.out <- t(sapply(all.vert.results, function(x) x[[1]]))
+rownames(all.in.out) <- vnames
+
+pheatmap(all.in.out)
+
+all.mod.in <- t(sapply(all.vert.results, function(x) sapply(1:2, function(y) length(which(x$mods.in.out[[1]] == y))/sum(x$num.in.out))))
+rownames(all.mod.in) <- vnames
+pheatmap(all.mod.in)
+
+all.mod.out <- t(sapply(all.vert.results, function(x) sapply(1:2, function(y) length(which(x$mods.in.out[[2]] == y))/sum(x$num.in.out))))
+rownames(all.mod.out) <- vnames
+pheatmap(all.mod.out)
+```

@@ -1,0 +1,218 @@
+---
+title: "CAPE in using individual transcripts in pancreatic islets"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+
+The purpose of this workflow is to set up data for CAPE.
+We are exploring the idea of using gene expression as an addition to,
+or in place of, the genotype matrix. The idea is that we may
+be able to identify interactions between genotypes and gene expression,
+or between transcripts, that influence clinical traits.
+
+In this setup we will use individual transcripts. 
+For traits, we will use the first three eigentraits of the trait 
+matrix including all traits except for weight.
+
+```{r load_code}
+library("here")
+code.dir <- list.files(here("code"), full.names = TRUE)
+for(i in 1:length(code.dir)){
+    all.fun <- list.files(code.dir[i], full.names = TRUE, pattern = ".R")
+    for(j in 1:length(all.fun)){
+        source(all.fun[j])    
+    }
+}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+all.packages <- c("pheatmap", "qtl2", "gProfileR", "cape")
+load_libraries(all.packages)
+```
+
+
+```{r read_data}
+all.var <- ls()
+data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
+if(!data.loaded){
+  islets <- load(here("data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
+  }
+```
+
+
+The data set called Attie\_DO378\_eQTL\_viewer\_v6.Rdata contains the following
+elements:
+
+1. ensembl.version: the version of ensembl used
+2. K: a list of kinship LOCO matrices
+3. markers: a table of markers in the data set with names, chromosome, and position in 
+both bp and cM
+4. dataset.islet.modules: results from WGCNA
+5. dataset.clinical.phenotypes: clinical phenotypes including annotations and lod peaks
+6. genoprobs: genotype probabilities by chromosome (~4k markers per chromosome)
+7. map: marker map from R/qtl
+8. dataset.islet.rnaseq: rna seq data set inclusing annotations and lod peaks
+9. dataset.islet.hotspots: annotations of QTL/eQTL hotspots 
+
+Calculate the kinship matrix now before we add any new "genotypes."
+
+```{r kin}
+kin.file <- here("Data", "cross_kinship.RData")
+if(!file.exists(kin.file)){
+  kin <- calc_kinship(genoprobs, type = "overall")
+  saveRDS(kin, kin.file)
+}
+```
+
+Extract clinical traits, expression traits, and covariates.
+
+```{r pheno}
+pheno <- as.matrix(dataset.clinical.phenotypes$pheno[,12:(ncol(dataset.clinical.phenotypes$pheno)-1)])
+num.pheno <- apply(pheno, 2, as.numeric)
+dimnames(num.pheno) <- dimnames(pheno)
+covar <- dataset.clinical.phenotypes$covar
+gene.table <- dataset.islet.rnaseq$annots
+expr <- dataset.islet.rnaseq$expr
+```
+
+Set data set name, and which genes to use.
+
+```{r set_name}
+dataset.name <- "all_gene_int"; include.genes <- unique(gene.table[,"symbol"])
+#dataset.name = "Her2_int"; include.genes <- c("Ptpn18", "Hunk", "Zfp148", "Erbb2",
+#"Hnf1b", "Stxbp5l", "Stat3", "Sat2", "Il6st", "Fam83e")
+include.real.genotypes = FALSE
+```
+
+## Adjust clinical phenotypes and expression for DO wave  {.tabset .tabset-fade .tabset-pills}
+
+Adjust all traits for DO wave. Keep sex as an interactive covariate.
+
+### Before Adjusting
+
+```{r pheno_cor}
+pheatmap(cor(num.pheno, use = "pairwise.complete.obs"), 
+main = "Phenotype Correlations Before Adjusting for DO Wave")
+```
+
+### After Adjusting
+
+```{r adj_pheno_cor}
+adj.pheno <- adjust(num.pheno, covar[,2:ncol(covar)])
+adj.expr <- adjust(expr, covar[,2:ncol(covar)])
+pheatmap(cor(adj.pheno, use = "pairwise.complete.obs"), 
+main = "Phenotype Correlations After Adjusting for DO Wave")
+```
+
+## Locate genes for "genotypes"
+
+```{r find_genes}
+gene.locale <- match(include.genes, gene.table[,"symbol"])
+gene.ids <- gene.table[gene.locale,"gene_id"]
+gene.chr <- gene.table[gene.locale,"chr"]
+
+#replace sex and mitochondrial chromosomes with numbers, so
+#we don't delete them in cape.
+gene.chr[which(gene.chr == "X")] <- 20
+gene.chr[which(gene.chr == "Y")] <- 21
+gene.chr[which(gene.chr == "MT")] <- 22
+gene.pos <- gene.table[gene.locale,"middle"]
+gene.info <- cbind(gene.ids, include.genes, as.numeric(gene.chr), as.numeric(gene.pos))
+colnames(gene.info) <- c("gene_id", "symbol", "chr", "middle")
+ordered.info <- sort.by.then.by(gene.info, sort.cols = c(3,4), col.type = c("n", "n"))
+
+id.locale <- match(ordered.info[,"gene_id"], colnames(adj.expr))
+expr.geno <- adj.expr[,id.locale]
+colnames(expr.geno) <- ordered.info[,"symbol"]
+```
+
+## Build CAPE objects
+
+Include all traits. Subsets of traits can be specified
+in the cape yml file.
+
+```{r to_geno}
+#This function takes a matrix of numeric values and converts
+#it into a 3D genotype array with the values scaled between
+#0 and 1.
+
+add_to_geno <- function(geno.obj, matX){
+
+  #scale to be between 0 and 1 for cape genotypes
+  pos.mat <- apply(matX, 2, function(x) x+abs(min(x)))
+  #boxplot(pos.mat)
+  scaled.mat <- apply(pos.mat, 2, function(x) x/max(x))
+  #boxplot(scaled.mat)
+
+  #create a 3D array of the scaled PCs
+  new.geno <- array(NA, dim = c(nrow(matX), ncol(geno.obj), ncol(matX)))
+  dimnames(new.geno) <- list(rownames(matX), colnames(geno.obj), colnames(scaled.mat))
+  for(i in 1:ncol(scaled.mat)){
+    one.mat <- matrix(scaled.mat[,i], nrow = nrow(scaled.mat), ncol = ncol(geno.obj))
+    new.geno[,,i] <- one.mat
+  }
+
+  aug.geno <- abind(geno.obj, new.geno, along = 3)
+  return(aug.geno)
+}
+
+```
+
+```{r subset_ind}
+#Subset one of the objects to only the individuals
+#with expression before we make the cape object.
+#Then we don't need to do build large objects and 
+#subset them later
+common.ind <- intersect(rownames(expr.geno), rownames(adj.pheno))
+ind.locale <- match(common.ind, rownames(adj.pheno))
+sub.obj <- dataset.clinical.phenotypes
+sub.obj$pheno <- adj.pheno[ind.locale,]
+```
+
+```{r cross_obj}
+cape.obj <- qtl2_to_cape(cross = sub.obj, genoprobs, map, covar[,1,drop=FALSE])
+data.obj <- cape.obj$data.obj
+geno.obj <- cape.obj$geno.obj
+
+#replace data.obj$pheno with the numeric phenotype matrix and covariates
+data.obj$pheno <- cbind(adj.pheno[ind.locale,], covar[ind.locale,1,drop=FALSE])
+
+#add the scaled module pcs to the genotype object
+new.geno.obj <- add_to_geno(geno.obj, expr.geno)
+
+#add the information for the new "genotypes" to the data object
+data.obj$geno_names <- dimnames(new.geno.obj)
+names(data.obj$geno_names) <- c("mouse", "allele", "locus")
+data.obj$chromosome <- c(data.obj$chromosome, ordered.info[,"chr"])
+data.obj$marker_location <- c(data.obj$marker_location, ordered.info[,"middle"])
+data.obj$marker_num <- 1:length(data.obj$chromosome)
+#tail(data.obj$geno_names[[3]], 43)
+#tail(dimnames(new.geno.obj)[[3]], 43)
+
+#if we only want to include expression values, take out the actual genotypes
+if(!include.real.genotypes){
+  true.geno.locale <- 1:dim(geno.obj)[3]
+  expr.geno.locale <- setdiff(1:dim(new.geno.obj)[3], true.geno.locale)
+  data.obj$chromosome <- data.obj$chromosome[expr.geno.locale]
+  data.obj$marker_location <- data.obj$marker_location[expr.geno.locale]
+  data.obj$marker_num <- 1:length(data.obj$chromosome)
+  #also reduce the "genotypes" to just two alleles.
+  #we don't need all 8 if we're just looking at expression
+  new.geno.obj <- new.geno.obj[,1:2,expr.geno.locale]
+  data.obj$geno_names[[3]] <- data.obj$geno_names[[3]][expr.geno.locale]
+  data.obj$geno_names[[2]] <- data.obj$geno_names[[2]][1:2]
+}
+
+saveRDS(data.obj, here("Data", paste0("data_", dataset.name, ".RDS")))
+saveRDS(new.geno.obj, here("Data", paste0("geno_", dataset.name, ".RDS")))
+```
+
+Now run 2.cape_run_expression.Rmd.
+Use the same data set name as set here.

@@ -1,0 +1,114 @@
+---
+title: "CAPE follow-up TAD boundaries"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+
+The purpose of this workflow is to look at whether genes encoded on 
+chromosome 11 whose transcripts map to the third eigentrait of the 
+trait matrix are in the same TAD.
+
+We use TAD data downloaded from the [Ren lab](http://chromosome.sdsc.edu/mouse/hi-c/download.html)
+.
+
+```{r set_exp}
+library("here"); library("knitr")
+exp.name = "all_gene_int"
+```
+
+```{r load_code}
+code.dir <- list.files(here("code"), full.names = TRUE)
+for(i in 1:length(code.dir)){
+    all.fun <- list.files(code.dir[i], full.names = TRUE, pattern = ".R")
+    for(j in 1:length(all.fun)){
+        source(all.fun[j])    
+    }
+}
+```
+
+
+```{r load_data}
+single.results <- readRDS(here("Results", exp.name, "cross.singlescan.RData"))
+es.bed <- read.table(here("Data", "TADs", "mESC", "HindIII_combined", "total.HindIII.combined.domain"), sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+cortex.bed <- read.table(here("Data", "TADs", "cortex", "combined", "total.combined.domain"), sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+gene.info <- read.table(here("Data", "mouse_gene_info.txt"), header = TRUE, stringsAsFactors = FALSE, sep = "\t")
+```
+
+Identify the genes that map to the third eigentrait.
+
+```{r goi, fig.width = 10, fig.height = 4}
+t.thresh <- 4
+single.effects <- single.results$singlescan.t.stats
+eig3 <- abs(single.effects[,3,])
+plot(eig3, xlab = "Index", ylab = "T statistic")
+abline(h = t.thresh)
+
+high.genes <- names(which(eig3 >= t.thresh))
+gene.locale <- match(high.genes, gene.info[,"external_gene_name"])
+gene.locale <- gene.locale[which(!is.na(gene.locale))]
+high.info <- gene.info[gene.locale,]
+chr11.info <- high.info[which(high.info[,"chromosome_name"] == 11),]
+```
+
+Find these genes in the tad files.
+
+```{r tads}
+chr11.es.tads <- t(sapply(1:nrow(chr11.info), function(x) find.in.bed(chr11.info[x,"chromosome_name"], chr11.info[x,"start_position"],
+    chr11.info[x,"end_position"], es.bed)))
+
+chr11.cortex.tads <- t(sapply(1:nrow(chr11.info), function(x) find.in.bed(chr11.info[x,"chromosome_name"], chr11.info[x,"start_position"],
+    chr11.info[x,"end_position"], cortex.bed)))
+
+rownames(chr11.cortex.tads) <- rownames(chr11.es.tads) <- chr11.info[,"external_gene_name"]
+colnames(chr11.cortex.tads) <- colnames(chr11.es.tads) <- c("Chr", "TAD_start", "TAD_end")
+```
+
+It looks as if two of these genes, Mettl16 and Tsr1 are in the same TAD
+in both ES cells and cortex.
+
+```{r sum_table}
+summarize.table <- function(tad.table){
+    not.na <- tad.table[which(!is.na(tad.table[,1])),]
+    tad.names <- apply(not.na, 1, function(x) paste(x, collapse = "_"))
+    u_tads <- unique(tad.names)
+    tad_genes <- lapply(u_tads, function(x) which(tad.names == x))
+    names(tad_genes) <- u_tads
+    tad.len <- sapply(tad_genes, length)
+    multi_tad <- tad_genes[which(tad.len > 1)]
+    single_tad <- tad_genes[which(tad.len == 1)]
+    total.tads <- length(u_tads)
+
+    results <- list("num_total" = total.tads,
+    "num_multi" = length(multi_tad), "num_single" = length(single_tad),
+    "multi_tads" = multi_tad, "single_tads" = single_tad)
+
+    return(results)
+}
+
+multi_cortex <- summarize.table(chr11.cortex.tads)
+multi_es <- summarize.table(chr11.es.tads)
+```
+
+There were `r nrow(chr11.info)` genes on Chr 11 with t statistics
+above `r t.thresh`.
+There were `r multi_cortex$num_total` cortex TADs for these genes.
+`r multi_cortex$num_multi` cortex TADs had more than one gene in them.
+
+
+```{r report_cortex}
+print(multi_cortex$multi_tads)
+```
+
+There were `r multi_es$num_total` ES TADs for these genes.
+`r multi_cortex$num_multi` ES TADs had more than one gene in them.
+
+```{r report_es}
+print(multi_es$multi_tads)
+```
