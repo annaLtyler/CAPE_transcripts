@@ -14,4 +14,4 @@ cd $SLURM_SUBMIT_DIR
 
 module load singularity
 
-singularity exec cape_transcripts_latest.sif Rscript -e 'source(here::here("Documents", "2.cape_run_expression.R"))' --args "$delete_previous"
+singularity exec ../../Containers/cape_transcripts_latest.sif Rscript -e 'source(here::here("Documents", "2.cape_run_expression.R"))' --args "$delete_previous"
