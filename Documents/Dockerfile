@@ -13,6 +13,6 @@ RUN export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
 	pandoc-citeproc \
 	zlib1g-dev
 
-RUN ["install2.r", "pheatmap", "rticles", "tinytex", "gprofiler2"]
+RUN ["install2.r", "pheatmap", "rticles", "tinytex", "gprofiler2", "cluster", "knitr"]
 
 CMD ["R"]
