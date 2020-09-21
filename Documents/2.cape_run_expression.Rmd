@@ -22,7 +22,8 @@ ex.path <- here("Results", exp.name)
 if(!file.exists(ex.path)){(dir.create(ex.path))}
 
 args <- commandArgs(trailingOnly=T)
-delete.old.results <- as.logical(args[1])
+#delete.old.results <- as.logical(args[1])
+delete.old.results = FALSE
 ```
 
 ```{r load_code}
