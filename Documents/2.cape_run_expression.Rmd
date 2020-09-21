@@ -26,13 +26,8 @@ delete.old.results <- as.logical(args[1])
 ```
 
 ```{r load_code}
-code.dir <- list.files(here("Code"), full.names = TRUE)
-for(i in 1:length(code.dir)){
-    all.fun <- list.files(code.dir[i], full.names = TRUE, pattern = ".R")
-    for(j in 1:length(all.fun)){
-        source(all.fun[j])    
-    }
-}
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
 ```
 
 ```{r load_libraries}
