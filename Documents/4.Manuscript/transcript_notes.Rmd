@@ -1,0 +1,184 @@
+---
+title: Notes about individual transcripts
+author:
+  - name: Anna L. Tyler
+    email: Anna.Tyler@jax.org
+    affiliation: The Jackson Laboratory
+  - name: Gregory W. Carter
+    email: Gregory.Carter@jax.org
+    affiliation: The Jackson Laboratory
+    corresponding: Gregory.Carter@jax.org
+address:
+  - code: The Jackson Laboratory
+    address: 600 Main St. Bar Harbor, ME, 04609
+abstract: |
+  Transcription networks
+  
+author_summary: |
+  Gene expression networks
+
+bibliography: transcription_networks.bib
+output: rticles::plos_article
+csl: plos.csl
+---
+
+
+# Introduction
+This markdown stores notes and citations for individual transcripts of note
+in the CAPE_transcript analysis.
+
+
+# Cell types
+
+## alpha cells
+make and release glucagon
+
+# Transcripts
+
+## Arx
+
+### net effects
+negative main effect on ET1, positive on other two
+high out degree
+high betweenness
+
+### summary
+DNA-binding transcription repressor activity
+RNA pol II binding activity
+chromatin binding activity
+involved in lipid digestion and regulation of gene expression
+widely expressed
+
+### pancreas-specific
+exhibits Ngn3-dependent expression throughout pancreatic development in alpha, 
+beta-precursor, and delta cells.
+Arx lof mice develop early onset hypoglycemia, dehydration and weakness and die two
+days after birth
+specifies pancreatic cell fate in opposition to Pax4 [@collombat2003opposing]
+
+Arx is methylated and repressed in adult beta cells
+it is hypomethylated and expressed in alpha cells and Dnmt1-deficient beta cells
+Dnmt1-deficient beta cells are lose methylation patterns during division and become
+alpha cells [@dhawan2011pancreatic]
+
+Deleting Arx specifically in neonatal alpha cells results in an alpha to beta-like
+conversion of cells [@wilcox2013pancreatic]
+
+Arx and Dnmt1 may be targets to convert alpha cells to beta cells in human T1D 
+patients [@chakravarthy2017converting]
+
+
+## Irx2
+
+## net effects
+negative main effect on ET1, positive on other two
+high out degree
+relatively high betweenness, but not extremely high
+
+### summary
+DNA-binding transcriptional repressor activity
+RNA pol II binding activity
+mouse KO have no abnormal phenotypes
+
+### pancreas-specific
+contributes to alpha cell fate
+is expressed in adult human alpha cells 
+[@dorrell2011transcriptomes]
+
+not much seems to be known about relationship to diabetes
+
+
+## Mafb
+
+### network 
+negative effect on ET1, positive effect on other two
+much higher out degree than in degree
+
+### summary
+DNA-binding TF activity
+RNA-pol II binding activity
+involved in many processes
+
+### pancreas
+required for maturation of beta cells
+switch from Mafb to Mafa from embryo to adults
+produced both in insulin+ and glucagon+ cells during development
+and necessary for both alpha and beta cell differentiation
+disappears from beta cells two weeks after birth and becomes alpha-cell specific
+(Mafa persists in beta cells)
+Mafb is essential for first wave of insulin production during development
+also required for glucagon and Mafa transcription 
+Mafa and Mafb activate genes associated with glucose-stimulated transcription
+Mafb expression is induced in maternal beta cells
+  due to fetal demand maternal insulin sensitivity declines 
+  Mafb may play critical role in adapting maternal cells to increased demands during pregnancy
+  may help induce beta cell proliferation
+[@hang2011mafa]
+
+Mafb can directly stimulate transcription of insulin and glucagon
+Mafb-deficient mice show reductions in insulin and glucagon expressing cells
+Evidence suggests Mafb is downstream of Pax6 (negatively epistatic)
+[@nishimura2008preferential]
+
+Mafb is required for glucagon production and secretion in alpha cells
+[@katoh2018mafb]
+
+Mafb is critical for beta cell maintenance in Mafa-deficient mice
+[@xiafukaiti2019mafb]
+
+Loss of Mafa and Mafb causes islet specific inflammation in mice
+and accumulation of CD4+ T and B cells indicating an adaptive immune response
+against islet cells
+[@singh2019loss]
+
+
+## Bnip3l
+### network effects
+positive effect on ET1
+upregulates module 1
+downregulated by module 2
+
+### summary
+proteing binding activity
+involved in regulating apoptosis and autophagy of mitochondrion
+localizes to mitochondrion
+
+### pancreas
+most literature seems to be related to pancreatic cancer
+
+high glucose stresses cells
+autophagy may play a protective role in stressed cells 
+cells stressed with high glucose upregulate PIK1/Parkin pathway and Bnip3l
+may help protect from diabetes
+[@huang2018protective]
+
+
+## Mrpl19
+### summary
+localizes to mitochondrion
+
+
+# Discussion
+A novel systems approach to investigating transcriptional networks
+Irx2 and Arx are transcription factors that have been implicated in 
+pancreatic endocrine cell fate specification 
+[@gage2015role; @dorrell2011transcriptomes; @lawlor2017single]
+
+Arx, Irx2, and Mafb are all known to be expressed in alpha cells
+[@gage2015role; @dorrell2011transcriptomes; @lawlor2017single; @artner2006mafb]
+
+Mafb also involved in pancreas development [@artner2006mafb]
+
+Structure of the network suggestive of complexity leading to robustness
+genes with the same sign effect suppress each other
+genes with opposite signs enhance each other
+
+
+
+# Acknowledgements
+funding, etc.
+
+# Supplemental Figure Legends
+
+
+# References {#references .unnumbered}

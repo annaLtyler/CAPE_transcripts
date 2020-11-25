@@ -66,7 +66,7 @@ write.data.for.shiny <- function(data.obj, geno.obj, name = "myData", path = "."
 	#update the markers based on the covariate width
 	orig.chromosomes <- data.obj$chromosome[sort(unique.marker.locale)]
 	
-	covar.info <- get.covar(data.obj)
+	covar.info <- get_covar(data.obj)
 						
 	var.influence.mat <- matrix(NA, nrow = length(unique.markers), ncol = length(unique.markers))
 	var.pval.mat <- matrix(NA, nrow = length(unique.markers), ncol = length(unique.markers))

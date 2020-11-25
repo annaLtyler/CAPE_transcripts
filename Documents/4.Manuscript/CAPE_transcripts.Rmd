@@ -1,0 +1,236 @@
+---
+title: CAPE framework for analyzing transcription networks
+author:
+  - name: Anna L. Tyler
+    email: Anna.Tyler@jax.org
+    affiliation: The Jackson Laboratory
+  - name: Gregory W. Carter
+    email: Gregory.Carter@jax.org
+    affiliation: The Jackson Laboratory
+    corresponding: Gregory.Carter@jax.org
+address:
+  - code: The Jackson Laboratory
+    address: 600 Main St. Bar Harbor, ME, 04609
+abstract: |
+  Transcription networks
+  
+author_summary: |
+  Gene expression networks
+
+bibliography: transcription_networks.bib
+output: rticles::plos_article
+csl: plos.csl
+---
+
+```{r read_results, echo = FALSE, message = FALSE, warning = FALSE, error = FALSE}
+
+```
+
+# Introduction
+we can learn a lot from transcription networks 
+different ways to build them, e.g. WGCNA
+most are based on transcription correlation
+here we build them based on non-linear intearctions affecting physiological traits
+
+
+
+
+# Materials and Methods
+
+## Data
+Islet data from Keller paper
+
+## Kinship Matrix Calculation
+We use the R package qtl2 [@broman2019r] to calculate the kinship matrix as described 
+in @Kang:2008bx. This method calculates a similarity matrix based on measured genotypes. 
+This matrix has been shown to correct confounding population structure effectively, and 
+is guaranteed to be positive semidefinite. We calculated the kinsihp matrix as follows:
+
+$$ K = \frac{G \times G^T}{n},$$
+
+where $G$ is the genotype matrix, and $n$ is the number of genotyped markers.
+For calculating main effects, we use the leave-one-chromosome-out (LOCO) method 
+[@cheng2013practical], in which the markers on the chromosome being tested are
+left out of the kinship matrix calculation. LOCO has been shown to reduce 
+the rate of false negatives relative to use of the overall kinship matrix
+[@cheng2013practical; @gonzales2018genome]. For each chromosome, we calculated
+
+$$ K_C = \frac{G_C \times G_C^T}{n},$$
+
+where $G_C$ is the genotype matrix with all markers on chromosome $C$ removed.
+For the pairwise tests, we used the natural extension of LOCO, which we called 
+leave-two-chromosomes-out (LTCO). To calculte the kinship matrix for a pairwise
+test, we left out the two chromosomes containing the two markers being tested.
+If both markers were on the same chromosome, we left out only that one chromosome.
+
+## Preparing transcript data
+scaled to go between 0 and 1
+adjusted for DO wave
+
+## Decomposing trait data
+used all traits available
+performed SVD
+used first three eigentraits for CAPE
+correspond to...
+
+## CAPE
+
+Ran CAPE as described before
+used top XXX transcripts for network
+permutations
+
+We used linear regression to derive network
+we fit the following model: 
+
+$$
+U_{i}^{j} = \beta_{0}^{j} + \sum_{c=1}^{n_c}x_{c,i}\beta_{c}^{j} + x_{1,i}\beta_{1}^{j} + \epsilon_{i}^{j}
+$$
+
+where $U$ corresponds to traits, and $\epsilon$ is an error term. The index $i$ runs from 1 to 
+the number of individuals, and $j$ runs from 1 to the number of traits. $x_{i}$ is the probability 
+of the presence of the alternate allele for individual $i$ at locus $j$. We calculated $p$ values
+for each test statistic analytically using a $t$ distribution with $n-1$ degrees of freedom, where
+$n$ was the number of individuals in the population. We collected main effect test statistics 
+for all traits in each data set.
+
+For the pairwise marker scans, we limited our analysis to two traits. As described below,
+the combined analysis of pleiotropy and epistasis (CAPE) requires at least two traits. 
+However, CAPE and pairwise tests in general are computationally intensive, and our 
+ability to run many traits was limited. We fit linear models for each pair of markers 
+and each of the two selected traits as follows:
+
+$$
+U_{i}^{j} = \beta_{0}^{j} + \underbrace{\sum_{c=1}^{n_c}x_{c,i}\beta_{c}^{j}}_{\mathrm{covariates}} + 
+\underbrace{x_{1,i}\beta_{1}^{j} + x_{2,i}\beta_{2}^{j}}_{\mathrm{main\;effects}} + \underbrace{x_{1,i}x_{2,i} 
+\beta_{12}^{j}}_{\mathrm{interaction}} +  \epsilon_{i}^{j},
+$$
+
+Again, $U$ corresponds to traits, and $\epsilon$ is an error term. The index $i$ runs from 1 to 
+the number of individuals, and $j$ runs from 1 to the number of traits. $x_{i}$ is the probability 
+of the presence of the alternate allele for individual $i$ at locus $j$. For the pairwise tests, 
+we calculated $p$ values for the interaction coefficients only in the same manner as for the 
+single-locus tests.
+
+## Combined Analysis of Pleiotropy and Epistasis
+
+Starting with the pairwise linear regression above, we ran the Combined
+Analysis of Pleiotropy and Epistasis (CAPE) [@carter2012use; @tyler2013cape].
+CAPE reparametrizes $\beta$ coefficients from pairwise linear regressions to
+infer directed influence coefficients between genetic markers. The reparametrization
+combines information across multiple traits thereby identifying interactions that
+are consistent across all traits simultaneously. Combining information across
+traits also allows inference of the direction of the interaction 
+[@carter2012use; @tyler2013cape].
+
+The $\beta$ coefficients from the linear models are redefined in terms of two new 
+$\delta$ terms, which describe how each marker either enhances or suppresses the 
+activity of each other marker:
+
+\begin{equation*}
+\begin{bmatrix}
+\delta_1\\
+\delta_2\\
+\end{bmatrix}
+=
+\begin{bmatrix}
+\beta^1_1 & \beta^1_2\\
+\beta^2_1 & \beta^2_2\\
+%\vdots & \vdots
+\end{bmatrix}^{-1}
+\cdot
+\begin{bmatrix}
+\beta^1_{12}\\
+\beta^2_{12}\\
+%\vdots
+\end{bmatrix}
+\end{equation*}
+
+We then translate the $\delta$ terms into marker-to-marker influence terms:
+
+$$
+\delta_1 = m_{12}(1 + \delta_2),\;\delta_2 = m_{21}(1 + \delta_1)
+$$
+
+
+Since matrix inversion can lead to large values with larger standard errors, 
+we performed standard error analysis on the regression parameters, and propagated
+the errors using a second-order Taylor expansion [@bevington1994data; @carter2012use].
+To calculate $p$ values for the directed influence coefficients we performed 
+permutation testing.
+
+## Evaluating networks
+used R/igraph
+plotted networks using Kamada-Kawai (KK) layout
+used kmeans clustering in that 2D spatial embedding to identify modules
+used k = 2
+looked at in-degree, out-degree, total degree, and betweenness of individual nodes
+plotted against each other
+calculated edge weights of in-degree and out degree, as well as within and between modules.
+
+## Mapping Module Eigengenes
+Calculated first eigengene of each module as defined by each eigentrait
+used qtl2 to map the module eigengenes
+used sex as additive covariate, and LOCO kinship correction
+100 permutations
+
+performed coefficient mapping on chromosomes with module QTL.
+
+# Results
+
+## CAPE identified non-linear transcription interaction network
+
+## Network clustered into two modules
+
+module 1 had primarily positive main effects on ET1 and was enriched for XXX
+Module 2 had primarily negative main effects on ET1 was enriched for XXX
+
+edge weights within modules were predominantly negative
+edge weights between modules had a higher proportion of positive interactions.
+
+vertices with negative main effects had more interactions than vertices with
+positive main effects
+
+module 2 primarily suppressed effects of module 1, whereas module 1 primarily 
+enhanced effects of module 2
+
+## Sex mediates information flow between modules
+the vertex with the highest betweenness was sex.
+The male sex enhanced the effects of Module 1. In other words the positive effects
+of module 1 were stronger in males than in females. However, the effects of the
+male sex were also suppressed by module 2. 
+
+## Degree and main effect are correlated
+transcripts with high degree had negative main effects
+transcripts with low degree had positive main effects
+
+
+## Bnip3l had high betweenness
+
+## Module eigengenes mapped to multiple places on genome
+
+
+
+# Discussion
+A novel systems approach to investigating transcriptional networks
+Irx2 and Arx are transcription factors that have been implicated in 
+pancreatic endocrine cell fate specification 
+[@gage2015role; @dorrell2011transcriptomes; @lawlor2017single]
+
+Arx, Irx2, and Mafb are all known to be expressed in alpha cells
+[@gage2015role; @dorrell2011transcriptomes; @lawlor2017single; @artner2006mafb]
+
+Mafb also involved in pancreas development [@artner2006mafb]
+
+Structure of the network suggestive of complexity leading to robustness
+genes with the same sign effect suppress each other
+genes with opposite signs enhance each other
+
+
+
+# Acknowledgements
+funding, etc.
+
+# Supplemental Figure Legends
+
+
+# References {#references .unnumbered}

@@ -19,6 +19,9 @@ traits:
  - TG_10wk
  - TG_14wk
  - food_ave
+ - weight_2wk
+ - weight_6wk
+ - weight_10wk
 covariates:
  - sexM
 scan_what:
@@ -28,9 +31,9 @@ traits_scaled:
 traits_normalized:
  - true
 eig_which:
- - 1
- - 2 
- - 3
+ - 2
+ - 3 
+ - 4
 pval_correction:
  - fdr 
 use_kinship:
@@ -58,19 +61,19 @@ singlescan_perm:
 # Marker Selection Parameters 
 #================================================
 marker_selection_method:
- - top.effects
+ - top_effects
 peak_density:
  - 1 
 tolerance:
  - 5 
 num_alleles_in_pairscan:
- - 1000
+ - 100
 #================================================
 # Pairscan Parameters 
 #================================================
 max_pair_cor:
  - 1
 pairscan_null_size:
- - 1000000
+ - 10000
 transform_to_phenospace:
  - false

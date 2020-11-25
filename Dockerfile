@@ -14,5 +14,13 @@ RUN export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
 	zlib1g-dev
 
 RUN ["install2.r", "pheatmap", "rticles", "tinytex", "gprofiler2", "cluster", "knitr"]
+RUN R -e "BiocManager::install('AnnotationDbi')"
+RUN R -e "BiocManager::install('GO.db')"
+RUN R -e "BiocManager::install('preprocessCore')"
+RUN R -e "BiocManager::install('impute')"
+RUN R -e "BiocManager::install('GOSim')"
+RUN R -e "BiocManager::install('sva')"
+RUN R -e "BiocManager::install('limma')"
+RUN R -e "devtools::install_github('juanbot/CoExpNets')"
 
 CMD ["R"]

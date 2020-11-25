@@ -1,0 +1,449 @@
+
+## Grouping By Main Effects {.tabset .tabset-fade .tabset-pills}
+
+The following heatmap shows that the transcripts can be grouped into 
+six groups with distinct patterns of main effect.
+
+The second tab shows the interactions sorted by main effect groups.
+the interaction patterns are also distinct in each group.
+
+```{r main_effects}
+n.groups = 6
+just.main <- var.inf[,(nrow(var.inf)+1):ncol(var.inf)]
+just.main[which(is.na(just.main))] <- 0
+#pheatmap(just.main, cutree_rows = n.groups)
+
+dist.mat <- dist(just.main)
+clust.mat <- as.dendrogram(hclust(dist.mat))
+trans.groups <- cutree(clust.mat, k = n.groups)
+
+group.locale <- lapply(1:max(trans.groups), 
+function(x) which(trans.groups == x))
+
+#I tried doing the following with lapply, but there was 
+#some weird behavior that I couldn't figure out. Below,
+#I just go group by group to sort the transcripts.
+
+ordered.int <- NULL
+ordered.main <- NULL
+group.mem <- NULL
+group.genes <- NULL
+nets <- vector(mode = "list", length = n.groups)
+for(i in 1:length(group.locale)){
+  int.group <- just.int[group.locale[[i]],]
+  int.adj <- just.int
+  out.group <- setdiff(1:nrow(var.inf), group.locale[[i]])
+  int.adj[out.group,] <- 0
+  int.adj[which(is.na(int.adj))] <- 0
+  net <- graph_from_adjacency_matrix(int.adj, mode = "directed", weighted = TRUE)  
+  pos.neg <- rep(1, ecount(net))
+  neg.locale <- which(E(net)$weight < 0)
+  pos.neg[neg.locale] <- -1
+  E(net)$weight <- abs(E(net)$weight)
+  E(net)$pos.neg <- pos.neg
+  no.deg <- which(degree(net) == 0)
+  nets[[i]] <- delete.vertices(net, no.deg)
+
+  main.group <- just.main[group.locale[[i]],]
+  ordered.int <- rbind(ordered.int, int.group)
+  ordered.main <- rbind(ordered.main, main.group)
+  group.mem <- c(group.mem, rep(i, length(group.locale[[i]])))
+  group.genes <- c(group.genes, names(group.locale[[i]]))
+}
+group.df <- data.frame(as.factor(group.mem))
+rownames(group.df) <- group.genes
+colnames(group.df) <- "group"
+```
+
+### Grouped Main Effects
+
+```{r grouped_main, fig.width = 4, fig.height = 7}
+pheatmap(ordered.main, cluster_rows = FALSE, cluster_cols = FALSE,
+annotation_row = group.df)
+```
+
+
+### Interactions Grouped by Main Effect
+
+The interactions are also distinct among these groups.
+
+```{r grouped_int, fig.width = 7, fig.height = 7}
+pheatmap(ordered.int, cluster_rows = FALSE, cluster_cols = FALSE,
+annotation_row = group.df)
+```
+
+## Transcript Group Networks {.tabset .tabset-fade .tabset-pills}
+
+The following plots show the interaction networks associated with 
+each of these groups. They also show three additional plots showing
+in-degree, out-degree, and total degree vs. betweenness for each network.
+These plots give us an idea of how the transcripts are interacting, and which
+might be central to the function of the group. Keep in mind that the different
+networks contain many of the same transcripts. The networks interact with each
+other.
+
+
+```{r net_plots, results = "asis", fig.width = 8, fig.height = 8}
+for(i in 1:length(nets)){
+  
+  cat("### Group", i, "\n")
+  
+  simp.net <- nets[[i]]
+  par(mfrow = c(2,2))
+
+  par(mar = c(0,0,0,0))
+  edge.weights <- E(simp.net)$weight
+  pos.neg <- E(simp.net)$pos.neg
+  edge.col <- colors.from.values(edge.weights*pos.neg, split.at.vals = TRUE,
+  split.point = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
+  plot(simp.net, vertex.size = 3, layout = layout_nicely, edge.color = edge.col)
+  par(mar = c(4,4,2,2))
+  #barplot(degree(net))
+  in.deg <- degree(simp.net, mode = "in")
+  out.deg <- degree(simp.net, mode = "out")
+  all.deg <- degree(simp.net, mode = "all")
+  bet <- betweenness(simp.net)
+  
+  max.deg <- max(c(in.deg, out.deg, all.deg))
+  max.bet <- max(bet)
+  xmax <- max.deg*1.05
+  ymax <- max.bet*1.05
+
+  plot(in.deg, bet, xlab = "In Degree", ylab = "Betweenness", pch = 16, 
+  col = "darkgray", xlim = c(0, xmax), ylim = c(0, ymax))
+  text(in.deg, bet, labels = V(simp.net)$name, pos = 3)
+
+  plot(out.deg, bet, xlab = "Out Degree", ylab = "Betweenness", pch = 16, 
+  col = "darkgray", xlim = c(0, xmax), ylim = c(0, ymax))
+  text(out.deg, bet, labels = V(simp.net)$name, pos = 3)
+
+  plot(all.deg, bet, xlab = "Total Degree", ylab = "Betweenness", pch = 16, 
+  col = "darkgray", xlim = c(0, xmax), ylim = c(0, ymax))
+  text(all.deg, bet, labels = V(simp.net)$name, pos = 3)
+
+  cat("\n\n")
+
+}
+```
+
+
+## Transcript Group Enrichment
+
+The following heat map shows functional enrichments for the 
+different groups of transcripts.
+
+Group1, which has positive effects on ET1 and negative effects on the other
+two ETs, is the most obviously related to diabetes. ET1 describes how all 
+the traits in the trait matrix vary together. The traits include insulin 
+homeostasis measurements, triglycerides, glucose, and islet counts. Group1 
+also has the majority of the positive interactions. 
+
+Group2, which has negative effects on ET1 and positive effects on the two 
+other ETs, seems to be mostly enriched for transcription factors and the 
+Swr1 complex, which is involved in chromatin remodeling. This is the group
+that has the bulk of the negative interaction banding.
+
+
+
+```{r main_enrich, fig.height = 7, fig.width = 7}
+group.enrich <- lapply(group.locale, 
+function(x) gost(names(x), organism = "mmusculus"))
+names(group.enrich) <- paste0("Group", 1:max(trans.groups))
+plot.enrichment.group(group.enrich, n.terms = 40)
+```
+
+## Gene group expression with ETs
+
+```{r, eval = FALSE}
+expr <- readRDS(here("Results", "all_gene_int", "cross_geno.RData"))
+
+et1 <- data.frame(cross$ET[,1])
+colnames(et1) <- "ET1"
+
+layout(get.layout.mat(n.groups))
+for(i in 1:length(nets)){
+  vnames <- V(nets[[i]])$name
+  v.locale <- match(vnames, dimnames(expr)[[3]])
+  v.locale <- v.locale[which(!is.na(v.locale))]
+  net.expr <- expr[,2,v.locale]  
+  #pheatmap(net.expr, show_rownames = FALSE)
+  #plot.decomp(t(net.expr))
+  #with.ET <- cbind(cross$ET, net.expr)
+  ET.cor <- lapply(1:ncol(cross$ET), function(y) apply(net.expr, 2, function(x) cor(x, cross$ET[,y])))
+  names(ET.cor) <- colnames(cross$ET)
+  stripchart(ET.cor, vertical = TRUE, pch = 16, method = "jitter", main = paste("Group", i))
+  #pheatmap(net.expr[order(cross$ET[,1], decreasing = TRUE),], cluster_rows = FALSE, 
+  #show_rownames = FALSE, annotation_row = et1, main = paste("Group", i))
+
+  #pheatmap(cor(net.expr))
+}
+
+plotEffects(cross, expr, "BC003331_B", "Mrpl19_B", pheno.type = "ET",
+plot.type ="l")
+
+```
+
+
+
+Further quesetions
+  which genes are only in 1 module or the other 
+  which genes have connections to both modules
+
+```{r all_verts, eval = FALSE}
+i = 1
+vnames <- V(et.nets[[i]])$name
+all.vert.results <- lapply(vnames, 
+function(x) ind_weights(et.nets[[i]], all.net.mods[[i]], x))
+
+#in and out degree going to each module
+all.in.out <- t(sapply(all.vert.results, function(x) x[[1]]))
+rownames(all.in.out) <- vnames
+colnames(all.in.out) <- paste0("Mod", 1:ncol(all.in.out))
+pheatmap(all.in.out)
+
+#proportion of total in edges that are from each module
+all.mod.in <- t(sapply(all.vert.results, function(x) sapply(1:2, function(y) length(which(x$mods.in.out[[1]] == y))/sum(x$num.in.out))))
+rownames(all.mod.in) <- vnames
+colnames(all.mod.in) <- paste0("Mod.In.", 1:ncol(all.mod.in))
+pheatmap(all.mod.in)
+
+#proportion of total out edges that are to each module
+all.mod.out <- t(sapply(all.vert.results, function(x) sapply(1:2, function(y) length(which(x$mods.in.out[[2]] == y))/sum(x$num.in.out))))
+rownames(all.mod.out) <- vnames
+colnames(all.mod.out) <- paste0("Mod.Out.", 1:ncol(all.mod.out))
+pheatmap(all.mod.out)
+
+
+
+full.in.out <- cbind(all.mod.in, all.mod.out)
+pheatmap(full.in.out)
+```
+
+```{r classify}
+#which genes are only within module 1?
+#these will have edges going to module 1, but 0 going to module 2
+with.edges <- apply(full.in.out, 2, function(x) which(x > 0))
+no.edges <- apply(full.in.out, 2, function(x) which(x == 0))
+```
+
+The following plot shows how expression across modules corresponds
+with each ET. ET1 is most highly correlated with average expression
+across the modules. It is positively correlated with module 1 and 
+negatively correlated with module 2. In other words, individuals with
+high expression in module 1 also have high values of ET1. Individuals
+with high expression in module 2 have low values of ET2.
+
+```{r module_expression}
+expr <- readRDS(here("Results", "all_gene_int", "cross_geno.RData"))
+par(mfrow = c(3,2))
+for(et in 1:3){
+  net.names <- V(et.nets[[et]])$name
+  vertex.locale <- match(net.names, dimnames(expr)[[3]])
+  vertex.locale <- vertex.locale[which(!is.na(vertex.locale))]
+  net.exp <- expr[,2,vertex.locale]
+
+  vert.mods <- all.net.mods[[et]]
+  names(vert.mods) <- net.names
+
+  mod.expr <- lapply(unique(vert.mods), function(x) expr[,2,match(rownames(mod.df)[which(vert.mods == x)], dimnames(expr)[[3]])])
+  mean.mod <- lapply(mod.expr, function(x) rowMeans(x, na.rm = TRUE))
+
+  for(m in 1:2){
+    common.ind <- intersect(rownames(pheno), names(mean.mod[[m]]))
+    pheno.locale <- match(common.ind, rownames(pheno))
+    mod.locale <- match(common.ind, names(mean.mod[[m]]))
+    plot.with.model(mean.mod[[m]][mod.locale], pheno[pheno.locale,et], 
+    xlab = paste("Module", m, "Expression"), ylab = paste("ET", et),
+    report = "cor.test")
+    #plot3d(mean.mod[[1]][mod.locale], mean.mod[[2]][mod.locale], pheno[pheno.locale,et])
+  }
+}
+```
+
+The following figure shows how overall module expression correlates 
+with expression of a gene of interest.
+
+```{r gene_mod_expr}
+gene.name <- "Ins1"
+
+par(mfrow = c(3,2))
+for(et in 1:3){
+  net.names <- V(et.nets[[et]])$name
+  vertex.locale <- match(net.names, dimnames(expr)[[3]])
+  vertex.locale <- vertex.locale[which(!is.na(vertex.locale))]
+  net.exp <- expr[,2,vertex.locale]
+
+  vert.mods <- all.net.mods[[et]]
+  names(vert.mods) <- net.names
+
+  mod.expr <- lapply(unique(vert.mods), function(x) expr[,2,match(rownames(mod.df)[which(vert.mods == x)], dimnames(expr)[[3]])])
+  mean.mod <- lapply(mod.expr, function(x) rowMeans(x, na.rm = TRUE))
+
+  gene.locale <- which(dimnames(expr)[[3]] == gene.name)
+  gene.expr <- expr[,2,gene.locale]
+
+  for(m in 1:2){
+    common.ind <- intersect(rownames(pheno), names(mean.mod[[m]]))
+    pheno.locale <- match(common.ind, rownames(pheno))
+    mod.locale <- match(common.ind, names(mean.mod[[m]]))
+    plot.with.model(gene.expr[mod.locale], mean.mod[[m]][mod.locale], xlab = gene.name,
+    ylab = paste("Module", m, "Expression"))
+    }
+}
+```
+
+## Word cloud enrichment
+
+We can do a related, but independent analysis by looking at wordclouds generated
+from pubmed abstracts. Below we find PubMed abstracts that contain each of our
+gene names and the word 'pancreas'. 
+
+
+```{r lit_searc, eval = FALSE}
+papers.file <- here("Results", "Abstract_Count.RDS")
+
+if(!file.exists(papers.file)){
+  all.pubmed <- lapply(vnames, function(x) get_pubmed_ids(paste(x, "AND (pancreas OR diabetes OR insulin OR glucose OR tryglyceride OR islet) AND english[la]")))
+  saveRDS(all.pubmed, papers.file)
+}else{
+  all.pubmed <- readRDS(papers.file)
+}
+num.papers <- unlist(lapply(all.pubmed, function(x) x$Count))
+with.papers <- which(num.papers != 0)
+n.papers <- as.numeric(num.papers[with.papers])
+names(n.papers) <- vnames[with.papers]
+barplot(sort(n.papers), las = 2, main = "Number of papers per gene")
+
+#wordcloud
+
+has.data <- all.pubmed[with.papers]
+
+all.abstract.file <- here("Results", "abstract.info.all.RDS")
+if(!file.exists(all.abstract.file)){
+  all.abstracts <- lapply(has.data, function(x) fetch_pubmed_data(x, format = "abstract"))
+  names(all.abstracts) <- names(n.papers)
+  saveRDS(all.abstracts, all.abstract.file)
+}else{
+  all.abstracts <- readRDS(all.abstract.file)
+}
+
+just.abstract.file <- here("Results", "abstract.info.trimmed.RDS")
+if(!file.exists(just.abstract.file)){
+  just.abstracts <- lapply(1:length(all.abstracts), 
+  function(x) parse.abstracts(abstract.list = all.abstracts[[x]], keyword = names(all.abstracts)[x]))
+  names(just.abstracts) <- names(all.abstracts)
+  saveRDS(just.abstracts, just.abstract.file)
+}else{
+  just.abstracts <- readRDS(just.abstract.file)
+}
+
+
+word.bags <- vector(mode = "list", length = length(just.abstracts))
+
+for(i in 1:length(just.abstracts)){
+  if(length(just.abstracts[[i]]) > 0){
+    word.bags[[i]] <- strsplit(unlist(just.abstracts[[i]]), " ")
+  }
+}
+
+remove.punct <- c("(", ")", ".", ",", ";", ":", "[", "]")
+trimmed.words <- word.bags
+for(i in 1:length(trimmed.words)){
+  small.bag <- unlist(word.bags[[i]])
+  for(j in 1:length(remove.punct)){
+    small.bag <- gsub(remove.punct[j], "", small.bag, fixed = TRUE)
+  }
+ trimmed.words[[i]] <- small.bag
+}
+
+```
+
+We now have a bag of words for each gene.
+We calculate the term frequency for each gene's bag of words. This is the
+
+
+```{r, eval = FALSE}
+total.bag <- unlist(trimmed.words)
+
+
+term.freq <- function(small.bag, big.bag){
+  small.bag <- str_to_lower(small.bag)
+  big.bag <- str_to_lower(big.bag)
+  u_small <- unique(small.bag)
+  small_count <- sapply(u_small, function(x) length(which(small.bag == x)))
+  total_count <- sapply(u_small, function(x) length(which(big.bag == x)))
+  term_freq <- small_count/total_count
+  return(term_freq[which(is.finite(term_freq))])
+}
+
+inverse.doc.freq <- function(all.bags, term){
+  term.inc <- lapply(all.bags, function(x) grep(term, x))
+  total.appearances <- length(unlist(term.inc))
+  total.abstracts <- sum(sapply(all.bags, length))
+  idf <- log(total.abstracts/total.appearances)
+  return(idf)
+}
+
+```
+
+Calculate the term frequencies for the abstracts associated with each gene.
+
+```{r all_term_freq, eval = FALSE}
+term.freq.file <- here("Results", "Term.Freq.RDS")
+if(!file.exists(term.freq.file)){
+  term.freq.by.gene <- lapply_pb(trimmed.words, function(x) table(str_to_lower(unlist(x))))
+  term.freq.by.gene <- lapply_pb(trimmed.words, function(x) term.freq(unlist(x), total.bag))
+  saveRDS(term.freq.by.gene, term.freq.file)
+}else{
+  term.freq.by.gene <- readRDS(term.freq.file)
+}
+
+u_terms <- unique(total.bag)
+idf.file <- here("Results", "IDF.RDS")
+if(!file.exists(idf.file)){
+  all.term.idf <- unlist(lapply_pb(u_terms, function(x) inverse.doc.freq(just.science, x)))
+  saveRDS(all.term.idf, idf.file)
+}else{
+  all.term.idf <- readRDS(idf.file)
+}
+
+names(all.term.idf) <- u_terms
+## Individual Vertices of Interest
+```
+
+Now we build a big matrix with one row per gene, and one column per term.
+Each entry contains the term frequency-inverse document frequency, which is the product
+of the term frequency (for each gene) and the inverse document frequency.
+
+```{r term_mat, eval = FALSE}
+tfidf.mat <- matrix(0, nrow = length(just.science), ncol = length(u_terms))
+rownames(tfidf.mat) <- names(just.science)
+colnames(tfidf.mat) <- u_terms
+
+for(i in 1:length(just.science)){
+ gene.term.freq <- term.freq.by.gene[[i]]
+ term.locale <- match(names(gene.term.freq), u_terms)
+ term.idf <- all.term.idf[term.locale]
+ tfidf <- gene.term.freq * term.idf
+ tfidf.mat[i,term.locale] <- tfidf
+}
+```
+
+To see how the genes cluster with each other by function, we can do an SVD
+on the tf-idf matrix.
+
+```{r decomp_tfidf, eval = FALSE}
+decomp <- plot.decomp(tfidf.mat, pc = 5, plot.results = TRUE)
+plot(decomp$u[,1:2])
+text(decomp$u[,1:2], labels = names(decomp$rows.used))
+
+plot.decomp(t(tfidf.mat), 5)
+
+plot(decomp$v[,1:2])
+text(decomp$v[,1:2], labels = colnames(tfidf.mat), cex = 0.5)
+
+boxplot(t(tfidf.mat), las = 2)
+gene.cor <- cor(t(tfidf.mat))
+diag(gene.cor)  <- 0
+pheatmap(gene.cor)
+```

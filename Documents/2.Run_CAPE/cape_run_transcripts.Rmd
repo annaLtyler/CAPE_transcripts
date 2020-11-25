@@ -15,15 +15,20 @@ The purpose of this workflow is to run CAPE using the output from
 cape_setup_expression.Rmd. That workflow creates different data sets
 using gene expression in place of, or in addition to, true genotypes.
 
-```{r set_exp}
+```{r setup}
+set.seed(2398347)
 library("here")
-exp.name = "all_gene_int"
-ex.path <- here("Results", exp.name)
-if(!file.exists(ex.path)){(dir.create(ex.path))}
+```
+
+```{r set_params}
+#geno.type = "transcripts"
+geno.type = "modules"
+exp.name = "top_three_PC"
+ex.path <- here("Results", paste(geno.type, exp.name, sep = "_"))
 
 args <- commandArgs(trailingOnly=T)
-#delete.old.results <- as.logical(args[1])
-delete.old.results = FALSE
+delete.old.results <- as.logical(args[1])
+#delete.old.results = FALSE
 ```
 
 ```{r load_code}
@@ -31,15 +36,15 @@ all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
 for(i in 1:length(all.fun)){source(all.fun[i])}
 ```
 
-```{r load_libraries}
+```{r load_libraries, error = FALSE, message = FALSE, echo = FALSE}
 needed.packages <- c("cape", "pheatmap", "gprofiler2")
 load_libraries(needed.packages)
 ```
 
 
 ```{r load_data}
-data.obj <- readRDS(here("Data", paste0("data_", exp.name, ".RDS")))
-geno.obj <- readRDS(here("Data", paste0("geno_", exp.name, ".RDS")))
+data.obj <- readRDS(here("Data", paste0("cape_data_", geno.type, ".RDS")))
+geno.obj <- readRDS(here("Data", paste0("cape_geno_", geno.type, ".RDS")))
 geno.names <- dimnames(geno.obj)
 names(geno.names) <- c("mouse", "allele", "locus")
 data.obj$geno_names <- geno.names
@@ -64,20 +69,23 @@ cross$pheno <- num.pheno
 #kinship file and the yml file
 if(delete.old.results){
     results.files <- list.files(ex.path, full.names = TRUE)
-    to.keep <- file.path(ex.path, c("cape.parameters.yml", "cross_kinship.RData", "SNPlist.txt"))
+    to.keep <- file.path(ex.path, "cape.parameters.yml")
     to.delete <- setdiff(results.files, to.keep)
     if(length(to.delete) > 0){
         unlink(to.delete)
     }
 }
 
-sink(file.path(ex.path, "progress.txt"))
+link.line <- paste("ln -s", here("Data", "cross_kinship.RData"), here("Results", paste(geno.type, exp.name, sep = "_")))
+system(link.line)
 
-final.cross <- run.cape(pheno.obj = cross, geno.obj = geno, p.or.q = 0.05, 
-verbose = TRUE, results.path = ex.path, 
-param.file = file.path(ex.path, "cape.parameters.yml"))
+#sink(file.path(ex.path, "progress.txt"))
 
-sink(NULL)
+final.cross <- run_cape(pheno_obj = cross, geno_obj = geno, p_or_q = 0.05, 
+verbose = TRUE, results_path = ex.path, 
+param_file = file.path(ex.path, "cape.parameters.yml"))
+
+#sink(NULL)
 
 final.cross <- readRDS(file.path(ex.path, "cross.RData"))
 final.geno <- readRDS(file.path(ex.path, "cross_geno.RData"))

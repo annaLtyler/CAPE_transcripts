@@ -1,0 +1,29 @@
+Removing unused markers...
+Checking for invariant markers.
+Removing 1 individuals with missing phenotypes.
+Not performing permutations in singlescan.
+
+Scanning trait: ET1 
+
+Testing covariates 
+
+Scanning trait: ET2 
+
+Testing covariates 
+
+Scanning trait: ET3 
+
+Testing covariates 
+
+List of 5
+ $ pheno          : num [1:378, 1:21] -0.43 -0.468 0.059 -0.11 0.111 ...
+  ..- attr(*, "dimnames")=List of 2
+  .. ..$ : chr [1:378] "DO021" "DO022" "DO023" "DO024" ...
+  .. ..$ : chr [1:21] "num_islets" "Ins_per_islet" "WPIC" "HOMA_IR_0min" ...
+ $ geno_names     :List of 3
+  ..$ mouse : chr [1:378] "DO021" "DO022" "DO023" "DO024" ...
+  ..$ allele: chr [1:2] "A" "B"
+  ..$ locus : chr [1:42] "MEpurple" "MEsaddlebrown" "MEblack" "MEdarkturquoise" ...
+ $ chromosome     : num [1:42] NA NA NA NA NA NA NA NA NA NA ...
+ $ marker_num     : int [1:42] 1 2 3 4 5 6 7 8 9 10 ...
+ $ marker_location: num [1:42] NA NA NA NA NA NA NA NA NA NA ...
