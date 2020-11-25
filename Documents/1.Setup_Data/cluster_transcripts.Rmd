@@ -11,6 +11,10 @@ output:
 ---
 
 ```{r set_type}
+#set testing to FALSE to run full gene expression networks and to TRUE
+#to run a subset.
+testing = TRUE
+#testing = FALSE
 geno.type <- "modules"
 include.real.genotypes = FALSE #whether to include true genotypes or just expression
 ```
@@ -21,17 +25,15 @@ tissues from the same animals. We can then run cape on the multi-tissue
 transcript clusters to see if we see interactions between transcripts
 from different tissues. 
 
-We are exploring the idea of using gene expression as an addition to,
-or in place of, the genotype matrix. The idea is that we may
-be able to identify interactions between genotypes and gene expression,
-or between transcripts, that influence clinical traits.
+In this workflow we cluster transcripts separately in liver,
+pancreatic islets, and adipose tissue. We run functional enrichment
+on each to characterize the modules.
 
-In this setup we will use transcript clusters from CoExpNets. 
+We use these modules in place of genotypes in a CAPE model
+to explain traits through interactions bewteen multi-tissue gene expression. 
 For traits, we will use the first three eigentraits of the trait 
 matrix including all traits except for weight.
 
-We also write real genotype data to a file for genetic mapping
-of transcript modules later.
 
 ```{r load_code}
 library("here")
@@ -40,7 +42,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 ```
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
-all.packages <- c("pheatmap", "qtl2", "gProfileR", "cape", "CoExpNets")
+all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "CoExpNets", "abind")
 load_libraries(all.packages)
 ```
 
@@ -95,7 +97,9 @@ both bp and cM
 8. dataset.islet.rnaseq: rna seq data set inclusing annotations and lod peaks
 9. dataset.islet.hotspots: annotations of QTL/eQTL hotspots 
 
-Extract clinical traits, expression traits, and covariates.
+Extract clinical traits, expression traits, and covariates from the 
+islet data set. We will use the first three principal components of 
+this trait matrix as our traits.
 
 ```{r pheno}
 pheno <- as.matrix(dataset.clinical.phenotypes$pheno[,12:(ncol(dataset.clinical.phenotypes$pheno)-1)])
@@ -113,25 +117,69 @@ gene.table <- dataset.islet.rnaseq$annots
 #we will do this ourselves by hand.
 
 islet.net.file = CoExpNets::getDownstreamNetwork(tissue="islets",
-		net.type = "signed", debug=F, expr.data = adj.islet,
+		net.type = "signed", debug=testing, expr.data = adj.islet,
 		job.path= here("Results", "Expr_Clusters", "islets"), save.plots = TRUE,
     fullAnnotation = F)
 islet.net <- readRDS(islet.net.file)
 
 adipose.net.file = CoExpNets::getDownstreamNetwork(tissue="adipose",
-		net.type = "signed", debug=F, expr.data = adj.adipose,
+		net.type = "signed", debug=testing, expr.data = adj.adipose,
 		job.path= here("Results", "Expr_Clusters", "adipose"), save.plots = TRUE,
     fullAnnotation = F)
 adipose.net <- readRDS(adipose.net.file)
 
 liver.net.file = CoExpNets::getDownstreamNetwork(tissue="liver", n.iterations=20,
-		net.type = "signed", debug=F, expr.data = adj.liver,
-		job.path= here("Results", "Expr_Clusters", "liver"))
+		net.type = "signed", debug=testing, expr.data = adj.liver,
+		job.path= here("Results", "Expr_Clusters", "liver"), save.plots = TRUE,
+    fullAnnotation = F)
 liver.net <- readRDS(liver.net.file)
 ```
 
 
-## Adjust clinical phenotypes and expression for DO wave  {.tabset .tabset-fade .tabset-pills}
+## Characterize Modules {.tabset .tabset-fade .tabset-pills}
+
+In each tissue we characterize the modules identified by CoExpNets using
+gprofiler2. 
+
+```{r get_module_genes}
+module_genes <- function(net.obj){
+  moduleV <- net.obj$moduleColors
+  modules <- unique(moduleV)
+  module.genes <- lapply(modules, function(x) names(moduleV)[which(moduleV == x)])
+  names(module.genes) <- modules
+  return(module.genes)
+}
+```
+
+### Liver Module Enrichment
+
+```{r liver_enrichment, fig.height = 8, fig.width = 7}
+liver.module.genes <- module_genes(liver.net)
+liver.enrich <- lapply(liver.module.genes, function(x) gost(x, organism = "mmusculus",
+sources = c("GO", "KEGG", "REACTOME")))
+plot.enrichment.group(liver.enrich, max.term.size = 500, plot.label = "Liver Modules")
+```
+
+### Adipose Module Enrichment
+
+```{r adipose_enrichment, fig.height = 8, fig.width = 7}
+adipose.module.genes <- module_genes(adipose.net)
+adipose.enrich <- lapply(adipose.module.genes, function(x) gost(x, organism = "mmusculus",
+sources = c("GO", "KEGG", "REACTOME")))
+plot.enrichment.group(adipose.enrich, max.term.size = 500, plot.label = "Adipose Modules")
+```
+
+### Islet Module Enrichment
+
+```{r islet_enrichment, fig.height = 8, fig.width = 7}
+islet.module.genes <- module_genes(islet.net)
+islet.enrich <- lapply(islet.module.genes, function(x) gost(x, organism = "mmusculus",
+sources = c("GO", "KEGG", "REACTOME")))
+plot.enrichment.group(islet.enrich, max.term.size = 500, plot.label = "Islet Modules")
+```
+
+
+## Adjust clinical phenotypes for covariates  {.tabset .tabset-fade .tabset-pills}
 
 Adjust all traits for DO wave. Keep sex as an interactive covariate.
 
@@ -139,48 +187,40 @@ Adjust all traits for DO wave. Keep sex as an interactive covariate.
 
 ```{r pheno_cor}
 pheatmap(cor(num.pheno, use = "pairwise.complete.obs"), 
-main = "Phenotype Correlations Before Adjusting for DO Wave")
+main = "Phenotype Correlations Before Adjusting for Covariates")
 ```
 
 ### After Adjusting
 
 ```{r adj_pheno_cor}
 adj.pheno <- adjust(num.pheno, covar[,2:ncol(covar)])
-adj.expr <- adjust(expr, covar[,2:ncol(covar)])
 pheatmap(cor(adj.pheno, use = "pairwise.complete.obs"), 
-main = "Phenotype Correlations After Adjusting for DO Wave")
+main = "Phenotype Correlations After Adjusting for Covariates")
 ```
 
-## Rename special chromosomes
-CAPE automaticall deletes sex chromosomes and mitochondrial chromosomes.
-But if we are using expression, we don't need to worry about number mismatches
-between males and females. So we rename these chromosomes to be numeric.
-We only do this if we are looking at individual transcripts. If we are
-looking at modules, we will assign each module to its own pseudo-chromosome.
+## Create "Genotype" Object and Information Table
+In CAPE we use a table of information about the markers to keep track
+of where the markers are positioned on the genome. When we use modules,
+we lose positional information. Here we create a dummy table labeling 
+the modules from each tissue as being from a different chromosome.
 
-```{r rename_chromosomes}
-if(geno.type == "transcripts"){
-  common.genes <- intersect(colnames(expr), gene.table[,"symbol"])
-  gene.locale <- match(include.genes, gene.table[,"symbol"])
-  gene.ids <- gene.table[gene.locale,"gene_id"]
-  gene.chr <- gene.table[gene.locale,"chr"]
+```{r genotypes}
+common.ind <- Reduce("intersect", list(rownames(liver.net$MEs), 
+rownames(adipose.net$MEs), rownames(islet.net$MEs)))
+liver.ind.locale <- match(common.ind, rownames(liver.net$MEs))
+adipose.ind.locale <- match(common.ind, rownames(adipose.net$MEs))
+islet.ind.locale <- match(common.ind, rownames(islet.net$MEs))
 
-  #replace sex and mitochondrial chromosomes with numbers, so
-  #we don't delete them in cape.
-  gene.chr[which(gene.chr == "X")] <- 20
-  gene.chr[which(gene.chr == "Y")] <- 21
-  gene.chr[which(gene.chr == "MT")] <- 22
-  gene.pos <- gene.table[gene.locale,"middle"]
-  gene.info <- cbind(gene.ids, include.genes, as.numeric(gene.chr), as.numeric(gene.pos))
-  colnames(gene.info) <- c("gene_id", "symbol", "chr", "middle")
-  ordered.info <- sort.by.then.by(gene.info, sort.cols = c(3,4), col.type = c("n", "n"))
+liver.MEs <- liver.net$MEs[liver.ind.locale,]
+colnames(liver.MEs) <- gsub("ME", "liver_", colnames(liver.MEs))
 
-  id.locale <- match(ordered.info[,"gene_id"], colnames(adj.expr))
-  expr.geno <- adj.expr[,id.locale]
-  colnames(expr.geno) <- ordered.info[,"symbol"]
-}else{
-  expr.geno <- expr
-}
+adipose.MEs <- liver.net$MEs[adipose.ind.locale,]
+colnames(adipose.MEs) <- gsub("ME", "adipose_", colnames(adipose.MEs))
+
+islet.MEs <- liver.net$MEs[islet.ind.locale,]
+colnames(islet.MEs) <- gsub("ME", "islet_", colnames(islet.MEs))
+
+expr.geno <- cbind(liver.MEs, adipose.MEs, islet.MEs)
 ```
 
 ## Build CAPE objects
@@ -241,18 +281,14 @@ new.geno.obj <- add_to_geno(geno.obj, expr.geno)
 data.obj$geno_names <- dimnames(new.geno.obj)
 names(data.obj$geno_names) <- c("mouse", "allele", "locus")
 
-if(geno.type == "transcripts"){
-  data.obj$chromosome <- c(data.obj$chromosome, ordered.info[,"chr"])
-  data.obj$marker_location <- c(data.obj$marker_location, ordered.info[,"middle"])
-  data.obj$marker_num <- 1:length(data.obj$chromosome)
-  #tail(data.obj$geno_names[[3]], 43)
-  #tail(dimnames(new.geno.obj)[[3]], 43)
-}else{
-  #add pseudo-chromosome data
-  data.obj$chromosome <- c(data.obj$chromosome, 1:ncol(adj.expr))
-  data.obj$marker_location <- c(data.obj$marker_location, rep(1, ncol(adj.expr)))
-  data.obj$marker_num <- 1:length(data.obj$chromosome)
-}
+#add pseudo-chromosome data
+#cbind(liver.MEs, adipose.MEs, islet.MEs)
+new.chr <- c(rep(1, ncol(liver.MEs)), rep(2, ncol(adipose.MEs)), rep(3, ncol(islet.MEs)))
+new.pos <- c(1:ncol(liver.MEs), 2:ncol(adipose.MEs), 3:ncol(islet.MEs))
+data.obj$chromosome <- c(data.obj$chromosome, new.chr)
+data.obj$marker_location <- c(data.obj$marker_location, new.pos)
+data.obj$marker_num <- 1:length(data.obj$chromosome)
+
 
 #if we only want to include expression values, take out the actual genotypes
 if(!include.real.genotypes){

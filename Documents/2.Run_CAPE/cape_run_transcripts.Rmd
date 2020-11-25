@@ -23,8 +23,8 @@ library("here")
 ```{r set_params}
 #geno.type = "transcripts"
 geno.type = "modules"
-exp.name = "top_three_PC"
-ex.path <- here("Results", paste(geno.type, exp.name, sep = "_"))
+exp.name = "multi_tissue"
+ex.path <- here("Results", "CAPE", paste(geno.type, exp.name, sep = "_"))
 
 args <- commandArgs(trailingOnly=T)
 delete.old.results <- as.logical(args[1])
@@ -76,7 +76,7 @@ if(delete.old.results){
     }
 }
 
-link.line <- paste("ln -s", here("Data", "cross_kinship.RData"), here("Results", paste(geno.type, exp.name, sep = "_")))
+link.line <- paste("ln -s", here("Data", "cross_kinship.RData"), ex.path)
 system(link.line)
 
 #sink(file.path(ex.path, "progress.txt"))
@@ -88,6 +88,9 @@ param_file = file.path(ex.path, "cape.parameters.yml"))
 #sink(NULL)
 
 final.cross <- readRDS(file.path(ex.path, "cross.RData"))
+
+plot_variant_influences(final.cross, show_marker_labels =TRUE)
+
 final.geno <- readRDS(file.path(ex.path, "cross_geno.RData"))
 write.data.for.shiny(data.obj = final.cross, geno.obj = final.geno, 
 name = paste0(exp.name, "_for_shiny"), path = ex.path)
