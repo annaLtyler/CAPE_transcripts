@@ -14,4 +14,4 @@ cd $SLURM_SUBMIT_DIR
 
 module load singularity
 
-singularity exec ../../Containers/cape_transcripts_latest.sif Rscript -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "cluster_transcripts.Rmd))'
+singularity exec ../../Containers/cape_transcripts_latest.sif Rscript -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "cluster_transcripts.Rmd"))'
