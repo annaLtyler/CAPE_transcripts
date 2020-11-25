@@ -13,8 +13,8 @@ output:
 ```{r set_type}
 #set testing to FALSE to run full gene expression networks and to TRUE
 #to run a subset.
-testing = TRUE
-#testing = FALSE
+#testing = TRUE
+testing = FALSE
 geno.type <- "modules"
 include.real.genotypes = FALSE #whether to include true genotypes or just expression
 ```
