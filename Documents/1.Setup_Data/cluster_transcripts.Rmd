@@ -115,23 +115,34 @@ gene.table <- dataset.islet.rnaseq$annots
 #Clustering takes a long time
 #set fullAnnotation to F because function defaults to human.
 #we will do this ourselves by hand.
-
+islet.net.file <- get.files(here("Results", "Expr_Clusters", "islets"), 
+want = "rds", dont.want = "pdf", full.names = TRUE)
+if(length(islet.net.file) == 0){
 islet.net.file = CoExpNets::getDownstreamNetwork(tissue="islets",
 		net.type = "signed", debug=testing, expr.data = adj.islet,
 		job.path= here("Results", "Expr_Clusters", "islets"), save.plots = TRUE,
     fullAnnotation = F)
+}
 islet.net <- readRDS(islet.net.file)
 
+adipose.net.file <- get.files(here("Results", "Expr_Clusters", "adipose"),
+want = "rds", dont.want = "pdf", full.names = TRUE)
+if(length(adipose.net.file) == 0){
 adipose.net.file = CoExpNets::getDownstreamNetwork(tissue="adipose",
 		net.type = "signed", debug=testing, expr.data = adj.adipose,
 		job.path= here("Results", "Expr_Clusters", "adipose"), save.plots = TRUE,
     fullAnnotation = F)
+}
 adipose.net <- readRDS(adipose.net.file)
 
-liver.net.file = CoExpNets::getDownstreamNetwork(tissue="liver", n.iterations=20,
+liver.net.file <- get.files(here("Results", "Expr_Clusters", "liver"),
+want = "rds", dont.want = "pdf", full.names = TRUE)
+if(length(liver.net.file) == 0){
+  liver.net.file = CoExpNets::getDownstreamNetwork(tissue="liver", n.iterations=20,
 		net.type = "signed", debug=testing, expr.data = adj.liver,
 		job.path= here("Results", "Expr_Clusters", "liver"), save.plots = TRUE,
     fullAnnotation = F)
+}
 liver.net <- readRDS(liver.net.file)
 ```
 

@@ -15,8 +15,7 @@ The purpose of this workflow is to analyze the results from
 cape_run_transcripts.Rmd
 
 ```{r setup}
-plot.mod.net = FALSE
-exp.name <- "top_three_PC"
+exp.name <- "multi_tissue"
 geno.type = "modules"
 exp.dir <- paste(geno.type, exp.name, sep = "_")
 ```
