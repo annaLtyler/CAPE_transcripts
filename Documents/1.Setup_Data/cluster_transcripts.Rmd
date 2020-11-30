@@ -51,8 +51,8 @@ load_libraries(all.packages)
 all.var <- ls()
 data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
 if(!data.loaded){
-  islets <- load(here("data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
-  other.tissues <- load(here("data", "attie_all_qtl_viewer_v10_04.20.2020.RData"))
+  islets <- load(here("Data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
+  other.tissues <- load(here("Data", "attie_all_qtl_viewer_v10_04.20.2020.RData"))
   }
 ```
 

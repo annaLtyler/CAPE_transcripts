@@ -1,0 +1,35 @@
+---
+title: "Analysis of Multi-Tissue CAPE"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+
+The purpose of this workflow is to analyze the results from 
+cape_run_transcripts.Rmd
+
+```{r setup}
+plot.mod.net = FALSE
+exp.name <- "top_three_PC"
+geno.type = "modules"
+exp.dir <- paste(geno.type, exp.name, sep = "_")
+```
+
+```{r load_code}
+library("here")
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+all.packages <- c("cape", "gprofiler2", "pheatmap", "cluster", "easyPubMed",
+"wordcloud", "wordcloud2", "tm", "stringr", "biomaRt", "GOSim", "org.Mm.eg.db",
+"qtl2", "gProfileR", "cape")
+load_libraries(all.packages)
+```
