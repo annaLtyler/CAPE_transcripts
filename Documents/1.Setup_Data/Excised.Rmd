@@ -1,0 +1,791 @@
+Excised
+
+Let's assume that a more stringent penalty will lead to more interpretable results,
+because we will have fewer transcripts to worry about characterizing.
+
+We would also like to identify trait combinations that are relatively 
+transcriptionally independent of one another. 
+
+Thus in the code below, we look for penalties that maximize the number of 
+transcripts associated with individual latent traits. For each set of 
+penalties, we count how many transcripts are trait-specific.
+
+This set of functions sweeps overa series of penalties
+And counts the number of trait-specific transcripts for optimizing
+"biologically independent transcriptional programs"
+
+```{r count_trans_opt}
+#this function runs CCA over a series of lambda values
+#and counts how many latent traits each transcript 
+#affects with non-zero loadings. It concatenates 
+#these results into a matrix for later identification
+#of the penalties leading to the largest number of 
+#trait-specific transcripts. This function does not
+#search_grid determines whether penalties will be 
+#searched in a full pairwise grid, or if the penalty
+#will be incremented equally for X and Z.
+
+count_trait_specific <- function(tissue.mats, 
+num.components = ncol(tissue.mats$Z), pen_seq = seq(0.1, 0.9, 0.1),
+search_grid = FALSE, filename){
+
+    if(!file.exists(filename)){
+        if(search_grid){
+            trans.pen.seq <- pair.matrix(pen_seq, ordered = TRUE, self.pairs = TRUE)
+        }else{
+            trans.pen.seq <- cbind(pen_seq, pen_seq)
+        }
+        colnames(trans.pen.seq) <- c("X", "Z")
+        shared.trans.counts <- matrix(NA, nrow = nrow(trans.pen.seq), ncol = ncol(tissue.mats$Z))
+        shared.trait.counts <- matrix(NA, nrow = nrow(trans.pen.seq), ncol = ncol(tissue.mats$Z))
+        for(i in 1:nrow(trans.pen.seq)){
+            if(is.interactive){
+                report.progress(i, nrow(trans.pen.seq))
+            }
+            tissue.results <- CCA(tissue.mats$X, tissue.mats$Z, 
+            typex = "standard", typez = "standard", K = num.components, 
+            penaltyx = trans.pen.seq[i,1], penaltyz = trans.pen.seq[i,2], 
+            niter = 100, trace = FALSE)
+            
+            shared.transcripts <- apply(tissue.results$u, 1, function(x) length(which(x != 0)))
+            trans.counts <- sapply(1:ncol(tissue.mats$Z), function(x) length(which(shared.transcripts == x)))
+            shared.trans.counts[i,] <- trans.counts
+            
+            shared.traits <- apply(tissue.results$u, 2, function(x) length(which(x != 0)))
+            shared.trait.counts[i,] <- shared.traits
+        }
+        result <- list("Penalties" = trans.pen.seq, 
+        "Shared_Transcript_Counts" = shared.trans.counts,
+        "Shared_Trait_Counts" = shared.trait.counts)
+        saveRDS(result, filename)
+    }else{
+        result <- readRDS(filename)
+    }
+    return(result)
+}
+
+get_best_penalty <- function(shared.count.results){
+    penalties <- shared.count.results[[1]]
+    shared.transcript.counts <- shared.count.results[[2]]
+    shared.trait.counts <- shared.count.results[[3]]
+
+    trans.prob <- t(apply(shared.trait.counts, 1, function(x) x/(max(x)*length(x))))
+    trans.entropy <- apply(trans.prob, 1, entropy)
+
+    par(mfrow = c(1,3))
+    penalty.labels <- apply(penalties, 1, function(x) paste(x, collapse = "-"))
+    barplot(trans.entropy, names = penalty.labels, las = 2, 
+    main = "Transcript Trait Distribution", ylab = "Entropy")
+    
+    barplot(shared.transcript.counts[,1], main = "Trait-Specific Transcripts", 
+    names = penalty.labels, las = 2, ylab = "Count")
+
+    #find the penalty that maximizes entropy over trait-transcript contributions
+    #i.e. makes the trait-specific transcripts the most spread out,
+    #and the number of trait-specific transcripts.
+    pt.ranks <- rank.2D(cbind(trans.entropy, shared.transcript.counts[,1]))
+    best.idx <- which(pt.ranks == 1)
+    pt.col <- rep("black", nrow(penalties))
+    pt.col[best.idx] <- "red"
+    plot(trans.entropy, shared.transcript.counts[,1], xlab = "Distribution over Traits (Entropy)",
+    ylab = "Number of Transcripts Influencing One Trait", col = pt.col, pch = 16)
+    best.penalty <- penalties[best.idx,]
+    return(best.penalty)
+}
+```
+
+
+
+## Enrichment Overview {.tabset .tabset-fade .tabset-pills}
+
+It's too hard to see trends in the enrichment profiles on these huge plots,
+so I took the top GO terms, and used them in [REVIGO](http://revigo.irb.hr).
+
+The code to write the top GO terms to files is below.
+
+```{r top_GO_terms}
+islet.GO <- lapply(islet.enrich[[2]], function(x) get_top_GO_ID(x, max_pval = 0.05, 
+max_term_size = max.term.size, sort.by = "default", num.terms = 10))
+islet.GO.table <- Reduce("rbind", islet.GO)
+dups <- duplicated(islet.GO.table[,1])
+write.table(islet.GO.table[which(!dups),], "~/Desktop/go.terms.islet.txt", sep = "\t", quote = FALSE, 
+row.names = FALSE, col.names = FALSE)
+
+adipose.GO <- lapply(adipose.enrich[[2]], function(x) get_top_GO_ID(x, max_pval = 0.05, 
+max_term_size = max.term.size, sort.by = "default", num.terms = 10))
+adipose.GO.table <- Reduce("rbind", adipose.GO)
+dups <- duplicated(adipose.GO.table[,1])
+write.table(adipose.GO.table[which(!dups),], "~/Desktop/go.terms.adipose.txt", sep = "\t", quote = FALSE, 
+row.names = FALSE, col.names = FALSE)
+
+liver.GO <- lapply(liver.enrich[[2]], function(x) get_top_GO_ID(x, max_pval = 0.05, 
+max_term_size = max.term.size, sort.by = "default", num.terms = 10))
+liver.GO.table <- Reduce("rbind", liver.GO)
+dups <- duplicated(liver.GO.table[,1])
+write.table(liver.GO.table[which(!dups),], "~/Desktop/go.terms.liver.txt", sep = "\t", quote = FALSE, 
+row.names = FALSE, col.names = FALSE)
+```
+
+I pasted each one of these files into REVIGO and selected mus musculus
+as the organism. For all other settings I used the defaults.
+
+I then downloaded the R code to generate tree maps and put it in
+the Results folder. The following code runs those scripts and puts 
+the figures in the html.
+
+### Islet Treemap
+
+```{r islet_treemap, results = "asis"}
+source(here("Results", "CCA_clusters", "RevigoTreeMap-islet.R"))
+fig.line <- paste0("![Islet GO Overiew](", here("Results", "CCA_clusters", "revigo_treemap_islet.jpg)"))
+cat(fig.line)
+```
+
+### Liver Treemap
+
+```{r liver_treemap, results = "asis"}
+source(here("Results", "CCA_clusters", "RevigoTreeMap-liver.R"))
+fig.line <- paste0("![Liver GO Overiew](", here("Results", "CCA_clusters", "revigo_treemap_liver.jpg)"))
+cat(fig.line)
+```
+
+### Adipose Treemap
+
+```{r adipose_treemap, results = "asis"}
+source(here("Results", "CCA_clusters", "RevigoTreeMap-adipose.R"))
+fig.line <- paste0("![Adipose GO Overiew](", here("Results", "CCA_clusters", "revigo_treemap_adipose.jpg)"))
+cat(fig.line)
+```
+
+Enrichments for all tissues.
+
+```{r all_together, eval = FALSE}
+get.enrichment.group.names <- function(tissue.mats, tissue.results, tissue.enrich, label, short_names = TRUE){
+    tissue.groups <- names(tissue.enrich[[2]])
+    tissue.traits  <- get_trait_description(tissue.mats, tissue.results, short_version = short_names)
+    group.names <- rep(NA, length(tissue.groups))
+    idx <- 1
+    for(i in 1:length(tissue.traits)){
+        for(dir in 1:2){
+            group.names[idx] <- paste(label, tissue.traits[i], tissue.groups[[idx]], sep = "_")
+            idx = idx + 1
+        }
+    }
+    return(group.names)
+}
+
+all.enrich <- c(islet.enrich[[2]], adipose.enrich[[2]], liver.enrich[[2]])
+islet.group.names <- get.enrichment.group.names(islet.pheno.mats, islet.results, islet.enrich, "Islet")
+adipose.group.names <- get.enrichment.group.names(adipose.pheno.mats, adipose.results, adipose.enrich, "Adipose")
+liver.group.names <- get.enrichment.group.names(liver.pheno.mats, liver.results, liver.enrich, "Liver")
+all.enrich.names  <- c(islet.group.names, adipose.group.names, liver.group.names) 
+names(all.enrich) <- all.enrich.names
+#pdf("~/Desktop/all.enrich.pdf", width = 20, height = 45)
+enrich.adj <- plot.enrichment.group(all.enrich,  max.term.size = max.term.size, 
+n.terms = 10,transformation = function(x) sqrt(sqrt(x)))
+#dev.off()
+
+all.enrich.proj <- enrich_bipartite_proj(enrich.adj)
+tissue.cols <- categorical_pal(3)
+vert.names <- V(all.enrich.proj[[1]])$name
+vert.tiss <- sapply(strsplit(vert.names, "_"), function(x) x[1])
+u_tiss <- unique(vert.tiss)
+vert.col <- unlist(lapply(1:length(u_tiss), function(x) rep(tissue.cols[x], length(which(vert.tiss == u_tiss[x])))))
+
+#pdf("~/Desktop/all.enrich.proj.pdf", width = 30, height = 30)
+plot(all.enrich.proj[[1]], vertex.size = 5, layout = layout_with_kk, 
+vertex.color = vert.col) #trait projection
+plot(all.enrich.proj[[2]], vertex.size = 5, layout = layout_with_kk) #trait projection
+#dev.off()
+```
+
+## Transcript Correlations
+
+We looked at how each set of transcripts correlated with each trait.
+
+```{r trans_trait_cor, eval = FALSE}
+
+
+tissue.genes <- islet.enrich[[1]]
+tissue.results <- islet.results
+
+transcript.prob <- t(apply(tissue.results$u, 1, function(x) x/(max(abs(x))*length(x))))
+transcript.entropy <- apply(transcript.prob, 1, entropy)
+plot(sort(transcript.entropy))
+barplot(tissue.results$u[4,])
+
+idx <- 3
+
+trait.desc <- get_trait_description(tissue.mats, tissue.results)
+trans.loadings <- tissue.results$u[,idx,drop=FALSE]
+trait.loadings <- tissue.results$v[,idx,drop=FALSE]
+latent.transcript <- tissue.mats$X %*% trans.loadings
+latent.trait <- tissue.mats$Z %*% trait.loadings
+
+par(mfrow = c(1,3))
+plot.with.model(latent.transcript, latent.trait, main = trait.desc[idx])
+
+pos.trans <- neg.trans <- trans.loadings
+pos.trans[which(trans.loadings[,1] < 0),1] <- 0
+neg.trans[which(trans.loadings[,1] > 0),1] <- 0
+
+pos.latent.transcript <- tissue.mats$X %*% pos.trans
+plot.with.model(pos.latent.transcript, latent.trait, main = trait.desc[idx])
+neg.latent.transcript <- tissue.mats$X %*% neg.trans
+plot.with.model(neg.latent.transcript, latent.trait, main = trait.desc[idx])
+
+all.trans.mat <- tissue.mats$X[,which(trans.loadings[,1] != 0)]
+pheatmap(all.trans.mat)
+all.decomp <- plot.decomp(t(all.trans.mat))
+pheatmap(cor(all.trans.mat), show_rownames = FALSE, show_colnames = FALSE)
+all.me <- all.decomp$v[,1]
+
+neg.trans.mat <- tissue.mats$X[,which(trans.loadings[,1] < 0)]
+neg.decomp <- plot.decomp(t(neg.trans.mat))
+pheatmap(cor(neg.trans.mat), show_rownames = FALSE, show_colnames = FALSE)
+neg.me <- neg.decomp$v[,1]
+
+pos.trans.mat <- tissue.mats$X[,which(trans.loadings[,1] > 0)]
+pos.decomp <- plot.decomp(t(pos.trans.mat))
+pheatmap(pos.trans.mat)
+pheatmap(cor(pos.trans.mat), show_rownames = FALSE, show_colnames = FALSE)
+pos.me <- pos.decomp$v[,1]
+
+layout(get.layout.mat(num.components))
+par(mar = c(0,0,0,0))
+for(i in 1:ncol(scaled.pheno)){
+    #plot(pos.me, tissue.mats$Z[,i])
+    #plot(neg.me, tissue.mats$Z[,i])
+    plot.with.model(all.me, tissue.mats$Z[,i])
+}
+
+all.cor <- apply(tissue.mats$Z, 2, function(x) cor(x, all.me))
+barplot(all.cor, las = 2)
+
+for(i in 1:num.components){
+    trait.text <- paste("Latent Trait", i, paste(colnames(tissue.mats$Z)[which(tissue.results$v[,i] != 0)], collapse = " "))
+    #quartz()
+    par(mfrow = c(2,1))
+    plot(sort(tissue.results$u[,i]), type = "h")
+    plot(tissue.results$v[,i], type = "h")
+    mtext(trait.text, side = 3)
+    mtext(paste("Latent Pair", i), side = 3, outer = TRUE, line = -2.5)    
+}
+
+comp.idx <- 1
+layout(get.layout.mat(20))
+par(mar = c(0,0,0,0))
+for(comp.idx in 1:20){
+    print(colnames(tissue.mats$Z)[which(tissue.results$v[,comp.idx] != 0)])
+    non.zero.idx <- which(tissue.results$u[,comp.idx] != 0)
+    comp.weights <- tissue.results$u[non.zero.idx,comp.idx]
+    names(comp.weights) <- colnames(tissue.mats$X)[non.zero.idx]
+    plot.decomp(t(tissue.mats$X[,non.zero.idx]))
+}
+#cor.mat <- cor(tissue.mats$X[,non.zero.idx])
+#pheatmap(cor.mat, show_rownames = FALSE, show_colnames = FALSE)
+#hist(cor.mat)
+
+n.bins = 10
+a <- hist(comp.weights, breaks = n.bins)
+plot(sort(comp.weights));abline(h = a$breaks)
+binned.weights <- bin.vector2(comp.weights, a$breaks)
+sapply(binned.weights, length)
+#merge the first and last bins with the adjacent bins to avoid teeny tiny bins
+min.bin <- 10
+while(min(sapply(binned.weights, length)) < min.bin){
+    binned.weights[[2]] <- c(binned.weights[[1]], binned.weights[[2]])
+    binned.weights[[1]] <- NULL
+    binned.weights[[(length(binned.weights)-1)]] <- c(binned.weights[[(length(binned.weights)-1)]], binned.weights[[length(binned.weights)]])
+    binned.weights[[length(binned.weights)]] <- NULL
+}
+
+#look at the bin sizes
+genes.per.bin <- sapply(binned.weights, length)
+a <- barplot(genes.per.bin)
+text(a[,1], genes.per.bin-(max(genes.per.bin)*0.02), genes.per.bin)
+
+bin.enrich <- lapply(binned.weights, 
+function(x) gost(names(x), organism = "mmusculus", 
+sources = c("GO", "KEGG", "REACTOME")))
+
+plot.enrichment.group(bin.enrich, n.terms = 10, max.term.size = 500, 
+cluster_cols = FALSE)
+
+trait.which <- which(tissue.results$v[,comp.idx] != 0)
+comp.trait <- tissue.mats$Z %*% tissue.results$v[,comp.idx, drop=FALSE]
+
+#show latent transcript correlations with latent trait
+layout.mat <- get.layout.mat(length(binned.weights))
+layout(layout.mat)
+cluster.cor <- vector(mode = "list", length = length(binned.weights))
+for(i in 1:length(binned.weights)){
+    plot.enrichment(bin.enrich[[i]], num.terms = 30)
+    cluster.locale <- match(names(binned.weights[[i]]), colnames(tissue.mats$X))
+    #pheatmap(tissue.mats$X[,cluster.locale], show_rownames = FALSE, show_colnames = FALSE)
+    cluster.cor[[i]] <- cor(tissue.mats$X[,cluster.locale])
+    #pheatmap(cluster.cor[[i]], show_rownames = FALSE, show_colnames = FALSE)
+    latent.transcript <- tissue.mats$X[,cluster.locale] %*% tissue.results$u[cluster.locale,comp.idx, drop=FALSE]
+    plot.with.model(latent.transcript, comp.trait)
+}
+
+#transcripts with highest contributions to trait are more highly correlated to 
+#one another than transcripts with lower contributions
+#but they are all positively correlated on average
+boxplot(cluster.cor, names = names(binned.weights))
+abline(h = 0)
+```
+
+```{r cca, eval = FALSE}
+
+results <- CCA(geno.mat[geno.ind.locale,], cross$pheno[pheno.ind.locale,], 
+typex = "standard", typez = "standard", K = 10, 
+penaltyx = final.penalty$x, penaltyz = final.penalty$z, 
+niter = 100, trace = FALSE)
+
+par(mfrow = c(2,1))
+plot(results$u[,1], type = "h")
+plot(results$v[,1], type = "h")
+```
+
+# Iteration
+
+The correlations between the modules identified here and the trait/ET
+matrix suggest that we've identified two transcriptional programs
+that are opposing one another to influence ET1. The MEs are correlated 
+with the first ET in two blocks: one positive, and one negative. 
+
+They are correlated with the traits in two blocks as well. Some MEs are 
+correlated positively with all traits and others are correlated negatively
+with all traits. 
+
+To identify components associated with other ETs, we might need to iterate 
+this process. We will remove ET1 from the trait matrix and perform CCA again.
+
+## Iterating to capture subsequent axes of variation
+
+First, we need to remove the last ET from the trait data.
+
+```{r remove_et}
+aligned.pheno.et <- get.xz(scaled.pheno, eig)
+trimmed.pheno <- adjust(aligned.pheno.et$X, aligned.pheno.et$Z[,1,drop=FALSE])
+```
+
+The main axis of variation now separates the ex vivo traits from the rest.
+
+```{r new_pheno}
+new.pheno.decomp <- plot.decomp(t(trimmed.pheno))
+text(new.pheno.decomp$u[,1], new.pheno.decomp$u[,2], labels = colnames(trimmed.pheno),
+pos = 1)
+```
+
+We will search the penalty grid again using the adjusted phenotype matrix.
+For now we will use the original transcript matrix. 
+
+### Islet Penalty Re-Optimization
+
+```{r islet_penalty_opt2, fig.width = 5, fig.height = 5}
+
+islet.mats2 <- get.xz(adj.islet, trimmed.pheno)
+islet.r2.results2 <- opt_can_cor(islet.mats2, 
+num.components = ncol(islet.mats$Z), 
+pen_seq = penalty.seq, search_grid = search_grid, 
+filename = here("Results", "CCA_Clusters", "islet.can.cor.sweep2.RDS"))
+
+islet.r2.results2 <- count_trait_specific(islet.mats2, 
+num.components = ncol(islet.mats$Z), 
+pen_seq = penalty.seq, search_grid = search_grid, 
+filename = here("Results", "CCA_Clusters", "islet.ind.sweep2.RDS"))
+
+islet.trait.penalty2 <- get_best_penalty(islet.r2.results2)
+```
+
+
+### Adipose Penalty Re-Optimization
+
+```{r adipose_penalty_opt2, fig.width = 5, fig.height = 5}
+
+adipose.mats2 <- get.xz(adj.adipose, trimmed.pheno)
+adipose.r2.results2 <- opt_can_cor(adipose.mats2, 
+num.components = ncol(adipose.mats$Z), 
+pen_seq = penalty.seq, search_grid = search_grid, 
+filename <- here("Results", "CCA_Clusters", "adipose.can.cor.sweep2.RDS"))
+
+adipose.trait.penalty2 <- get_best_penalty(adipose.r2.results2)
+```
+
+### Liver Penalty Re-Optimization
+
+```{r liver_penalty_opt2, fig.width = 5, fig.height = 5}
+liver.mats2 <- get.xz(adj.liver, trimmed.pheno)
+liver.r2.results2 <- opt_can_cor(liver.mats2, 
+num.components = ncol(liver.mats$Z), 
+pen_seq = penalty.seq, search_grid = search_grid, 
+filename <- here("Results", "CCA_Clusters", "liver.can.cor.sweep2.RDS"))
+
+liver.trait.penalty2 <- get_best_penalty(liver.r2.results2)
+```
+
+Decription of results for this round...
+
+
+## CCA on the next component
+
+We then ran CCA with the optimized penalties from above.
+
+```{r run_CCA}
+islet.trait.perm.file2 <- here("Results", "CCA_Clusters", "islet.perm2.RDS")
+islet.trait.perm2 <- CCA_permute_grid(islet.mats2$X, 
+islet.mats2$Z, filename = islet.trait.perm.file2, search_grid = FALSE)
+
+num.components = ncol(islet.mats$Z)
+
+islet.CCA.file2 <- here("Results", "CCA_clusters", "islet.CCA2.RDS")
+if(!file.exists(islet.CCA.file2)){
+    islet.results2 <- CCA(islet.mats2$X, islet.mats2$Z, 
+    typex = "standard", typez = "standard", K = num.components, 
+    penaltyx = islet.trait.penalty2[1], penaltyz = islet.trait.penalty2[2], 
+    niter = 100, trace = FALSE)
+    saveRDS(islet.results2, islet.CCA.file2)
+}else{
+    islet.results2 <- readRDS(islet.CCA.file2)
+}
+
+adipose.CCA.file2 <- here("Results", "CCA_clusters", "adipose.CCA2.RDS")
+if(!file.exists(adipose.CCA.file2)){
+    adipose.results2 <- CCA(adipose.mats2$X, adipose.mats2$Z, 
+    typex = "standard", typez = "standard", K = num.components, 
+    penaltyx = adipose.trait.penalty2[1], penaltyz = adipose.trait.penalty2[2], 
+    niter = 100, trace = FALSE)
+    saveRDS(adipose.results2, adipose.CCA.file2)
+}else{
+    adipose.results2 <- readRDS(adipose.CCA.file2)
+}
+
+liver.CCA.file2 <- here("Results", "CCA_clusters", "liver.CCA2.RDS")
+if(!file.exists(liver.CCA.file2)){
+    liver.results2 <- CCA(liver.mats2$X, liver.mats2$Z, 
+    typex = "standard", typez = "standard", K = num.components, 
+    penaltyx = liver.trait.penalty2[1], penaltyz = liver.trait.penalty2[2], 
+    niter = 100, trace = FALSE)
+    saveRDS(liver.results2, liver.CCA.file2)
+}else{
+    liver.results2 <- readRDS(liver.CCA.file2)
+}
+
+```
+
+```{r describe_results2}
+#pdf("~/Desktop/islet2.pdf")
+describe_results(islet.mats2, islet.results2)
+#dev.off()
+
+islet.enrich2 <- get_up_down_enrichment(islet.mats2, islet.results2, 
+here("Results", "CCA_Clusters", "islet.enrichment2.RDS"))
+
+islet.enrich.mat2 <- plot.enrichment.group(islet.enrich2[[2]], 
+max.term.size = 2000)
+islet.enrich.proj2 <- enrich_bipartite_proj(islet.enrich.mat2)
+#pdf("~/Desktop/islet.enrich2.pdf", width = 30, height = 30)
+plot(islet.enrich.proj2[[1]], vertex.size = 5, layout = layout_with_kk) #trait projection
+plot(islet.enrich.proj2[[2]], vertex.size = 5, layout = layout_with_kk) #term projection
+#dev.off()
+
+```
+
+## Interpretation
+
+How do we interpret these things?
+
+Up and down loadings matter. For example, in the first trait-trainscript 
+combination for liver, histone modification is up *and* lipid metabolism is down.
+This combination is related to the HOMAs, Glu and Ins tAUC, food, and weight.
+
+So what?
+
+Does this indicate that there is a transcriptional program that is related to
+both histone modification and lipid metabolism that affects the measured traits?
+Does histone modification affect lipid metabolism, which affects the traits?
+
+## Functions for enrichment
+
+```{r enrich_fun}
+get_term_genes <- function(tissue.enrich, search_term){
+    enrich.list <- tissue.enrich[[2]]
+    term.locale <- lapply(enrich.list, function(x) lapply(search_term, function(y) grep(y, x$result[,"term_name"])))
+    has.term <- which(sapply(term.locale, function(x) length(unlist(x))) > 0)
+    term.idx <- term.locale[has.term]
+    found.terms <- lapply(1:length(term.idx), function(x) enrich.list[[has.term[x]]]$result[unique(unlist(term.idx[[x]])),])
+    go.terms <- unique(unlist(sapply(found.terms, function(x) x[,"term_id"])))
+    go.genes <- getBM(attributes = c('external_gene_name', 'ensembl_gene_id', 'go_id'),
+                   filters = 'go', values = go.terms, mart = mus)
+    return(go.genes)
+}
+
+match_go_genes <- function(go.genes, tissue.mats, tissue.results){
+    common.genes <- intersect(go.genes[,"ensembl_gene_id"], colnames(tissue.mats$X))
+    gene.locale <- match(common.genes, colnames(tissue.mats$X))
+    if(length(gene.locale) == 0){return("no overlapping genes found")}
+    go.loadings <- tissue.results$u[gene.locale,,drop=FALSE]
+    colnames(go.loadings) <- paste("Composite_Transcript", 1:ncol(go.loadings))
+    #rownames(go.loadings) <- common.genes
+    gene.names <- go.genes[match(common.genes, go.genes[,"ensembl_gene_id"]),"external_gene_name"]
+    rownames(go.loadings) <- gene.names
+    #pdf("~/Desktop/go.loadings.pdf", width = 7, height = 20)
+    #pheatmap(go.loadings)
+    #dev.off()
+    #barplot(sort(go.loadings[,4]), cex.names = 0.5, horiz = TRUE, las = 2)
+    return(go.loadings)
+}
+
+#This function gets gene names for the genes in a CT.
+get_CT_genes <- function(tissue.mats, tissue.results, ct, n.top = 10){
+    tissue.ct <- tissue.results$u[,ct]
+    ct.order <- order(tissue.ct, decreasing = TRUE)
+    ordered.transcripts <- colnames(tissue.mats$X)[ct.order]
+    top.ids <- c(head(ordered.transcripts, n.top), tail(ordered.transcripts, n.top))
+    top.scores <- c(head(tissue.ct[ct.order], n.top), tail(tissue.ct[ct.order], n.top))
+    top.gene.info <- gconvert(top.ids, organism = "mmusculus")
+    gene.idx <- match(top.ids, top.gene.info[,"input"])
+    gene.score <- top.scores[gene.idx]
+    final.table <- cbind(top.gene.info, gene.score)
+    return(final.table)
+}
+```
+
+
+## Clustering non-zero transcripts {.tabset .tabset-fade .tabset-pills}
+
+Transcripts can contribute to multiple composite traits, which might be
+difficult to interpret. It might be preferable to use the CCA as a transcript
+selection step and then to cluster the selected transcripts using k-means WGCNA.
+This would provide us with non-overlapping clusters of transcripts that can 
+be assigned functions based on GO term enrichments and can be correlated with 
+traits. 
+
+```{r cluster_transcripts_fun}
+
+module_genes <- function(net.obj){
+  modules <- gsub("ME", "", colnames(net.obj$MEs))
+  moduleV <- net.obj$moduleColors
+  module.genes <- lapply(modules, function(x) names(moduleV)[which(moduleV == x)])
+  names(module.genes) <- modules
+  return(module.genes)
+}
+
+pairwise_cor_mat <- function(X, Z){
+    pairwise.cor.mat <- matrix(NA, nrow = ncol(X), ncol = ncol(Z))
+    rownames(pairwise.cor.mat) <- colnames(X)
+    colnames(pairwise.cor.mat) <- colnames(Z)
+    for(i in 1:ncol(X)){
+        pairwise.cor.mat[i,] <- sapply(1:ncol(Z), function(x) cor(X[,i], Z[,x]))
+    }
+    return(pairwise.cor.mat)
+}
+```
+
+### Liver {.tabset .tabset-fade .tabset-pills}
+```{r cluster_liver_nonzero}
+non.zero.liver <- which(rowSums(liver.results$u) != 0)
+
+liver.net.file <- get.files(here("Results", "CCA_Clusters", paste0("liver_", file.text)),
+want = c("net", "rds"), dont.want = "pdf", full.names = TRUE)
+if(length(liver.net.file) == 0){
+    liver.net.file = CoExpNets::getDownstreamNetwork(tissue="liver", n.iterations=20,
+        net.type = "signed", debug=FALSE, expr.data = adj.liver[,non.zero.liver],
+        job.path= here("Results", "CCA_Clusters", paste0("liver_", file.text)), 
+        save.plots = FALSE,fullAnnotation = F)
+}
+liver.net <- readRDS(liver.net.file)
+liver.genes <- module_genes(liver.net)
+
+liver.net.enrich.file <-  here("Results", "CCA_Clusters", 
+paste0("liver.", file.text, ".module.enrich.RDS"))
+if(!file.exists(liver.net.enrich.file)){
+    liver.module.enrich <- lapply(liver.genes, function(x) gost(x, organism = "mmusculus",
+    sources = c("GO", "KEGG", "REACTOME")))
+    saveRDS(liver.module.enrich, liver.net.enrich.file)
+}else{
+    liver.module.enrich <- readRDS(liver.net.enrich.file)
+}
+```
+
+#### Module Enrichment Heatmap
+```{r plot_liver_module_enrich, fig.height = 15, fig.width = 7}
+liver.module.mat <- plot.enrichment.group(liver.module.enrich, 
+max.term.size = 2000, n.terms = num.terms)
+```
+
+#### Enrichment Networks
+
+```{r plot_liver_module_nets, fig.height = 10, fig.width = 10}
+liver.module.bip <- enrich_bipartite_proj(liver.module.mat, vertex.col = "gray", 
+label.vertex = colnames(liver.module.mat), label.col = "lightblue", 
+search.name = "full")
+
+plot(liver.module.bip$Network, vertex.size = 5, layout = layout_with_kk)
+plot(liver.module.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk)
+plot(liver.module.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk)
+
+pdf(here("Results", "CCA_Clusters", paste0("module.enrich.", file.text, ".liver.pdf")), 
+width = 30, height = 30)
+plot(liver.module.bip$Network, vertex.size = 5, layout = layout_with_kk)
+plot(liver.module.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk)
+plot(liver.module.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk)
+dev.off()
+```
+
+#### Module Correlation to Traits
+
+```{r plot_liver_module_cor}
+liver.me <- get.xz(x.mat = liver.net$MEs, z.mat = eig)
+liver.me.cor <- pairwise_cor_mat(liver.me$X, liver.me$Z)
+pheatmap(liver.me.cor, cluster_col = FALSE)
+
+liver.me <- get.xz(x.mat = liver.net$MEs, z.mat = scaled.pheno)
+liver.me.cor <- pairwise_cor_mat(liver.me$X, liver.me$Z)
+pheatmap(liver.me.cor, cluster_col = FALSE)
+```
+
+
+### Adipose {.tabset .tabset-fade .tabset-pills}
+```{r cluster_adipose_nonzero}
+non.zero.adipose <- which(rowSums(adipose.results$u) != 0)
+
+adipose.net.file <- get.files(here("Results", "CCA_Clusters", paste0("adipose_", file.text)),
+want = c("net", "rds"), dont.want = "pdf", full.names = TRUE)
+if(length(adipose.net.file) == 0){
+    adipose.net.file = CoExpNets::getDownstreamNetwork(tissue="adipose", n.iterations=20,
+        net.type = "signed", debug=FALSE, expr.data = adj.adipose[,non.zero.adipose],
+        job.path= here("Results", "CCA_Clusters", paste0("adipose_", file.text)), 
+        save.plots = FALSE, fullAnnotation = F)
+}
+adipose.net <- readRDS(adipose.net.file)
+adipose.genes <- module_genes(adipose.net)
+
+adipose.net.enrich.file <-  here("Results", "CCA_Clusters", 
+paste0("adipose.", file.text, ".module.enrich.RDS"))
+if(!file.exists(adipose.net.enrich.file)){
+    adipose.enrich <- lapply(adipose.genes, function(x) gost(x, organism = "mmusculus",
+    sources = c("GO", "KEGG", "REACTOME")))
+    saveRDS(adipose.module.enrich, adipose.net.enrich.file)
+}else{
+    adipose.module.enrich <- readRDS(adipose.net.enrich.file)
+}
+```
+
+#### Module Enrichment Heatmap
+
+```{r plot_adipose_module_enrich, fig.height = 15, fig.width = 7}
+adipose.module.mat <- plot.enrichment.group(adipose.module.enrich, 
+max.term.size = 2000, n.terms = num.terms)
+```
+
+#### Module Enrichment Networks
+
+```{r plot_adipose_module_nets, fig.height = 10, fig.width = 10}
+adipose.module.bip <- enrich_bipartite_proj(adipose.module.mat, vertex.col = "gray", 
+label.vertex = colnames(adipose.module.mat), label.col = "lightblue", 
+search.name = "full")
+
+plot(adipose.module.bip$Network, vertex.size = 5, layout = layout_with_kk)
+plot(adipose.module.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk)
+plot(adipose.module.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk)
+
+pdf(here("Results", "CCA_Clusters", paste0("module.enrich.", file.text, "adipose.pdf")), 
+width = 30, height = 30)
+plot(adipose.module.bip$Network, vertex.size = 5, layout = layout_with_kk)
+plot(adipose.module.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk)
+plot(adipose.module.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk)
+dev.off()
+```
+
+#### Module Correlations with Traits
+
+```{r plot_adipose_me_cor}
+adipose.me <- get.xz(x.mat = adipose.net$MEs, z.mat = eig)
+adipose.me.cor <- pairwise_cor_mat(adipose.me$X, adipose.me$Z)
+pheatmap(adipose.me.cor, cluster_col = FALSE)
+
+adipose.me <- get.xz(x.mat = adipose.net$MEs, z.mat = scaled.pheno)
+adipose.me.cor <- pairwise_cor_mat(adipose.me$X, adipose.me$Z)
+pheatmap(adipose.me.cor, cluster_col = FALSE)
+```
+
+### Islet {.tabset .tabset-fade .tabset-pills}
+```{r cluster_islet_nonzero}
+non.zero.islet <- which(rowSums(islet.results$u) != 0)
+
+islet.net.file <- get.files(here("Results", "CCA_Clusters", paste0("islet_", file.text)),
+want = c("net", "rds"), dont.want = "pdf", full.names = TRUE)
+if(length(islet.net.file) == 0){
+    islet.net.file = CoExpNets::getDownstreamNetwork(tissue = "islet", n.iterations=20,
+        net.type = "signed", debug=FALSE, expr.data = adj.islet[,non.zero.islet],
+        job.path= here("Results", "CCA_Clusters", paste0("islet_", file.text)), 
+        save.plots = FALSE, fullAnnotation = F)
+}
+islet.net <- readRDS(islet.net.file)
+islet.genes <- module_genes(islet.net)
+
+islet.net.enrich.file <-  here("Results", "CCA_Clusters", 
+paste0("islet.", file.text, ".module.enrich.RDS"))
+if(!file.exists(islet.net.enrich.file)){
+    islet.enrich <- lapply(islet.genes, function(x) gost(x, organism = "mmusculus",
+    sources = c("GO", "KEGG", "REACTOME")))
+    saveRDS(islet.module.enrich, islet.net.enrich.file)
+}else{
+    islet.module.enrich <- readRDS(islet.net.enrich.file)
+}
+```
+
+#### Module Enrichment Heatmap
+
+```{r plot_islet_module_enrich, fig.height = 15, fig.width = 7}
+islet.module.mat <- plot.enrichment.group(islet.module.enrich, 
+max.term.size = 2000, n.terms = num.terms)
+```
+
+#### Module Enrichment Networks
+
+```{r plot_islet_module_proj, fig.width = 10, fig.height = 10}
+islet.module.bip <- enrich_bipartite_proj(islet.module.mat, vertex.col = "gray", 
+label.vertex = colnames(islet.module.mat), label.col = "lightblue", 
+search.name = "full")
+
+plot(islet.module.bip$Network, vertex.size = 5, layout = layout_with_kk)
+plot(islet.module.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk)
+plot(islet.module.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk)
+
+pdf(here("Results", "CCA_Clusters", paste0("module.enrich.", file.text, ".islet.pdf")), 
+width = 30, height = 30)
+plot(islet.module.bip$Network, vertex.size = 5, layout = layout_with_kk)
+plot(islet.module.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk)
+plot(islet.module.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk)
+dev.off()
+```
+
+#### Module Correlations with Traits
+
+```{r plot_islet_module_cor}
+islet.me <- get.xz(x.mat = islet.net$MEs, z.mat = eig)
+islet.me.cor <- pairwise_cor_mat(islet.me$X, islet.me$Z)
+pheatmap(islet.me.cor, cluster_col = FALSE)
+
+islet.me <- get.xz(x.mat = islet.net$MEs, z.mat = scaled.pheno)
+islet.me.cor <- pairwise_cor_mat(islet.me$X, islet.me$Z)
+pheatmap(islet.me.cor, cluster_col = FALSE)
+```
+
+
+## Older code for optimizing penalties based on max can cor alone
+
+With different trait sets, correlations are not always significant,
+so now we are using a significance-first approach.
+
+```{r pen_opt}
+liver.grid.results <- opt_can_cor(liver.mats, 
+num.components = ncol(liver.mats$Z), 
+pen_seq = penalty.seq, search_grid = search_grid, 
+filename = here("Results", "CCA_Clusters", paste0("liver.", file.text, ".sweep.RDS")))
+liver.trait.penalty <- get_best_penalty(liver.grid.results)
+```

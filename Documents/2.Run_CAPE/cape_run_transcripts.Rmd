@@ -23,12 +23,14 @@ library("here")
 ```{r set_params}
 #geno.type = "transcripts"
 geno.type = "modules"
-exp.name = "multi_tissue"
+#exp.name = "multi_tissue_test"
+exp.name = "CCA"
 ex.path <- here("Results", "CAPE", paste(geno.type, exp.name, sep = "_"))
 
-args <- commandArgs(trailingOnly=T)
-delete.old.results <- as.logical(args[1])
+#args <- commandArgs(trailingOnly=T)
+#delete.old.results <- as.logical(args[1])
 #delete.old.results = FALSE
+delete.old.results <- TRUE
 ```
 
 ```{r load_code}
@@ -76,23 +78,23 @@ if(delete.old.results){
     }
 }
 
+#copy over kinship matrix in case we want to use it
 link.line <- paste("ln -s", here("Data", "cross_kinship.RData"), ex.path)
 system(link.line)
 
-#sink(file.path(ex.path, "progress.txt"))
+sink(file.path(ex.path, "progress.txt"))
 
 final.cross <- run_cape(pheno_obj = cross, geno_obj = geno, p_or_q = 0.05, 
 verbose = TRUE, results_path = ex.path, 
 param_file = file.path(ex.path, "cape.parameters.yml"))
 
-#sink(NULL)
+sink(NULL)
 
 final.cross <- readRDS(file.path(ex.path, "cross.RData"))
 
+pdf(file.path(ex.path, "Variant_Influences_Labeled.pdf"), width = 18, height = 12)
+par(mar = c(35, 35, 4, 4))
 plot_variant_influences(final.cross, show_marker_labels =TRUE)
-
-final.geno <- readRDS(file.path(ex.path, "cross_geno.RData"))
-write.data.for.shiny(data.obj = final.cross, geno.obj = final.geno, 
-name = paste0(exp.name, "_for_shiny"), path = ex.path)
+dev.off()
 ```
 

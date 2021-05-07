@@ -9,6 +9,14 @@
 plot.enrichment.group <- function(enrichment.list, n.terms = 10, max.char = 40, 
 cluster_cols = TRUE, cluster_rows = TRUE, transformation = NULL, plot.results = TRUE,
 plot.label = NULL, sort.by = c("p_value", "default"), max.term.size = NULL){
+	if(is.null(enrichment.list)){
+		plot.text("No enrichment")
+		return(NULL)
+	}
+
+	list.len <- sapply(enrichment.list, length)
+	has.results <- which(list.len != 0)
+	enrichment.list <- enrichment.list[has.results]
 
 	if(class(enrichment.list[[1]]) == "list"){
 		enrich.list <- lapply(enrichment.list, function(x) x[[1]])

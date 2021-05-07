@@ -34,8 +34,6 @@ eig_which:
  - 1
  - 2
  - 3
- - 4
- - 5 
 pval_correction:
  - fdr 
 use_kinship:
@@ -49,7 +47,7 @@ locus:
 save_results:
  - true
 use_saved_results:
- - true
+ - false
 
 #================================================
 # Single Scan Parameters 
@@ -78,4 +76,4 @@ max_pair_cor:
 pairscan_null_size:
  - 10000
 transform_to_phenospace:
- - false
+ - true

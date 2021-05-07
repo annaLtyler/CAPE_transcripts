@@ -447,3 +447,97 @@ gene.cor <- cor(t(tfidf.mat))
 diag(gene.cor)  <- 0
 pheatmap(gene.cor)
 ```
+
+## Enrichment stuff from cape module follow-up
+
+## Module Enrichment  {.tabset .tabset-fade .tabset-pills}
+
+The following plots show enrichments for each transcript module.
+
+
+```{r get_mod_enrich}
+all.var <- ls()
+  data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
+  if(!data.loaded){
+    islets <- load(here("data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
+    }
+  transcript.info <- dataset.islet.rnaseq$annots
+  u_modules <- unique(transcript.info[,"module"])
+  module_transcripts <- lapply(u_modules, function(x) transcript.info[which(transcript.info[,"module"] == x),"symbol"])
+  names(module_transcripts) <- u_modules
+  module.enrich.file <- here("Results", exp.dir, "Module.Enrichment.RDS")
+  if(!file.exists(module.enrich.file)){
+    module.enrich <- lapply(module_transcripts, function(x) gost(x, "mmusculus", sources = "GO"))
+    names(module.enrich) <- paste0("ME", u_modules)
+    saveRDS(module.enrich, module.enrich.file)
+  }else{
+    module.enrich <- readRDS(module.enrich.file)
+  }
+```
+
+```{r go_sum}
+summ_go <- function(enrichment.table, n.terms = 10){
+  if(is.null(enrichment.table)){
+    return("none")
+  }else{
+    if(class(enrichment.table) == "list"){
+      enrichment.table <- enrichment.table[[1]]
+    }
+    terms <- enrichment.table[order(-log10(as.numeric(enrichment.table[,"p_value"])), decreasing = TRUE),"term_name"]
+    split.terms <- strsplit(terms, " ")
+    summ_term <- paste(unique(unlist(split.terms[1:n.terms])), collapse = "_")
+    return(summ_term)
+  }
+}
+
+enrich.summ <- sapply(module.enrich, function(x) summ_go(x, 2))
+```
+
+
+```{r plot_mod_enrich, results = "asis", fig.width = 10, fig.height = 7}
+
+for(i in 1:length(module.enrich)){
+  cat("###", names(module.enrich)[i], "\n")
+  #quartz(width = 10, height = 7)
+  #par(mfrow = c(1,2))
+  plot.enrichment(module.enrich[[i]], num.terms = 20, order.by = "p_value",
+  plot.label = "")
+  
+  #split.terms <- unlist(strsplit(module.enrich[[i]]$result[,"term_name"], " "))
+  #par(mar = c(0,0,0,0))
+  #wordcloud(split.terms)
+  cat("\n\n")
+}
+
+```
+
+## Module Enrichment Based on Main Effects  {.tabset .tabset-fade .tabset-pills}
+
+We will go through each trait and examine the networks associated with
+upregulation and downregulation of each. The following heatmaps show
+functional enrichments for ordered lists of transcripts that are associated
+with up and down regulation of each eigentrait. There is a lot of overlap 
+because the same transcripts are represented in each eigentrait.
+
+```{r trait_networks, results = "asis", fig.height = 7, fig.width = 7}
+
+for(i in 1:ncol(just.main)){
+  cat("### ET", i, "\n")
+  up.locale <- which(just.main[,i] > 0)
+  down.locale <- which(just.main[,i] < 0)
+
+  up.mod.locale <- match(rownames(just.main)[up.locale], names(module.enrich))
+  up.mod.locale <- up.mod.locale[which(!is.na(up.mod.locale))]
+  down.mod.locale <- match(rownames(just.main)[down.locale], names(module.enrich))
+  down.mod.locale <- down.mod.locale[which(!is.na(down.mod.locale))]
+  #quartz(width = 7, height = 20)
+  all.up <- Reduce("rbind", lapply(module.enrich[up.locale], function(x) x$result))
+  all.down <- Reduce("rbind", lapply(module.enrich[down.locale], function(x) x$result))
+  
+  enrich.group <- list("Up" = all.up, "Down" = all.down)
+  plot.enrichment.group(enrich.group, plot.label = colnames(just.main)[i], 
+  n.terms = 20, sort.by = "p_value")
+  cat("\n\n")
+}
+
+```

@@ -1,0 +1,8 @@
+## Steps to Re-Run Analysis and Create Manuscript ##
+
+##=====================================================================================##
+## Traits and Transcripts with CCA                                                     ##
+##=====================================================================================##
+
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args "eigentraits"
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args "traits"

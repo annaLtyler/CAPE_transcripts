@@ -1,0 +1,1402 @@
+---
+title: "Clustering transcripts with CCA"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+This workflow explores the possibility of using CCA to transcript clusters
+that correlate with specific traits.
+
+```{r get_args}
+args <- commandArgs(trailingOnly=T)
+pheno_type <- args[1]
+
+if(is.na(pheno_type)){
+    #pheno_type <- "eigentraits"
+    pheno_type <- "traits"
+}
+```
+
+```{r load_code}
+is.interactive = FALSE
+#is.interactive = TRUE
+library("here")
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
+"RColorBrewer", "igraph", "biomaRt", "corpcor")
+load_libraries(all.packages)
+
+all.var <- ls()
+if(length(which(all.var == "mus")) == 0){
+    mus <- useEnsembl(biomart="ensembl", dataset="mmusculus_gene_ensembl")
+}
+
+```
+
+
+```{r read_data}
+all.var <- ls()
+data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
+if(!data.loaded){
+  islets <- load(here("Data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
+  other.tissues <- load(here("Data", "attie_all_qtl_viewer_v10_04.20.2020.RData"))
+  }
+```
+
+## Filter Expression
+Filter the expression matrices to include only genes that have at least
+a minimum amount of expression. 
+
+Here we use the raw expression matrix to select transcripts from the rank Z
+normalized expression matrix. 
+
+```{r adjust_covar}
+min.mean = 10
+
+islet.trans <- which(colMeans(dataset.islet.rnaseq$data$raw) > min.mean)
+islet.expr <- dataset.islet.rnaseq$data$rz[,islet.trans]
+islet.covar <- dataset.islet.rnaseq$covar.matrix
+adj.islet <- adjust(islet.expr, islet.covar)
+
+adipose.trans <- which(colMeans(dataset.DO.Cube.Adipose$data$raw) > min.mean)
+adipose.expr <- dataset.DO.Cube.Adipose$data$rz[,adipose.trans]
+adipose.covar <- dataset.DO.Cube.Adipose$covar.matrix
+adj.adipose <- adjust(adipose.expr, adipose.covar)
+
+liver.trans <- which(colMeans(dataset.DO.Cube.Liver$data$raw) > min.mean)
+liver.expr <- dataset.DO.Cube.Liver$data$rz[,liver.trans]
+liver.covar <- dataset.DO.Cube.Liver$covar.matrix
+adj.liver <- adjust(liver.expr, liver.covar)
+```
+
+
+The data set called Attie\_DO378\_eQTL\_viewer\_v6.Rdata contains the following
+elements:
+
+1. ensembl.version: the version of ensembl used
+2. K: a list of kinship LOCO matrices
+3. markers: a table of markers in the data set with names, chromosome, and position in 
+both bp and cM
+4. dataset.islet.modules: results from WGCNA
+5. dataset.clinical.phenotypes: clinical phenotypes including annotations and lod peaks
+6. genoprobs: genotype probabilities by chromosome (~4k markers per chromosome)
+7. map: marker map from R/qtl
+8. dataset.islet.rnaseq: rna seq data set inclusing annotations and lod peaks
+9. dataset.islet.hotspots: annotations of QTL/eQTL hotspots 
+
+Extract clinical traits, expression traits, and covariates from the 
+islet data set. Adjust for covariates.
+
+```{r pheno}
+pheno <- as.matrix(dataset.clinical.phenotypes$pheno[,12:(ncol(dataset.clinical.phenotypes$pheno)-1)])
+num.pheno <- apply(pheno, 2, as.numeric)
+dimnames(num.pheno) <- dimnames(pheno)
+covar <- dataset.clinical.phenotypes$covar
+
+adj.pheno <- adjust(pheno, covar)
+scaled.pheno <- apply(adj.pheno, 2, scale)
+dimnames(scaled.pheno) <- dimnames(pheno)
+gene.table <- dataset.islet.rnaseq$annot.mrna
+```
+
+## Look at transcript overlap and correlations between tissues
+
+```{r transcript_overlap}
+transcript.list <- list("Islet" = colnames(adj.islet), 
+"Adipose" = colnames(adj.adipose), "Liver" = colnames(adj.liver)) 
+plotVenn(transcript.list)
+
+#up <- UpSetR::fromList(transcript.list)
+#UpSetR::upset(up, order.by = "degree", mb.ratio = c(0.5, 0.5))
+
+common.transcripts <- Reduce("intersect", transcript.list)
+adi.common.idx <- match(common.transcripts, colnames(adj.adipose))
+liver.common.idx <- match(common.transcripts, colnames(adj.liver))
+islet.common.idx <- match(common.transcripts, colnames(adj.islet))
+adi.liver.comp <- get.xz(adj.adipose[,adi.common.idx], adj.liver[,liver.common.idx])
+adi.islet.comp <- get.xz(adj.adipose[,adi.common.idx], adj.islet[,islet.common.idx])
+islet.liver.comp <- get.xz(adj.islet[,islet.common.idx], adj.liver[,liver.common.idx])
+adi.liver.cor <- sapply(1:length(common.transcripts), 
+function(x) cor(adi.liver.comp$X[,x], adi.liver.comp$Z[,x]))
+adi.islet.cor <- sapply(1:length(common.transcripts), 
+function(x) cor(adi.islet.comp$X[,x], adi.islet.comp$Z[,x]))
+islet.liver.cor <- sapply(1:length(common.transcripts), 
+function(x) cor(islet.liver.comp$X[,x], islet.liver.comp$Z[,x]))
+
+#quartz(height = 7, width = 3.5)
+par(mfrow = c(3,1), mar = c(0, 2, 0, 2))
+a <- hist(adi.liver.cor, xlim = c(-1, 1), axes = FALSE, xlab = "", ylab = "", main = "", breaks = 100, border = NA)
+points(x = median(adi.liver.cor), y = 0, pch = "*", col = "#2b8cbe", cex = 3)
+text(x = -0.1, y = max(a$counts)*0.75, "Adipose-Liver", adj = 1, cex = 2)
+
+a <- hist(adi.islet.cor, xlim = c(-1, 1), axes = FALSE, xlab = "", ylab = "", main = "", breaks = 100, border = NA)
+points(x = median(adi.islet.cor), y = 0, pch = "*", col = "#2b8cbe", cex = 3)
+text(x = -0.1, y = max(a$counts)*0.75, "Adipose-Islet", adj = 1, cex = 2)
+
+par(mar = c(4, 2, 0, 2))
+a <- hist(islet.liver.cor, xlim = c(-1, 1), axes = FALSE, xlab = "", ylab = "", main = "", breaks = 100, border = NA)
+points(x = median(islet.liver.cor), y = 0, pch = "*", col = "#2b8cbe", cex = 3)
+text(x = -0.1, y = max(a$counts)*0.75, "Islet-Liver", adj = 1, cex = 2)
+
+axis(1, cex.axis = 2)
+par(xpd = NA)
+abline(v = 0, col = "darkgray", lty = 2)
+par(xpd = FALSE)
+
+trait.order <- hclust(dist(t(scaled.pheno)))$order
+layout(matrix(c(1,2), ncol = 2), widths = c(0.8, 0.2))
+par(mar = c(8, 8, 2, 2))
+#imageWithText(cor(scaled.pheno, use = "pairwise.complete.obs")[trait.order, trait.order],
+#show.text = FALSE, col.scale = "blue")
+#par(mar = c(8,2,2,2))
+#imageWithTextColorbar(cor(scaled.pheno, use = "pairwise.complete.obs"), 
+#col.scale = "blue", cex = 1.5)
+
+pheatmap(cor(scaled.pheno, use = "pairwise.complete.obs")[trait.order, trait.order],
+cluster_rows = FALSE, cluster_cols = FALSE)
+```
+
+We also looked at the partial correlation of all pairs of variables.
+To do this, we used pcor.shrink from corpcor.
+
+The heat map below shows the full partial correlation matrix. It is
+dominated by the ex vivo insulin traits. WPIC is basically perfectly
+correlated with both insulin per islet and the number, as you might
+imagine. Insulin per islet is perfectly negatively correlated with 
+number of islets. So as there are fewer islets, each one secretes 
+more insulin.
+
+```{r par_cor}
+test.decomp <- plot.decomp(scaled.pheno, plot.results = FALSE)
+par.cor <- pcor.shrink(scaled.pheno[test.decomp$rows.used,c(1,3:20)]) #take out derived ex vivo trait
+pheatmap(par.cor)
+```
+
+The heat map below shows the partial correlation traits with the
+ex vivo traits removed so we can better see the other correlations.
+
+This shows some potentially interesting patterns. 
+Glu_tAUC and Ins_tAUC are negatively correlated. That is, the larger
+your insulin response, the faster your glucose goes down. And the smaller 
+your insulin response, the more slowly your glucose goes down. This is how 
+it should be, I think. 
+
+HOMA_IR, insulin resistance, is positively correlated with Glu_tAUC,
+which makes sense. The more resistant you are, the slower your glucose
+will go down. 
+
+HOMA_B, beta cell function, is negatively correlated with Glu_tAUC.
+The worse your beta cell function, the less insulin you produce, and
+the more slowly your glucose goes down.
+
+However, HOMA_IR and HOMA_B are still positively correlated. So beta 
+cell function is still compensating for insulin resistance in this 
+population.
+
+Weight at different times has different correlations with insulin.
+There could be interesting causal relationships here in both directions.
+But it's complicated.
+
+Food intake is negatively correlated with insulin at 10 weeks, and
+positively correlated with weight at 10 weeks. So more food is 
+increasing weight, but potentially reducing islet function, and
+reducing insulin production.
+
+```{r par_cor_trimmed}
+col.order <- hclust(dist(par.cor))$order
+trimmed.par.cor <- par.cor
+diag(trimmed.par.cor) <- NA
+imageWithText(trimmed.par.cor[col.order, col.order], split.at.vals = TRUE,
+col.scale = c("blue", "brown"), grad.dir = "ends", sig.digs = 2, col.text.shift = -1,
+row.text.shift = -1)
+```
+
+## Identify covariation in transcripts and traits using CCA
+
+This is an experimental process. I want to see if we can use CCA to identify
+composite transcripts that are correlated with composite traits.
+
+Get the X and Z matrices for putting into PMCA.
+X is the transcript matrix for the appropriate tissue, 
+and Z is the trait matrix (traits, or ETs).
+
+The function get.xz aligns the two matrices by individual.
+If pheno_type is set to traits, use the trait matrix, if it is
+set to eigentraits, use the eigentrait matrix.
+
+We will be playing around a lot with different trait inputs.
+The following code sets up which traits go into the CCA.
+
+```{r set_traits}
+#keep.traits <- grep("TG", colnames(scaled.pheno)) #Triglycerides only
+#keep.traits <- sapply(c("HOMA_IR_0min", "HOMA_B_0min", "Glu_tAUC", "Ins_tAUC"), function(x) which(colnames(scaled.pheno) == x))
+#keep.traits <- sapply(c("WPIC", "Ins_per_islet", "num_islets"), function(x) which(colnames(scaled.pheno) == x))
+keep.traits <- 1:17
+adj.traits <- setdiff(1:20, keep.traits) #traits to adjust for, set to NULL to not adjust
+
+if(length(adj.traits) > 0){
+    cca.pheno <- adjust(scaled.pheno[,keep.traits], scaled.pheno[,adj.traits])
+}else{
+    cca.pheno <- scaled.pheno[,keep.traits]
+}
+```
+
+```{r tissue_xz}
+pheno.decomp <- plot.decomp(cca.pheno, pc = ncol(cca.pheno), plot.results = FALSE)
+eig <- pheno.decomp$u
+rownames(eig) <- rownames(cca.pheno)[pheno.decomp$rows.used]
+colnames(eig) <- paste0("ET", 1:ncol(eig))
+
+ET.loadings <- pheno.decomp$v
+rownames(ET.loadings) <- colnames(cca.pheno)
+colnames(ET.loadings) <- paste0("ET", 1:ncol(ET.loadings))
+pheatmap(ET.loadings, cluster_rows = FALSE, cluster_cols = FALSE)
+
+if(pheno_type == "traits"){
+    islet.mats  <- get.xz(x.mat = adj.islet, z.mat = cca.pheno)
+    adipose.mats  <- get.xz(x.mat = adj.adipose, z.mat = cca.pheno)
+    liver.mats  <- get.xz(x.mat = adj.liver, z.mat = cca.pheno)
+    file.text <- "trait"
+}else{
+    islet.mats  <- get.xz(x.mat = adj.islet, z.mat = eig)
+    adipose.mats  <- get.xz(x.mat = adj.adipose, z.mat = eig)
+    liver.mats  <- get.xz(x.mat = adj.liver, z.mat = eig)
+    file.text <- "ET"
+}
+
+```
+
+
+## Penalty Optimization
+
+In the code below we do a sweep over a grid of penalties to look for 
+penalty combinations that maximize the correlation between latent
+transcripts and latent traits.
+
+```{r opt_by_can_cor}
+get_trait_description <- function(tissue.mats, tissue.results, short_version = FALSE){
+    if(short_version){
+        trait.description <- paste0("Composite_Trait", 1:ncol(tissue.mats$Z))
+    }else{
+        trait.names <- apply(tissue.results$v, 2, function(x) colnames(tissue.mats$Z)[which(x != 0)])
+        trait.vals <- apply(tissue.results$v, 2, function(x) x[which(x != 0)])
+        trait.order <- lapply(trait.vals, function(x) order(abs(x)))
+        trait.description <- unlist(lapply(1:length(trait.names), function(x) paste(trait.names[[x]][trait.order[[x]]], collapse = "-")))
+    }
+    return(trait.description)
+}
+
+#get latent variables and variance explained for each pair
+get_latent_var <- function(tissue.mats, tissue.results){
+    latent.trans <- apply(tissue.results$u, 2, function(x) tissue.mats$X %*% x)
+    latent.traits <- apply(tissue.results$v, 2, function(x) tissue.mats$Z %*% x)
+    trait.desc <- get_trait_description(tissue.mats, tissue.results)
+    r2 <- sapply(1:ncol(latent.trans), function(x) summary(lm(latent.traits[,x]~latent.trans[,x]))$adj.r.squared)
+    names(r2) <- trait.desc
+    result <- list("Latent_Traits" = latent.traits, "Latent_Transcripts" = latent.trans,
+    "adj.r.squared" = r2)
+    return(result)    
+}
+
+
+get_best_penalty  <- function(tissue.grid.results){
+    penalty.labels <- apply(tissue.grid.results[[1]], 1, function(x) paste(x, collapse = "-"))
+    tissue.grid.avg <- apply(tissue.grid.results[[2]], 1, max)
+    penalties <- tissue.grid.results[[1]]
+
+    median.penalty.mat <- matrix(NA, nrow = length(unique(penalties[,1])), 
+    ncol = length(unique(penalties[,2])))
+    x.pen <- sort(unique(penalties[,1]))
+    z.pen <- sort(unique(penalties[,2]))
+    rownames(median.penalty.mat) <- paste("Trait_Penalty", z.pen, sep = "_")
+    colnames(median.penalty.mat) <- paste("Transcript_Penalty", x.pen, sep = "_")
+    for(i in 1:nrow(penalties)){
+        x.idx <- which(x.pen == penalties[i,1])
+        z.idx <- which(z.pen == penalties[i,2])
+        median.penalty.mat[z.idx, x.idx] <- tissue.grid.avg[i]
+    }
+    pheatmap(median.penalty.mat, cluster_rows = FALSE, cluster_cols = FALSE,
+    display_numbers = TRUE)
+
+    best.tissue.idx <- which.max(tissue.grid.avg)
+    best.tissue.penalty <- tissue.grid.results[[1]][best.tissue.idx,]
+    #box.col <- rep("gray", length(tissue.grid.avg))
+    #box.col[best.islet.idx] <- "red"
+    #boxplot(t(tissue.grid.results[[2]]), 
+    #names = penalty.labels,
+    #las = 2, cex.axis = 0.8, col = box.col)
+    return(best.tissue.penalty)
+}
+
+get_perm_grid <- function(tissue.perm){
+    xpen <- tissue.perm$penaltyxs
+    zpen <- tissue.perm$penaltyzs
+    uxpen <- sort(unique(xpen))
+    uzpen <- sort(unique(zpen))
+
+    zmat <- cor.mat <- p.mat <- matrix(NA, nrow = length(uxpen), ncol = length(uzpen))
+    rownames(zmat) <- rownames(cor.mat) <- rownames(p.mat) <- uxpen
+    colnames(zmat) <- colnames(cor.mat) <- colnames(p.mat) <- uzpen
+    for(i in 1:length(xpen)){
+        row.idx <- which(uxpen == xpen[i])
+        col.idx <- which(uzpen == zpen[i])
+        zmat[row.idx, col.idx] <- tissue.perm$zstats[i]
+        cor.mat[row.idx, col.idx] <- tissue.perm$cors[i]
+        p.mat[row.idx, col.idx] <- tissue.perm$pvals[i]
+    }
+    result <- list("Cor" = cor.mat, "Z" = zmat, "p" = p.mat)
+    return(result)
+}
+```
+
+## Penalty Optimization {.tabset .tabset-fade .tabset-pills}
+
+For each set of transcripts, we performed sparse CCA over a series of penalties
+to identify the penalty combinations that simultaneously yielded a significant
+correlation and maximized the canonical correlation coefficient.
+
+### Islet Penalty Optimization
+
+```{r islet_penalty_opt, fig.width = 6, fig.height = 6}
+penalty.seq <- seq(0, 1, 0.1)
+
+#run permutations over the grid
+islet.perm.file <- here("Results", "CCA_Clusters", paste0("islet.", file.text, ".perm.RDS"))
+islet.perm <- CCA_permute_grid(islet.mats$X, islet.mats$Z, 
+filename = islet.perm.file, search_grid = TRUE, nperms = 10)
+
+islet.perm.results <- get_perm_grid(islet.perm)
+par(mfrow = c(2,2))
+imageWithText(islet.perm.results$Z, col.scale = "red", main = "Z statistics")
+imageWithText(islet.perm.results$Cor, col.scale = "blue", main = "Correlation")
+imageWithText(-log10(islet.perm.results$p+1e-6), col.scale = "purple", main = "-log10(p)")
+plot(abs(islet.perm.results$Cor), -log10(islet.perm.results$p+1e-6), 
+xlab = "Correlation",ylab = "-log10(p)")
+
+sig.cor.idx <- which(islet.perm$pvals < 0.05)
+
+if(length(sig.cor.idx) > 0){
+    best.cor.idx <- which.max(islet.perm$ft.cors[sig.cor.idx])
+    islet.trait.penalty <- c("X" = islet.perm$penaltyxs[sig.cor.idx[best.cor.idx]], 
+    "Y" = islet.perm$penaltyzs[sig.cor.idx[best.cor.idx]])
+}else{
+    islet.trait.penalty = NULL
+}
+```
+
+
+### Adipose Penalty Optimization
+
+```{r adipose_penalty_opt, fig.width = 6, fig.height = 6}
+adipose.perm.file <- here("Results", "CCA_Clusters", paste0("adipose.", file.text, ".perm.RDS"))
+adipose.perm <- CCA_permute_grid(adipose.mats$X, adipose.mats$Z, 
+filename = adipose.perm.file, search_grid = TRUE, nperms = 10)
+
+adipose.perm.results <- get_perm_grid(adipose.perm)
+par(mfrow = c(2,2))
+imageWithText(adipose.perm.results$Z, col.scale = "red", main = "Z statistics")
+imageWithText(adipose.perm.results$Cor, col.scale = "blue", main = "Correlation")
+imageWithText(-log10(adipose.perm.results$p+1e-6), col.scale = "purple", main = "-log10(p)")
+plot(abs(adipose.perm.results$Cor), -log10(adipose.perm.results$p+1e-6), 
+xlab = "Correlation",ylab = "-log10(p)")
+
+sig.cor.idx <- which(adipose.perm$pvals < 0.05)
+if(length(sig.cor.idx) > 0){
+    max.cor <- max(adipose.perm$ft.cors[sig.cor.idx])
+    best.cor.idx <- which(adipose.perm$ft.cors[sig.cor.idx] == max.cor)
+    adipose.trait.penalty <- c("X" = adipose.perm$penaltyxs[sig.cor.idx[best.cor.idx]], 
+    "Y" = adipose.perm$penaltyzs[sig.cor.idx[best.cor.idx]])
+}else{
+    adipose.trait.penalty <- NULL
+}
+```
+
+
+### Liver Penalty Optimization
+
+```{r liver_penalty_opt, fig.width = 6, fig.height = 6}
+liver.perm.file <- here("Results", "CCA_Clusters", paste0("liver.", file.text, ".perm.RDS"))
+liver.perm <- CCA_permute_grid(liver.mats$X, liver.mats$Z, 
+filename = liver.perm.file, search_grid = TRUE, nperms = 10)
+
+liver.perm.results <- get_perm_grid(liver.perm)
+#quartz(widdth = 6, height = 6)
+par(mfrow = c(2,2))
+imageWithText(liver.perm.results$Z, col.scale = "red", main = "Z statistics")
+imageWithText(liver.perm.results$Cor, col.scale = "blue", main = "Correlation")
+imageWithText(-log10(liver.perm.results$p+1e-6), col.scale = "purple", main = "-log10(p)")
+plot(abs(liver.perm.results$Cor), -log10(liver.perm.results$p+1e-6), 
+xlab = "Correlation",ylab = "-log10(p)")
+
+sig.cor.idx <- which(liver.perm$pvals < 0.05)
+if(length(sig.cor.idx) > 0){
+    best.cor.idx <- which.max(liver.perm$ft.cors[sig.cor.idx])
+    liver.trait.penalty <- c("X" = liver.perm$penaltyxs[sig.cor.idx[best.cor.idx]], 
+    "Y" = liver.perm$penaltyzs[sig.cor.idx[best.cor.idx]])
+}else{
+    liver.trait.penalty <- NULL
+}
+```
+
+## CCA on all tissues
+
+We then ran CCA with the optimized penalties from above.
+
+```{r run_CCA}
+num.components = ncol(islet.mats$Z)
+
+if(!is.null(islet.trait.penalty)){
+    islet.CCA.file <- here("Results", "CCA_clusters", paste0("islet.", file.text, ".CCA.RDS"))
+    if(!file.exists(islet.CCA.file)){
+        islet.results <- CCA(islet.mats$X, islet.mats$Z, 
+        typex = "standard", typez = "standard", K = num.components, 
+        penaltyx = islet.trait.penalty[1], penaltyz = islet.trait.penalty[2], 
+        niter = 100, trace = FALSE)
+        saveRDS(islet.results, islet.CCA.file)
+    }else{
+        islet.results <- readRDS(islet.CCA.file)
+    }
+}else{
+    islet.results <- NULL
+}
+
+if(!is.null(adipose.trait.penalty)){
+    adipose.CCA.file <- here("Results", "CCA_clusters", paste0("adipose.", file.text, ".CCA.RDS"))
+    if(!file.exists(adipose.CCA.file)){
+        adipose.results <- CCA(adipose.mats$X, adipose.mats$Z, 
+        typex = "standard", typez = "standard", K = num.components, 
+        penaltyx = adipose.trait.penalty[1], penaltyz = adipose.trait.penalty[2], 
+        niter = 100, trace = FALSE)
+        saveRDS(adipose.results, adipose.CCA.file)
+    }else{
+        adipose.results <- readRDS(adipose.CCA.file)
+    }
+}else{
+    adipose.results <- NULL
+}
+
+if(!is.null(liver.trait.penalty)){
+    liver.CCA.file <- here("Results", "CCA_clusters", paste0("liver.", file.text, ".CCA.RDS"))
+    if(!file.exists(liver.CCA.file)){
+        liver.results <- CCA(liver.mats$X, liver.mats$Z, 
+        typex = "standard", typez = "standard", K = num.components, 
+        penaltyx = liver.trait.penalty[1], penaltyz = liver.trait.penalty[2], 
+        niter = 100, trace = FALSE)
+        saveRDS(liver.results, liver.CCA.file)
+    }else{
+        liver.results <- readRDS(liver.CCA.file)
+    }
+}else{
+    liver.results <- NULL
+}
+```
+
+## Transcripts and Traits by Tissue {.tabset .tabset-fade .tabset-pills}
+
+The following plot summarize information from the CCA results for 
+each tissue. 
+
+The first heatmap shows the loadings of each raw trait
+on each composite trait. They are quite different between the tissues.
+
+The boxplot shows summaries for the contributions of each trait
+to get an overall idea of which traits contributed.
+
+The barplot shows how many transcripts had non-zero loadings on each 
+composite trait. The negative and positive loadings are shown separately.
+
+The next two heatmaps shows the correlation matrix between transcript
+loading patterns for the traits, and the jaccard index matrix for the
+transcripts assigned to each trait respectively.
+ 
+```{r transcript_num, fig.width = 7, fig.height = 6}
+
+describe_results <- function(tissue.mats, tissue.results){
+    if(is.null(tissue.results)){
+        plot.text("No involvement in this tissue.")
+    }else{
+
+        trait.loadings <- tissue.results$v
+        trait.description <- get_trait_description(tissue.mats, tissue.results, 
+        short_version = TRUE)
+        
+        print("Trait Contributions to Composite Trait")
+        rownames(trait.loadings) <- colnames(tissue.mats$Z)
+        colnames(trait.loadings) <- trait.description
+        pheatmap(t(trait.loadings), cluster_rows = FALSE, cluster_cols = FALSE)
+        pheatmap(trait.loadings)
+
+        print("Correlation Matrix for Composite Traits")
+        pheatmap(cor(trait.loadings))
+
+        print("Correlation Matrix for Original Traits")
+        pheatmap(cor(t(trait.loadings[which(rowSums(trait.loadings) != 0),])))
+
+        par(mar = c(10, 4, 4, 4))
+        boxplot(t(trait.loadings), las = 2, 
+        main = "Summary of Trait Contributions Across All Composite Trait")
+        trait.list <- lapply(1:nrow(trait.loadings), function(x) trait.loadings[x,])
+        names(trait.list) <- trait.description
+        stripchart(trait.list, vertical = TRUE, method = "jitter", pch = 16, las = 2,
+        add = TRUE)
+
+        trait.specific <- which(apply(tissue.results$u, 1, function(x) length(which(x != 0))) == 1)
+        pos.trans <- apply(tissue.results$u, 2, function(x) length(which(x > 0)))
+        neg.trans <- apply(tissue.results$u, 2, function(x) length(which(x < 0)))
+        
+        cols <- brewer.pal(8, "Accent")
+        par(mar = c(4,8, 4, 4))
+        barplot(t(cbind(pos.trans, neg.trans)), beside = TRUE, 
+        names = trait.description, las = 2, cex.names = 0.8, 
+        col = cols[1:2], main = "Number of Transcripts Associated with Each Trait")
+        legend("topleft", c("Positive", "Negative"), fill = cols[1:2])
+
+        num.traits  <- apply(tissue.results$u, 1, function(x) length(which(x != 0)))
+        num.totals <- table(num.traits)
+        #num.totals <- c(num.totals, sum(num.totals[2:length(num.totals)]))
+        #names(num.totals)[length(num.totals)] <- "Total"
+        a <- barplot(num.totals, ylim = c(0, max(num.totals)*1.1),
+        main = "Number of Transcripts Associated with Different Numbers of Traits")
+        text(a[,1], (num.totals+(max(num.totals)*0.02)), labels = num.totals)
+
+        print("Heatmap of correlations between transcript loadings for pairs of traits")
+        has.loading <- which(rowSums(tissue.results$u) != 0)
+        effect.mat <- tissue.results$u[has.loading,]
+        cor.effect <- cor(effect.mat)
+        rownames(cor.effect) <- colnames(cor.effect) <- trait.description
+        diag(cor.effect) <- NA
+        pheatmap(cor.effect)
+
+        trans.list <- apply(tissue.results$u, 2, function(x) colnames(tissue.mats$X)[which(x != 0)])
+        names(trans.list) <- trait.description
+        
+        #print("Heatmap of Jaccard indices for non-zero transcripts across pairs of traits")
+        #jacc.mat <- jaccard.matrix(trans.list)
+        #diag(jacc.mat) <- NA
+        #pheatmap(jacc.mat)
+    }
+}
+```
+
+### Islet Transcripts per Trait
+```{r transcripts_per_trait_islet}
+#pdf("~/Desktop/islet.results.pdf")
+describe_results(islet.mats, islet.results)
+#dev.off()
+```
+
+
+### Adipose Transcripts per Trait
+```{r transcripts_per_trait_adipose}
+#pdf("~/Desktop/adipose.results.pdf")
+describe_results(adipose.mats, adipose.results)
+#dev.off()
+```
+
+
+### Liver Transcripts per Trait
+```{r transcripts_per_trait_liver}
+#pdf("~/Desktop/liver.results.pdf")
+describe_results(liver.mats, liver.results)
+#dev.off()
+```
+
+## Thoughts about CCA Results
+
+*Latent Traits Overall*
+
+* For now we have fit transcripts from each transcriptome to the traits independently.
+This shows us that only islet transcripts are ever associated with the ex vivo
+insulin traits. These traits are not correlated with transcripts in the other 
+tissues.
+
+* All tissues resulted in fairly similar contributions from traits:
+    * All were primarily related to the HOMA traits, Ins_tAUC, Glu_tAUC, 
+    Insulin at 10 and 14 weeks, food intake, and weight at 6 and 10 weeks
+
+* Only islet and liver transcripts were associated with triglyceride levels.
+Adipose transcripts were not.
+
+*Islet transcripts and traits*
+
+* The first 11 composite traits represent insulin/glucose homeostasis
+and weight
+
+* Composite traits 12, 15, 16, and 17 (less so 19) are all related to 
+the ex vivo insulin traits
+
+* Traits 18 through 20 describe insulin/glucose homeostasis in 6 week old animals.
+
+* The transcript correlations group the traits into two primary groups
+
+*Adipose transcripts and traits*
+
+* Had the fewest contributions from the raw traits 
+
+* The ex vivo traits never contribute to the composite traits 
+
+*Liver transcripts and traits*
+
+* Looked more similar to the islet transcriptome than the adipose transcriptome,
+as far as trait contributions.
+
+## Transcript Group Enrichment {.tabset .tabset-fade .tabset-pills}
+
+We then looked for functional enrichment associated with each set of genes.
+We sorted each by the magnitude of its association with the trait, and used
+an ordered query in gprofiler.
+
+```{r up_down_enrichment_fun}
+get_up_down_enrichment <- function(tissue.mats, tissue.results, filename){
+    if(is.null(tissue.results)){
+        return(NULL)
+    }
+    trait.description <- get_trait_description(tissue.mats, tissue.results, short_version = TRUE)
+    trait.up.transcripts <- lapply(1:ncol(tissue.mats$Z), function(x) which(tissue.results$u[,x] > 0))
+    trait.down.transcripts <- lapply(1:ncol(tissue.mats$Z), function(x) which(tissue.results$u[,x] < 0))
+    names(trait.up.transcripts) <- names(trait.down.transcripts) <- trait.description
+    #cbind(trait.description, sapply(trait.up.transcripts, length), sapply(trait.down.transcripts, length))
+    tissue.nets <- vector(mode = "list", length = length(trait.up.transcripts))
+    for(tr in 1:length(trait.up.transcripts)){
+        trait.up.genes <- colnames(tissue.mats$X[,trait.up.transcripts[[tr]]])
+        trait.up.vals <- tissue.results$u[trait.up.transcripts[[tr]],tr]
+        names(trait.up.vals) <- trait.up.genes
+        trait.down.genes <- colnames(tissue.mats$X[,trait.down.transcripts[[tr]]])
+        trait.down.vals <- tissue.results$u[trait.down.transcripts[[tr]],tr]
+        names(trait.down.vals) <- trait.down.genes
+        trait.gene.groups <- list(sort(trait.up.vals, decreasing = TRUE), 
+        sort(trait.down.vals, decreasing = FALSE))
+        names(trait.gene.groups) <- paste0("Transcript", tr, c("_up", "_down"))
+        tissue.nets[[tr]] <- trait.gene.groups
+    }
+
+    tissue.genes <- unlist(tissue.nets, recursive = FALSE)
+
+    if(!file.exists(filename)){
+        tissue.enrich <- lapply(tissue.genes, 
+        function(x) gost(names(x), organism = "mmusculus", 
+        sources = c("GO", "KEGG", "REACTOME"), ordered_query = TRUE, evcodes = TRUE))
+        saveRDS(tissue.enrich, filename)
+    }else{
+        tissue.enrich <- readRDS(filename)
+    }
+
+    result <- list("Tissue_Transcripts" = tissue.nets, "Enrichments" = tissue.enrich)
+}
+
+
+get_enrichment_plus <- function(tissue.mats, tissue.results, ct){
+    gene.vals <- tissue.results$u[,ct]
+    neg.idx <- which(gene.vals < 0)
+    pos.idx <- which(gene.vals > 0)
+    neg.order <- order(gene.vals[neg.idx])
+    pos.order <- order(gene.vals[pos.idx], decreasing = TRUE)
+    ordered.pos <- colnames(tissue.mats$X)[pos.idx[pos.order]]
+    ordered.neg <- colnames(tissue.mats$X)[neg.idx[neg.order]]
+    #plot(gene.vals[pos.idx[pos.order]])
+    #plot(gene.vals[neg.idx[neg.order]])
+    pos.enrich <- gost(ordered.pos, organism = "mmusculus",
+    sources = c("GO", "KEGG", "REACTOME"), ordered_query = TRUE,
+    evcodes = TRUE)
+    #plot.enrichment(pos.enrich, max.term.size = 2000)
+    neg.enrich <- gost(ordered.neg, organism = "mmusculus",
+    sources = c("GO", "KEGG", "REACTOME"), ordered_query = TRUE,
+    evcodes = TRUE)
+    result <- list("positive_enrichment" = pos.enrich, 
+    "negative_enrichment" = neg.enrich)
+    return(result)
+}
+
+enrichment_plus_genes <- function(enrichment.plus, search.terms){
+    results.table <- enrichment.plus$result
+    term.position <- unique(unlist(lapply(search.terms, function(x) grep(x, results.table[,"term_name"], ignore.case = TRUE))))
+    if(length(term.position) > 0){
+        sub.results <- results.table[term.position,]
+    }else{
+        sub.results <- "Terms not found"
+    }
+    return(sub.results)
+}
+```
+
+
+```{r tissue_enrich}
+islet.enrich <- get_up_down_enrichment(islet.mats, islet.results, 
+here("Results", "CCA_Clusters", paste0("islet.", file.text, ".enrichment.RDS")))
+
+adipose.enrich <- get_up_down_enrichment(adipose.mats, adipose.results, 
+here("Results", "CCA_Clusters", paste0("adipose.", file.text, ".enrichment.RDS")))
+
+liver.enrich <- get_up_down_enrichment(liver.mats, liver.results, 
+here("Results", "CCA_Clusters", paste0("liver.", file.text, ".enrichment.RDS")))
+```
+
+## Enrichment of Transcript Groups {.tabset .tabset-fade .tabset-pills}
+
+The following figures show the functional enrichments for the transcripts with
+positive and negative loadings on each trait for each tissue.
+
+We present this in several different types of figures.
+
+For each trait we show a table of the significant enrichments for the 
+transcripts with positive loadings and the transcripts with negative 
+loadings side by side.
+
+We then combined these into one heatmap plot to show all the traits 
+and their enrichments together.
+
+Finally, we took the top 10 enriched terms from each trait, and constructed
+a bipartite graph between traits and enriched terms. We projected this network
+onto the traits and the terms. Rather amazingly, the terms for each tissue
+cluster into beautiful functional clusters
+
+```{r plot_enrichment}
+plot_tissue_enrich <- function(tissue.mats, tissue.results, enrichment.results, 
+max.term.size = 2000, num.terms = 30){
+    if(is.null(tissue.results)){
+        plot.text("No involvement of this tissue.")
+        return(NULL)
+    }
+    #trait.description <- get_trait_description(tissue.mats, tissue.results, short_version = TRUE)
+    trait.description <- paste0("Composite_Transcript", 1:ncol(tissue.mats$Z))
+    tissue.enrich <- enrichment.results[[2]]
+    idx <- 1
+    for(i in 1:length(trait.description)){
+        cat("####", trait.description[i], "\n")
+        #quartz(width = 12, height = 7)
+        par(mfrow = c(1,2))
+        for(dir in 1:2){
+            plot.enrichment(tissue.enrich[[idx]], num.terms = num.terms, 
+            plot.label = names(tissue.enrich)[idx], 
+            max.term.size = max.term.size, text.size = 0.8)
+            idx = idx + 1
+        }
+        mtext(trait.description[i], outer = TRUE, side = 3, line = -2.5)
+        cat("\n\n")
+    }
+cat("\n\n")
+}
+
+
+#This function covers specified nodes in a network with
+#white boxes, similar to how we would in Keynote to erase
+#something.
+cover_nodes <- function(bip.net, label.term = "Transcript", 
+search.name = c("partial", "full"), rad = 0.1, border.col = "white",
+fill.col = "white"){
+    
+    net.layout <- layout_with_kk(bip.net)
+    new.x <- scale.between.vals(net.layout[,1], -1, 1)
+    new.y <- scale.between.vals(net.layout[,2], -1, 1)
+
+    search.name = search.name[1]
+    if(search.name == "full"){
+        trait.idx <- sapply(label.term, function(x) which(V(bip.net)$name == x))
+    }else{
+        trait.idx <- sapply(label.term, function(x) grep(x, V(bip.net)$name))
+    }
+        
+    cover.coord  <- cbind(new.x, new.y)[trait.idx,]
+    for(i in 1:nrow(cover.coord)){
+        mid.x <- cover.coord[i,1]
+        mid.y <- cover.coord[i,2]
+        circ.coord <- get_circle(rad, center_x = mid.x, center_y = mid.y, dens = 0.05)
+        polygon(circ.coord$x, circ.coord$y, col = fill.col, border = border.col)
+    }
+}
+
+add_picture_nodes <- function(bip.net, val.mat, label.term = "Transcript", 
+search.name = c("partial", "full"), rect.width = 0.1, rect.height = 0.1, lwd = 0.5){
+    
+    net.layout <- layout_with_kk(bip.net)
+    new.x <- scale.between.vals(net.layout[,1], -1, 1)
+    new.y <- scale.between.vals(net.layout[,2], -1, 1)
+
+    search.name = search.name[1]
+    if(search.name == "full"){
+        trait.idx <- sapply(label.term, function(x) which(V(bip.net)$name == x))
+    }else{
+        trait.idx <- sapply(label.term, function(x) grep(x, V(bip.net)$name))
+    }
+        
+    cover.coord  <- cbind(new.x, new.y)[trait.idx,]
+    for(i in 1:nrow(cover.coord)){
+        mid.x <- cover.coord[i,1]
+        mid.y <- cover.coord[i,2]
+        min.x <- mid.x - (rect.width/2)
+        max.x <- mid.x + (rect.width/2)
+        min.y <- mid.y - (rect.height/2)
+        max.y <- mid.y + (rect.height/2)
+        
+        x.pts <- scale.between.vals(1:nrow(val.mat), min.x, max.x)
+        y.vals <- scale.between.vals(val.mat[,i], min.y, max.y)
+        pt.col <- colors.from.values(val.mat[,i], use.pheatmap.colors = TRUE,
+        global.color.scale = TRUE, global.min = min(val.mat), global.max = max(val.mat))
+        #barplot(val.mat[,i], col = pt.col, las = 2)
+        #barplot(1:length(pt.col), col = pt.col)
+        #plot.new()
+        #plot.window(xlim = c(min.x, max.x), ylim = c(min.y, max.y))
+        segments(x0 = x.pts, y0 = min.y, y1 = max.y, col = pt.col, lwd = lwd)
+    }
+}
+
+#This function plots a bipartite network and replaces the transcript
+#nodes with pictures of the effects of that transcript on the traits.
+#Because the up and down transcript effects are separated, we multiply
+#the down-transcripts by -1 to reverse the trait effects. 
+plot_decorated_bip <- function(tissue.bip, tissue.mats, tissue.results, filename,
+fig.width = 20, fig.height = 20){
+    if(is.null(tissue.bip)){
+        return(NULL)
+    }
+    pdf(filename, width = fig.width, height = fig.height)
+    trait.loadings <- tissue.results$v
+    rownames(trait.loadings) <- colnames(tissue.mats$Z)
+    colnames(trait.loadings) <- paste("Composite_Trait", 1:ncol(trait.loadings))
+    #pheatmap(trait.loadings)
+    exp.trait.mat <- Reduce("cbind", lapply(1:nrow(trait.loadings), 
+    function(x) cbind(trait.loadings[,x,drop=FALSE], trait.loadings[,x,drop=FALSE]*-1)))
+    trait.clust <- hclust(dist(exp.trait.mat))
+    #plot(trait.clust)
+    trait.order <- trait.clust$order
+    pheatmap(t(exp.trait.mat[trait.order,seq(1,ncol(exp.trait.mat), 2)]),cex = 2)
+
+    plot(tissue.bip, vertex.size = 5, layout = layout_with_kk,
+    vertex.label.dist = 0.7, vertex.label.adj = 1)
+    cover_nodes(tissue.bip, label.term = "Transcript", 
+    search.name = c("partial", "full"), rad = 0.03)
+    add_picture_nodes(tissue.bip, exp.trait.mat[trait.order,], 
+    label.term = "Transcript", search.name = "partial", rect.width = 0.06, 
+    rect.height = 0.04, lwd = 2)
+
+    par(xpd = TRUE)
+    text.x <- segment.region(-1, -0.5, nrow(exp.trait.mat))
+    text.y <- rep(-0.9, nrow(exp.trait.mat))
+    text(text.x, text.y, rownames(exp.trait.mat)[trait.order], srt = 270, adj = 1)
+    text(x = -0.75, y = -0.95, "Trait Order in Figure")
+    par(xpd = FALSE)
+    dev.off()
+
+}
+
+```
+
+### Liver Trait Enrichments {.tabset .tabset-fade .tabset-pills}
+
+```{r plot_enrich_liver, results = "asis", fig.width = 12, fig.height = 10}
+max.term.size = 2000
+num.terms = 10
+
+plot_tissue_enrich(tissue.mats = liver.mats, tissue.results = liver.results, 
+enrichment.results = liver.enrich, max.term.size = max.term.size, num.terms = 30)
+```
+
+
+#### All Groups
+```{r all_liver_heatmap, fig.height = 15, fig.width = 7}
+#pdf("~/Desktop/liver.enrich.pdf", height = 40, width = 9)
+liver.enrich.mat <- plot.enrichment.group(liver.enrich[[2]], n.terms = num.terms, 
+max.term.size = max.term.size, transformation = sqrt)
+#dev.off()
+```
+
+
+```{r liver_term_genes, eval = FALSE}
+#here I'm playing around to find genes associated with the GO
+#terms of interest for a given tissue for a plot for Greg
+#We see that liver trait 7 is associated with mitochondrial 
+#respiration, so we look for genes annotated to apoptosis and 
+#find their loadings in our traits
+ct <- 1; search.term.up = c("histone", "chromatin"); search.term.down = c("fatty", "acid", "lipid")
+
+liver.ct.enrich <- get_enrichment_plus(liver.mats, liver.results, ct)
+plot.enrichment(liver.ct.enrich[[1]], num.terms = 30, max.term.size = 2000)
+plot.enrichment(liver.ct.enrich[[2]], num.terms = 30, max.term.size = 2000)
+
+liver.ct.genes <- enrichment_plus_genes(liver.ct.enrich[[1]], 
+search.term = search.term.up)
+
+liver.ct.genes <- enrichment_plus_genes(liver.ct.enrich[[2]], 
+search.term = search.term.down)
+
+gene.query <- unique(unlist(strsplit(liver.ct.genes[,"intersection"], ",")))
+liver.ct.gene.table <- getBM(c("external_gene_name", "ensembl_gene_id", "chromosome_name", "start_position", "end_position"), 
+"ensembl_gene_id", gene.query, mus)
+table(liver.ct.gene.table[,"chromosome_name"])
+ct.gene.locale <- match(liver.ct.gene.table[,"ensembl_gene_id"], colnames(liver.mats$X))
+gene.vals  <- liver.results$u[ct.gene.locale,ct]
+names(gene.vals) <- liver.ct.gene.table[,"external_gene_name"]
+sort(gene.vals)
+
+#look for connections between these genes and diabetes on pubmed
+lit.genes <- names(head(sort(gene.vals), 10)) #for neg genes
+#lit.genes <- names(tail(sort(gene.vals), 3)) #for pos genes
+#lit.genes <- names(sort(gene.vals))
+all.pubmed <- lapply_pb(as.vector(lit.genes), 
+function(x) get_pubmed_ids(paste("Diabetes AND adipose AND", x)))
+num.papers <- unlist(lapply(all.pubmed, function(x) x$Count))
+with.papers <- which(num.papers != 0)
+cbind(lit.genes, num.papers)
+cbind(lit.genes[with.papers], num.papers[with.papers])
+has.data <- all.pubmed[with.papers]
+all.abstracts <- lapply(has.data, function(x) fetch_pubmed_data(x, format = "abstract"))
+names(all.abstracts) <- lit.genes[with.papers]
+```
+
+#### Traits and Terms
+```{r liver_trait_term, fig.width = 10, fig.height = 10}
+liver.enrich.bip <- enrich_bipartite_proj(liver.enrich.mat, vertex.col = "gray", 
+label.vertex = "Transcript", label.col = "lightblue", search.name = "partial")
+```
+
+```{r liver_bip_pdf, eval = FALSE}
+plot_decorated_bip(liver.enrich.bip$Network, liver.mats, liver.results, 
+here("Results", "CCA_clusters", paste0("Bip_liver.", file.text, ".pdf")),
+fig.width = 30, fig.height = 30)
+```
+
+#### Term Projection
+```{r liver_trait_proj, fig.width = 10, fig.height = 15}
+plot(liver.enrich.bip$Projections[[1]], vertex.size = 5, 
+layout = layout_with_kk) #trait projection
+```
+
+#### Trait Projection
+```{r liver_term_proj, fig.width = 10, fig.height = 10}
+plot(liver.enrich.bip$Projections[[2]], vertex.size = 5, 
+layout = layout_with_kk) #term projection
+```
+
+```{r plot_liver_to_pdf}
+pdf(here("Results", "CCA_Clusters", 
+paste0("composite.transcript.enrich.", file.text, ".liver.pdf")), width = 30, height = 30)
+plot(liver.enrich.bip$Network, vertex.size = 5, layout = layout_with_kk)
+plot(liver.enrich.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk) #trait projection
+plot(liver.enrich.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk) #term projection
+dev.off()
+```
+
+### Adipose Trait Enrichments {.tabset .tabset-fade .tabset-pills}
+
+```{r plot_enrich_adipose, results = "asis", fig.width = 10, fig.height = 10}
+plot_tissue_enrich(adipose.mats, adipose.results, 
+adipose.enrich, max.term.size = max.term.size, num.terms = 30)
+```
+
+#### All Groups
+```{r all_adipose_heat, fig.height = 15, fig.width = 7}
+adipose.enrich.mat <- plot.enrichment.group(adipose.enrich[[2]], n.terms = num.terms, 
+max.term.size = max.term.size,transformation = sqrt)
+```
+
+#### Traits and Terms
+```{r adipose_trait_term, fig.width = 10, fig.height = 10}
+adipose.enrich.bip <- enrich_bipartite_proj(adipose.enrich.mat, vertex.col = "gray", 
+label.vertex = "Transcript", label.col = "lightblue", search.name = "partial")
+
+if(!is.null(adipose.enrich.bip$Network)){
+    plot(adipose.enrich.bip$Network, vertex.size = 5, layout = layout_with_kk)
+}else{
+    plot.text("no enrichment")
+}
+```
+
+```{r adipose_bip_pdf, eval = FALSE}
+plot_decorated_bip(adipose.enrich.bip$Network, adipose.mats, adipose.results,
+here("Results", "CCA_clusters", paste0("Bip_adipose.", file.text, ".pdf")),
+fig.height = 30, fig.width = 30)
+
+```
+
+#### Term Projection
+```{r adipose_trait_proj, fig.width = 10, fig.height = 10}
+if(!is.null(adipose.enrich.bip$Projections[[1]])){
+    plot(adipose.enrich.bip$Projections[[1]], vertex.size = 5, 
+    layout = layout_with_kk) #trait projection
+}else{
+    plot.text("No enrichment")
+}
+```
+
+#### Trait Projection
+```{r adipose_term_proj, fig.width = 10, fig.height = 10}
+if(!is.null(adipose.enrich.bip$Projections[[2]])){
+    plot(adipose.enrich.bip$Projections[[2]], vertex.size = 5, 
+    layout = layout_with_kk) #term projection
+    #dev.off()
+}else{
+    plot.text("no enrichment")
+}
+```
+
+```{r plot_adipose_to_pdf}
+if(!is.null(adipose.enrich.bip$Projections[[1]])){
+    pdf(here("Results", "CCA_Clusters", 
+    paste0("composite.transcript.enrich.", file.text, ".adipose.pdf")), width = 30, height = 30)
+    plot(adipose.enrich.bip$Network, vertex.size = 5, layout = layout_with_kk)
+    plot(adipose.enrich.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk) #trait projection
+    plot(adipose.enrich.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk) #term projection
+    dev.off()
+}
+```
+
+```{r adipose_term_genes, eval = FALSE}
+ct <- 1; search.term.neg = c("cytokine", "leukocyte", "immune"); search.term.pos = c("acid", "oxidation")
+ct <- 20; search.term.neg = "rna"; search.term.pos = "stress"
+
+adipose.ct.enrich <- get_enrichment_plus(adipose.mats, adipose.results, ct)
+plot.enrichment(adipose.ct.enrich$positive_enrichment, num.terms = 30, 
+max.term.size = 2000, plot.label = "Positive Enrichment")
+plot.enrichment(adipose.ct.enrich$negative_enrichment, num.terms = 30, 
+max.term.size = 2000, plot.label = "Negative Enrichment")
+
+adipose.ct.genes <- enrichment_plus_genes(adipose.ct.enrich$positive_enrichment, 
+search.term = search.term.pos)
+
+adipose.ct.genes <- enrichment_plus_genes(adipose.ct.enrich$negative_enrichment, 
+search.term = search.term.neg)
+
+gene.query <- unique(unlist(strsplit(adipose.ct.genes[,"intersection"], ",")))
+adipose.ct.gene.table <- getBM(c("external_gene_name", "ensembl_gene_id"), 
+"ensembl_gene_id", gene.query, mus)
+ct.gene.locale <- match(adipose.ct.gene.table[,"ensembl_gene_id"], colnames(adipose.mats$X))
+gene.vals  <- adipose.results$u[ct.gene.locale,ct]
+names(gene.vals) <- adipose.ct.gene.table[,"external_gene_name"]
+head(sort(gene.vals), 10) #for neg genes
+tail(sort(gene.vals), 10) #for pos genes
+
+#look for connections between these genes and diabetes on pubmed
+lit.genes <- names(head(sort(gene.vals), 10)) #for neg genes
+#lit.genes <- names(tail(sort(gene.vals), 3)) #for pos genes
+#lit.genes <- names(sort(gene.vals))
+all.pubmed <- lapply_pb(as.vector(lit.genes), 
+function(x) get_pubmed_ids(paste("Diabetes AND adipose AND", x)))
+num.papers <- unlist(lapply(all.pubmed, function(x) x$Count))
+with.papers <- which(num.papers != 0)
+cbind(lit.genes, num.papers)
+cbind(lit.genes[with.papers], num.papers[with.papers])
+has.data <- all.pubmed[with.papers]
+all.abstracts <- lapply(has.data, function(x) fetch_pubmed_data(x, format = "abstract"))
+names(all.abstracts) <- lit.genes[with.papers]
+```
+
+
+### Islet Trait Enrichments {.tabset .tabset-fade .tabset-pills}
+
+```{r plot_enrich_islet, results = "asis", fig.width = 10, fig.height = 10}
+plot_tissue_enrich(islet.mats, islet.results, islet.enrich, 
+max.term.size = max.term.size, num.terms = 30)
+```
+
+#### All Groups
+```{r islet_all_heat, fig.height = 15, fig.width = 7}
+#pdf("~/Desktop/islet_enrich.pdf", width = 9, height = 40)
+islet.enrich.mat <- plot.enrichment.group(islet.enrich[[2]], n.terms = num.terms, 
+max.term.size = max.term.size, transformation = sqrt)
+#dev.off()
+```
+
+```{r islet_term_genes, eval = FALSE}
+#here I'm playing around to find genes associated with the GO
+#terms of interest for a given tissue for a plot for Greg
+#We see that islet trait 20 is associated with apoptosis, so 
+#we look for genes annotated to apoptosis and find their loadings
+#in our traits
+ct <- 17; search.term.neg = c("mitosis", "mitotic", "division", "cycle"); search.term.pos = c("rna", "mrna")
+ct <- 20; search.term.neg = "rna"; search.term.pos = "stress"
+
+islet.ct.enrich <- get_enrichment_plus(islet.mats, islet.results, ct)
+plot.enrichment(islet.ct.enrich$positive_enrichment, num.terms = 30, 
+max.term.size = 2000, plot.label = "Positive Enrichment")
+plot.enrichment(islet.ct.enrich$negative_enrichment, num.terms = 30, 
+max.term.size = 2000, plot.label = "Negative Enrichment")
+
+islet.ct.genes <- enrichment_plus_genes(islet.ct.enrich$positive_enrichment, 
+search.term = search.term.pos)
+
+islet.ct.genes <- enrichment_plus_genes(islet.ct.enrich$negative_enrichment, 
+search.term = search.term.neg)
+
+gene.query <- unique(unlist(strsplit(islet.ct.genes[,"intersection"], ",")))
+islet.ct.gene.table <- getBM(c("external_gene_name", "ensembl_gene_id"), 
+"ensembl_gene_id", gene.query, mus)
+ct.gene.locale <- match(islet.ct.gene.table[,"ensembl_gene_id"], colnames(islet.mats$X))
+gene.vals  <- islet.results$u[ct.gene.locale,ct]
+names(gene.vals) <- islet.ct.gene.table[,"external_gene_name"]
+head(sort(gene.vals), 10)
+tail(sort(gene.vals), 10)
+
+#look for connections between these genes and diabetes on pubmed
+lit.genes <- names(head(sort(gene.vals), 10)) #for neg genes
+#lit.genes <- names(tail(sort(gene.vals), 10)) #for pos genes
+all.pubmed <- lapply_pb(as.vector(lit.genes), 
+function(x) get_pubmed_ids(paste("Diabetes AND", x)))
+num.papers <- unlist(lapply(all.pubmed, function(x) x$Count))
+with.papers <- which(num.papers != 0)
+cbind(lit.genes, num.papers)
+cbind(lit.genes[with.papers], num.papers[with.papers])
+has.data <- all.pubmed[with.papers]
+all.abstracts <- lapply(has.data, function(x) fetch_pubmed_data(x, format = "abstract"))
+names(all.abstracts) <- lit.genes[with.papers]
+```
+
+
+#### Traits and Terms
+```{r islet_trait_term, fig.width = 10, fig.height = 10}
+islet.enrich.bip <- enrich_bipartite_proj(islet.enrich.mat, vertex.col = "gray", 
+label.vertex = "Transcript", label.col = "lightblue", search.name = "partial")
+if(!is.null(islet.enrich.bip)){
+    plot(islet.enrich.bip$Network, vertex.size = 5, layout = layout_with_kk)
+}
+```
+
+```{r islet_bip_pdf, eval = FALSE}
+plot_decorated_bip(islet.enrich.bip$Network, islet.mats, islet.results,
+here("Results", "CCA_clusters", paste0("Bip_islet.", file.text, ".pdf")),
+fig.height = 30, fig.width = 30)
+```
+
+
+#### Term Projection
+```{r islet_trait_proj, fig.width = 10, fig.height = 10}
+if(!is.null(islet.enrich.bip)){
+    plot(islet.enrich.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk) #trait projection
+}
+```
+
+#### Trait Projection
+```{r islet_term_proj, fig.width = 10, fig.height = 10}
+if(!is.null(islet.enrich.bip)){
+    plot(islet.enrich.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk) #term projection
+}
+```
+
+```{r plot_islet_to_pdf}
+if(!is.null(islet.enrich.bip)){
+    pdf(here("Results", "CCA_Clusters", 
+    paste0("composite.transcript.enrich.", file.text, ".islet.pdf")), width = 30, height = 30)
+    plot(islet.enrich.bip$Network, vertex.size = 5, layout = layout_with_kk)
+    plot(islet.enrich.bip$Projections[[1]], vertex.size = 5, layout = layout_with_kk) #trait projection
+    plot(islet.enrich.bip$Projections[[2]], vertex.size = 5, layout = layout_with_kk) #term projection
+    dev.off()
+}
+```
+
+
+## QTL mapping modules {.tabset .tabset-fade .tabset-pills}
+
+### Liver QTL {.tabset .tabset-fade .tabset-pills}
+
+Map the composite transcripts.
+
+```{r map_liver_transcripts, results = "asis", fig.height = 5, fig.width = 7}
+liver.trans <- apply(liver.results$u, 2, function(x) liver.mats$X %*% x)
+rownames(liver.trans) <- rownames(liver.mats$X)
+colnames(liver.trans) <- paste0("CTrans", 1:ncol(liver.trans))
+
+trait.trans.cor <- sapply(1:ncol(liver.trans), 
+function(x) apply(liver.mats$Z, 2, function(y) cor(liver.trans[,x], y)))
+pheatmap(trait.trans.cor)
+
+liver.qtl.file <- here("Results", "CCA_Clusters", paste0("QTL.Liver.", file.text, ".RDS"))
+if(!file.exists(liver.qtl.file)){
+    liver_qtl <- scan1(genoprobs, liver.trans)
+    saveRDS(liver_qtl, liver.qtl.file)
+}else{
+    liver_qtl <- readRDS(liver.qtl.file)
+}
+
+for(i in 1:ncol(liver_qtl)){
+    cat("#### Composite Transcript", i, "\n")
+    if(is.interactive){quartz(width = 8, height = 5)}
+    plot(liver_qtl, i, map = map, main = paste("Composite Transcript", i))
+    cat("\n\n")
+}    
+```
+
+#### All LOD
+```{r liver_lod, fig.width = 10, fig.height = 5}
+if(is.interactive){quartz(width = 10, height = 5)}
+multilod.plot(liver_qtl, map, lod.thresh = 4, chr.label.y = 0, chr.label.cex = 1,
+row.names = colnames(liver_qtl))
+```
+
+### Liver QTL Coefficients {.tabset .tabset-fade .tabset-pills}
+
+```{r liver_chr, results = "asis", fig.height = 7, fig.width = 7}
+lodthresh = 7
+if(!is.null(liver.results$u)){
+    peak.table <- find_peaks(liver_qtl, map = map, threshold = lodthresh, prob = 0.99)
+    if(nrow(peak.table) > 0){
+        for(idx in 1:nrow(peak.table)){
+            cat("####", peak.table[idx,"lodcolumn"], ", Chr", peak.table[idx,"chr"], 
+            ", LOD", signif(peak.table[idx,"lod"], 2), "\n")
+            trait = peak.table[idx,2]; chr = peak.table[idx,3]
+            chr.lod <- scan1(genoprobs[,chr], liver.trans[,trait,drop=FALSE])
+            chr.coef <- scan1coef(genoprobs[,chr], liver.trans[,trait,drop=FALSE])
+            if(is.interactive){quartz()}
+            par(mfrow = c(2,1), mar = c(2,2,2,2))
+            plot(chr.lod, map = map)
+            plot_coefCC(chr.coef, map = map)
+            mtext(paste("CT", trait, "Chr" = chr), side = 3, outer = TRUE, line = -2)
+            cat("\n\n")
+        }
+    }else{
+        plot.text(paste("No QTL above", lodthresh))
+    }
+}else{
+    plot.text("No involvement from this tissue.")
+}
+```
+
+
+### Adipose QTL {.tabset .tabset-fade .tabset-pills}
+
+Map the composite transcripts.
+
+```{r map_adipose_transcripts, results = "asis", fig.height = 5, fig.width = 7}
+if(!is.null(adipose.results$u)){
+    adipose.trans <- apply(adipose.results$u, 2, function(x) adipose.mats$X %*% x)
+    rownames(adipose.trans) <- rownames(adipose.mats$X)
+    colnames(adipose.trans) <- paste0("CTrans", 1:ncol(adipose.trans))
+
+    trait.trans.cor <- sapply(1:ncol(adipose.trans), 
+    function(x) apply(adipose.mats$Z, 2, function(y) cor(adipose.trans[,x], y)))
+    pheatmap(trait.trans.cor)
+
+    adipose.qtl.file <- here("Results", "CCA_Clusters", paste0("QTL.Adipose.", file.text, ".RDS"))
+    if(!file.exists(adipose.qtl.file)){
+        adipose_qtl <- scan1(genoprobs, adipose.trans)
+        saveRDS(adipose_qtl, adipose.qtl.file)
+    }else{
+        adipose_qtl <- readRDS(adipose.qtl.file)
+    }
+
+    for(i in 1:ncol(adipose_qtl)){
+        cat("#### Composite Transcript", i, "\n")
+        if(is.interactive){quartz(width = 8, height = 5)}
+        plot(adipose_qtl, i, map = map, main = paste("Composite Transcript", i))
+        cat("\n\n")
+    }    
+}else{
+    plot.text("No traits to map")
+}
+```
+
+#### All LOD
+```{r adipose_lod, fig.width = 10, fig.height = 5}
+if(!is.null(adipose.results$u)){
+    multilod.plot(adipose_qtl, map, lod.thresh = 4, chr.label.y = 0, chr.label.cex = 1,
+    row.names = colnames(adipose_qtl))
+}else{
+    "No traits to map"
+}
+```
+
+### Adipose QTL Coefficients {.tabset .tabset-fade .tabset-pills}
+
+```{r adipose_chr, results = "asis", fig.width = 7, fig.height = 7}
+
+if(!is.null(adipose.results$u)){
+    peak.table <- find_peaks(adipose_qtl, map = map, threshold = lodthresh, prob = 0.99)
+    if(nrow(peak.table) > 0){
+        for(idx in 1:nrow(peak.table)){
+            cat("####", peak.table[idx,"lodcolumn"], ", Chr", peak.table[idx,"chr"], 
+            ", LOD", signif(peak.table[i,"lod"], 2), "\n")
+            trait = peak.table[idx,2]; chr = peak.table[idx,3]
+            chr.lod <- scan1(genoprobs[,chr], adipose.trans[,trait,drop=FALSE])
+            chr.coef <- scan1coef(genoprobs[,chr], adipose.trans[,trait,drop=FALSE])
+            if(is.interactive){quartz()}
+            par(mfrow = c(2,1))
+            plot(chr.lod, map = map)
+            plot_coefCC(chr.coef, map = map)
+            mtext(paste("CT", trait, "Chr" = chr), side = 3, outer = TRUE, line = -2)
+            cat("\n\n")
+        }
+    }else{
+        plot.text(paste("No QTL above", lodthresh))
+    }
+}else{
+    plot.text("No involvement of this tissue.")
+}
+```
+
+### Islet QTL {.tabset .tabset-fade .tabset-pills}
+
+Map the composite transcripts.
+
+```{r map_islet_transcripts, results = "asis"}
+if(!is.null(islet.results)){
+    islet.trans <- apply(islet.results$u, 2, function(x) islet.mats$X %*% x)
+    rownames(islet.trans) <- rownames(islet.mats$X)
+    colnames(islet.trans) <- paste0("CTrans", 1:ncol(islet.trans))
+
+    trait.trans.cor <- sapply(1:ncol(islet.trans), 
+    function(x) apply(islet.mats$Z, 2, function(y) cor(islet.trans[,x], y)))
+    pheatmap(trait.trans.cor)
+
+
+    islet.qtl.file <- here("Results", "CCA_Clusters", paste0("QTL.Islet.", file.text, ".RDS"))
+    if(!file.exists(islet.qtl.file)){
+        islet_qtl <- scan1(genoprobs, islet.trans)
+        saveRDS(islet_qtl, islet.qtl.file)
+    }else{
+        islet_qtl <- readRDS(islet.qtl.file)
+    }
+
+    for(i in 1:ncol(islet_qtl)){
+        cat("#### Composite Transcript", i, "\n")
+        if(is.interactive){quartz(width = 8, height = 5)}
+        plot(islet_qtl, i, map = map, main = paste("Composite Transcript", i))
+        cat("\n\n")
+    }    
+}
+```
+
+#### All LOD
+```{r islet_lod, fig.width = 10, fig.height = 5}
+if(!is.null(islet.results)){
+    multilod.plot(islet_qtl, map, lod.thresh = 4, chr.label.y = 0, chr.label.cex = 1,
+    row.names = colnames(islet_qtl))
+}
+```
+
+### Islet QTL Coefficients {.tabset .tabset-fade .tabset-pills}
+
+```{r islet_chr, results = "asis", fig.width = 7, fig.height = 7}
+#quartz(width = 7, height = 7)
+if(!is.null(islet.results$u)){
+    peak.table <- find_peaks(islet_qtl, map = map, threshold = lodthresh, prob = 0.99)
+    if(nrow(peak.table) > 0){
+        for(idx in 1:nrow(peak.table)){
+            cat("####", peak.table[idx,"lodcolumn"], ", Chr", peak.table[idx,"chr"], 
+            ", LOD", signif(peak.table[idx,"lod"], 2), "\n")
+            trait = peak.table[idx,2]; chr = peak.table[idx,3]
+            chr.lod <- scan1(genoprobs[,chr], islet.trans[,trait,drop=FALSE])
+            chr.coef <- scan1coef(genoprobs[,chr], islet.trans[,trait,drop=FALSE])
+            if(is.interactive){quartz()}
+            par(mfrow = c(2,1), mar = c(2,2,2,2))
+            plot(chr.lod, map = map)
+            plot_coefCC(chr.coef, map = map)
+            mtext(paste("CT", trait, "Chr" = chr), side = 3, outer = TRUE, line = -2)
+            cat("\n\n")
+        }
+    }else{
+        plot.text(paste("No QTL above", lodthresh))
+    }
+}else{
+    plot.text("No involvement of this tissue.")
+}
+```
+

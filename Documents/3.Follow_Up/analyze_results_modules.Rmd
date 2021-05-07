@@ -1,5 +1,5 @@
 ---
-title: "Analysis of CAPE in using individual transcripts in pancreatic islets"
+title: "Analysis of CAPE in using expression modules in pancreatic islets"
 author: Anna L Tyler
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: 
@@ -12,13 +12,18 @@ output:
 
 
 The purpose of this workflow is to analyze the results from 
-cape_run_transcripts.Rmd
+cape_run_transcripts.Rmd. Because this kind of network ends up being 
+very dense, we decided here to look only at the most significant effects.
+The null distribution we used had 1.5 million elements, so we used a 
+$p$ value cutoff of $1e-6$.
 
 ```{r setup}
-plot.mod.net = FALSE
-exp.name <- "top_three_PC"
+is.interactive = FALSE
+#is.interactive = TRUE
+exp.name <- "multi_tissue"
 geno.type = "modules"
 exp.dir <- paste(geno.type, exp.name, sep = "_")
+sig_level = 1e-6
 ```
 
 ```{r load_code}
@@ -28,233 +33,406 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 ```
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
-all.packages <- c("cape", "gprofiler2", "pheatmap", "cluster", "easyPubMed",
-"wordcloud", "wordcloud2", "tm", "stringr", "biomaRt", "GOSim", "org.Mm.eg.db",
-"qtl2", "gProfileR", "cape")
+all.packages <- c("cape", "gprofiler2", "pheatmap", "cluster", "stringr", 
+"biomaRt", "igraph", "interactions")
 load_libraries(all.packages)
 ```
 
 The following heat map shows the results from the cape run for 
-the 42 WGCNA modules.
-
-Most interactions are negative, but a few modules have multiple positive 
-interactions.
+the CoExprNet modules.
 
 ```{r load_results, fig_height = 5, fig.width = 5}
 gene.info <- as.matrix(read.table(here("Data", "mouse_gene_info.txt"), sep = "\t", 
 header = TRUE, stringsAsFactors = FALSE))
 
-cross <- readRDS(here("Results", exp.dir, "cross.RData"))
-var.inf <- plot_variant_influences(cross, covar_width = 1, pheno_width = 1)
+cross <- readRDS(here("Results", "CAPE", exp.dir, "cross.RData"))
+geno <- readRDS(here("Results", "CAPE", exp.dir, "cross_geno.RData"))
+
+var.inf <- plot_variant_influences(cross, covar_width = 1, pheno_width = 1,
+show_marker_labels =TRUE, p_or_q = sig_level)
+
 #take out the allele names
 rownames(var.inf) <- gsub("_B", "", rownames(var.inf))
 colnames(var.inf) <- gsub("_B", "", colnames(var.inf))
+
+tissues <- sapply(strsplit(rownames(var.inf), "-"), function(x) x[1])
+u_tissues <- sort(unique(tissues))
+#u_tissues <- c("islet", "adipose", "liver", "sex")
+#tissues <- unlist(lapply(u_tissues, function(x) rep(x, length(grep(x, rownames(var.inf))))))
 ```
 
-The following boxplot shows the influences of each transcript ordered
-by the mean of all its influences. The majority of transcripts have 
-negative effects on other transcripts. A few have positive effects.
+```{r test_int, eval = FALSE}
+marker1 = "adipose-salmon-immune-system-response-stress-protein"
+marker2 <- "islet-red-protein-binding-enzyme-cell-junction"
+gene.mat <- get_geno(cross, geno)
+df <- data.frame(cbind(cross$ET[,5], gene.mat[,2,marker1], gene.mat[,2,marker2]))
+colnames(df) <- c("ET1", "Adipose_Immune_Module", "Islet_Signaling_Module")
+model <- lm(ET1~Adipose_Immune_Module*Islet_Signaling_Module, data = df)
+#interact_plot(model, Adipose_Immune_Module, Islet_Signaling_Module, interval = TRUE, int.width = 0.90)
 
-```{r just_int, fig.width = 10, fig.height = 4}
+interact_plot(model, Islet_Signaling_Module, Adipose_Immune_Module, 
+interval = TRUE, int.width = 0.90)
+
+low.islet <- which(gene.mat[,2,marker2] <= (mean(gene.mat[,2,marker2]) - sd(gene.mat[,2,marker2])))
+high.islet <- which(gene.mat[,2,marker2] >= (mean(gene.mat[,2,marker2]) + sd(gene.mat[,2,marker2])))
+
+plot.with.model(gene.mat[,2,marker1], cross$ET[,1], xlab = 'adipose-immune')
+plot.with.model(gene.mat[,2,marker2], cross$ET[,1], xlab = 'islet-signaling')
+plot.with.model(gene.mat[,2,marker2], gene.mat[,2,marker1], xlab = 'islet-signaling',
+ylab = "adipose-immune", report = "cor.test")
+
+plot.with.model(gene.mat[low.islet,2,marker1], cross$ET[low.islet,1], xlab = 'adipose-immune')
+plot.with.model(gene.mat[high.islet,2,marker1], cross$ET[high.islet,1], xlab = 'adipose-immune')
+
+plot_effects(cross, geno, marker1 = "adipose-salmon-immune-system-response-stress-protein_B", 
+marker2 = "islet-red-protein-binding-enzyme-cell-junction_B", plot_type = "h", pheno_type = "ET")
+```
+
+## Weighted influences by module {.tabset .tabset-fade .tabset-pills}
+
+The following boxplot shows the distribution of influences of each transcript 
+module ordered by the mean of all its influences. 
+
+### Outgoing Edges
+
+For the most part, outgoing edges from a module are either all positive
+or all negative. Most modules have positive outgoing edges.
+
+```{r just_int, fig.width = 6, fig.height = 12}
 just.int <- var.inf[,1:nrow(var.inf)]
-mean.out <- apply(just.int, 1, function(x) mean(x, na.rm = TRUE))
-mean.out.order <- order(mean.out)
-boxplot(t(just.int[mean.out.order,]), las = 2, main = "Interactions Going Out");abline(h = 0)
+med.out <- apply(just.int, 1, function(x) median(x, na.rm = TRUE))
+med.out.order <- order(med.out)
 
-mean.in <- apply(just.int, 2, function(x) mean(x, na.rm = TRUE))
-mean.in.order <- order(mean.in)
-boxplot(just.int[,mean.in.order], las = 2, main = "Interactions Coming In");abline(h = 0)
+if(is.interactive){quartz(width = 6, height = 12)}
+#pdf("~/Desktop/Interactions_out.pdf", width = 6, height = 12)
+par(mar = c(2, 18, 4, 1))
+boxplot(t(just.int[med.out.order,]), las = 2, 
+main = "Interactions Going Out", cex.axis = 0.5, horizontal = TRUE,
+col = as.factor(tissues)[med.out.order])
+abline(v = 0)
+#dev.off()
+```
+
+### Incoming Edges
+
+The pattern is similar for the incoming edges. Most modules have either 
+positive or negative incoming edges, and there are more modules with 
+positive connections than negative connections. 
+
+```{r in_edge_weight, fig.width = 6, fig.height = 12}
+med.in <- apply(just.int, 2, function(x) median(x, na.rm = TRUE))
+med.in.order <- order(med.in)
+if(is.interactive){quartz(width = 6, height = 12)}
+#pdf("~/Desktop/Interactions_in.pdf", width = 6, height = 12)
+par(mar = c(2, 18, 4, 1))
+boxplot(just.int[,med.in.order], las = 2, horizontal = TRUE,
+main = "Interactions Coming In", cex.axis = 0.5,
+col = as.factor(tissues)[med.in.order])
+abline(v = 0)
+#dev.off()
+```
+
+### Incoming vs. Outgoing
+This plot shows the outgoing and incoming median weights plotted against each other.
+There are no modules that have incoming and outgoing edges that are both negative.
+Although there are some that have positive edges in both directions. 
+
+```{r, fig.width = 5, fig.height = 5}
+plot(med.in, med.out, xlab = "Incoming Weight", ylab = "Outgoing Weight")
+abline(h = 0, v = 0)
 ```
 
 ## Main Effects
-We used the first three eigentraits of the full trait matrix as our traits.
-The SVD plot is below. It shows only the traits that we used in this analysis.
+We used the first `r ncol(cross$ET)` eigentraits of the full trait matrix as 
+our traits. The SVD plot is below. The plot shows only the traits that we used 
+in this analysis.
 
 ```{r svdplot, fig.height = 7.5, fig.width = 5}
 #quartz(width = 5, height = 7.5)
-plot_svd(cross, just_selected_et = TRUE)
+#pdf("~/Desktop/svd.pdf", width = 5, height = 7.5)
+plot_svd(cross, just_selected_et = TRUE, show_var_accounted = TRUE)
+#dev.off()
 ```
 
-The first ET represents the concordance among all the traits, and is dominated
-by insulin levels and HOMA_IR. The second trait contrasts the pancreatic 
-measurements, like WPIC, number of islets, and the HOMA traits with the
-rest of the traits. The third ET represents the contrast between in-vivo 
-insulin measurements and the rest of the traits. 
+General ET descriptions are as follows:
+ET1: concordance among all traits, with the highest loadings on body
+weight and *in vivo* insulin measures.
 
-The following heatmap shows the main effects for all transcripts included here.
-Most transcripts have main effects on all three eigentraits. 
+ET2: Contrasts the *ex vivo* insulin traits with all other traits,
+particularly glucose and TG levels.
 
-```{r main_effects, fig.width = 4, fig.height = 10}
-#quartz(width = 4, height = 8)
-just.main <- var.inf[,(nrow(var.inf)+1):ncol(var.inf)]
-just.main[which(is.na(just.main))] <- 0
-pheatmap(just.main)
+ET3: Contrasts *in vivo* homeostatic measures with all other traits.
+
+ET4: Primarily contrasts TG levels and body weight.
+
+ET5: Highest loadings on glucose measurements.
+
+The following heatmap shows the main effects for all modules included here.
+ET1 has the most main effects by far. About half of modules have positive
+effects, and half have negative effects. ET4 does not have any main effects.
+
+```{r main_effects, fig.width = 8, fig.height = 11}
+if(is.interactive){quartz(width = 10, height = 12)}
+just.main <- no.zero <- var.inf[,(nrow(var.inf)+1):ncol(var.inf)]
+no.zero[which(is.na(no.zero))] <- 0
+has.main <- which(rowSums(no.zero) != 0)
+main.dist <- dist(no.zero[has.main,])
+mod.order <- hclust(main.dist)$order
+tissue.df <- data.frame(tissues)
+rownames(tissue.df) <- rownames(just.main)
+colnames(tissue.df) <- "Tissue"
+pheatmap(just.main[has.main[mod.order],], cluster_rows = FALSE, 
+annotation_row = tissue.df, cluster_cols = FALSE)
 ```
 
-## Module Enrichment  {.tabset .tabset-fade .tabset-pills}
+## Module Counts and Main Effects {.tabset .tabset-fade .tabset-pills}
 
-The following plots show enrichments for each WGCNA module.
-The enrichments are discouragingly redundant. Lots of RNA processing,
-lots of organelle enrichments. 
+Because of the interesting biological nature of the eigentraits, it 
+may be interesting to see which modules had main effects on each ET.
 
-Very short summaries of the module enrichments are as follows:
+The plots below include a bar plot showing the main effect of each module 
+on each ET. The bars are colored by tissue and in order of main effect size.
 
-**MEdarkgreen** organelles
-**MEgrey** ion transport
-**MEgreenyellow** synapse, neuron development/differentiation
-**MEbrown** ER, mitochondrion, organelles
-**MEdarkolivegreen** signal transduction and regulation of metabolic process
-**MEdarkturquoise** nucleus, organelle
-**MElighcyan** RNA processing
-**MEyellow** ER
-**MEpaleturquoise** neuron
-**MEwhite** organelles
-**MEpurple** nuclus, organelles
-**MEmidnightblue** protein, enzyme, and GTPase binding
-**MEblack** nuclear, organelles
-**MEgreen** lots of metabolism stuff
-**MEturquoise** nuclear, organelles
-**MEtan** organelles
-**MEorangered4** inflammatory response (2 genes)
-**MEmagenta** immune response
-**MEroyalblue** cell signaling, metabolism
-**MEorange** microtubule, cilium stuff
-**MEblue** mitochondrion
-**MEred** cytoskeleton
-**MEcyan** ECM
-**MEsalmon** ribosome
-**MEdarkred** nucleus, organelles
-**MEdarkgrey** extracellular
-**MEdarkorange** imune processes
-**MEGrey60** chromatin binding, insuling secretion
-**MElightyellow** development, angiogenesis
-**MEpink** nucleus, organelles
-**MEsaddlebrown** nucleus, organelles
-**MEskyblue3** immune, inflammatory
-**MEdarkmagenta** ER, Golgi
-**MEviolet** cell cycle
-**MEsteelblue** kinase activity, ion transport
-**MElighgreen** cell metabolism
-**MEyellowgreen** synapse, ion transport
-**MEskyblue** cell metabolism
-**MEsienna3** ribosome, mitochondrion, cellular respiration
-**MEplum1** none
-**MEsteelblue1** nucleic acid binding
-**MEmediumpurple3** none
+The top boxplot shows the proportion of each set of tissue modules that had
+main effects on each ET. The observed proportion is shown as a red asterisk.
+The boxplots show the expected distribution of each proportion given the 
+number of significant main effects for each trait. The $p$ values at the
+top indicate whether each observed proportion was significantly different
+from what we would expect at random.
 
+The lower boxplot shows the distribution of effect sizes from each tissue. 
+The $p$ value is from an ANOVA comparing the effect sizes across tissues.
 
-```{r get_mod_enrich}
-all.var <- ls()
-  data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
-  if(!data.loaded){
-    islets <- load(here("data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
-    }
-  transcript.info <- dataset.islet.rnaseq$annots
-  u_modules <- unique(transcript.info[,"module"])
-  module_transcripts <- lapply(u_modules, function(x) transcript.info[which(transcript.info[,"module"] == x),"symbol"])
-  names(module_transcripts) <- u_modules
-  module.enrich.file <- here("Results", exp.dir, "Module.Enrichment.RDS")
-  if(!file.exists(module.enrich.file)){
-    module.enrich <- lapply(module_transcripts, function(x) gost(x, "mmusculus", sources = "GO"))
-    names(module.enrich) <- paste0("ME", u_modules)
-    saveRDS(module.enrich, module.enrich.file)
-  }else{
-    module.enrich <- readRDS(module.enrich.file)
-  }
-```
+An overall description of the tissue-trait relationships are as follows:
 
-```{r go_sum}
-summ_go <- function(enrichment.table, n.terms = 10){
-  if(is.null(enrichment.table)){
-    return("none")
-  }else{
-    if(class(enrichment.table) == "list"){
-      enrichment.table <- enrichment.table[[1]]
-    }
-    terms <- enrichment.table[order(-log10(as.numeric(enrichment.table[,"p_value"])), decreasing = TRUE),"term_name"]
-    split.terms <- strsplit(terms, " ")
-    summ_term <- paste(unique(unlist(split.terms[1:n.terms])), collapse = "_")
-    return(summ_term)
-  }
-}
+ET1: all traits together - All tissues contributed with expected proportions
+and with similar effect sizes. Islet modules are enriched, and liver modules
+are depleted. 
 
-enrich.summ <- sapply(module.enrich, function(x) summ_go(x, 2))
-```
+ET2: *ex vivo* insulin traits - Only islet modules have main effects on this
+trait. They have both positive and negative effects.
 
+ET3: *in vivo* homeostatic measurements - Adipose modules are enriched for
+main effects.
 
-```{r plot_mod_enrich, results = "asis", fig.width = 10, fig.height = 7}
+ET4: TG and body weight - no main effects
 
-for(i in 1:length(module.enrich)){
-  cat("###", names(module.enrich)[i], "\n")
-  #quartz(width = 10, height = 7)
-  #par(mfrow = c(1,2))
-  plot.enrichment(module.enrich[[i]], num.terms = 20, order.by = "p_value",
-  plot.label = "")
-  
-  #split.terms <- unlist(strsplit(module.enrich[[i]]$result[,"term_name"], " "))
-  #par(mar = c(0,0,0,0))
-  #wordcloud(split.terms)
-  cat("\n\n")
-}
+ET5: *in vivo* glucose - all tissue modules contribute at expected rates.
 
-```
-
-## Module Enrichment Based on Main Effects  {.tabset .tabset-fade .tabset-pills}
-
-We will go through each trait and examine the networks associated with
-upregulation and downregulation of each. The following heatmaps show
-functional enrichments for ordered lists of transcripts that are associated
-with up and down regulation of each eigentrait. There is a lot of overlap 
-because the same transcripts are represented in each eigentrait.
-
-```{r trait_networks, results = "asis", fig.height = 7, fig.width = 7}
+```{r et_main_bar, results = "asis", fig.height = 10, fig.width = 10}
+n_perm = 10000
+test.tiss <- c(u_tissues[1:3])
+total.tiss <- sapply(test.tiss, function(x) length(which(tissues == x)))
 
 for(i in 1:ncol(just.main)){
   cat("### ET", i, "\n")
-  up.locale <- which(just.main[,i] > 0)
-  down.locale <- which(just.main[,i] < 0)
+  et.main <- just.main[,i]
+  has.vals <- which(!is.na(et.main))
+  if(length(has.vals) == 0){
+    plot.text("no main effects")
+  }else{
+    et.vals <- et.main[has.vals]
+    et.tiss <- tissues[has.vals]
+    et.order <- order(et.vals)
+    if(is.interactive){quartz(width = 10, height = 10)}
+    layout(matrix(c(1,1,1,2,3,0), ncol = 2), widths = c(0.7, 0.3))
+    par(mar = c(2, 18, 4, 0))
+    barplot(et.vals[et.order], las = 2, horiz = TRUE, cex.names = 0.8,
+    main = paste0("Main Effects on ET", i), col = as.factor(et.tiss)[et.order])
 
-  up.mod.locale <- match(rownames(just.main)[up.locale], names(module.enrich))
-  up.mod.locale <- up.mod.locale[which(!is.na(up.mod.locale))]
-  down.mod.locale <- match(rownames(just.main)[down.locale], names(module.enrich))
-  down.mod.locale <- down.mod.locale[which(!is.na(down.mod.locale))]
-  #quartz(width = 7, height = 20)
-  all.up <- Reduce("rbind", lapply(module.enrich[up.locale], function(x) x$result))
-  all.down <- Reduce("rbind", lapply(module.enrich[down.locale], function(x) x$result))
+    #run permutations to see if these proportions are differnt than expected.
+    true.prop <- sapply(test.tiss, function(x) length(which(et.tiss == x)))/total.tiss
+    main.perm <- matrix(NA, ncol = length(test.tiss), nrow = n_perm)
+    colnames(main.perm) <- test.tiss
+    for(p in 1:n_perm){
+      rnd_tiss <- sample(tissues, length(which(!is.na(et.main))))
+      tiss.prop <- sapply(test.tiss, function(x) length(which(rnd_tiss == x)))/total.tiss
+      main.perm[p,] <- tiss.prop
+    }
+
+    #plot the results with significance values
+    par(mar = c(4,2,4,2))
+    boxplot(main.perm, main = paste("Proportion Main Effects\nfrom Each Tissue ET", i))
+    points(x = 1:length(true.prop), y = true.prop, pch = "*", col = "red", cex = 2)
+    pvals <- rep(NA, ncol(main.perm))
+    names(pvals) <- colnames(main.perm)
+    for(pv in 1:ncol(main.perm)){
+      mean.val <- mean(main.perm[,pv])
+      null.dist <- abs(main.perm[,pv] - mean.val)
+      obs.val <- abs(true.prop[pv] - mean.val)
+      pvals[pv] <- calc.emp.p(obs.val, null.dist)
+    }
+    plot.lim <- par("usr")
+    plot.height <- plot.lim[4] - plot.lim[3]
+    par(xpd = TRUE)
+    ptext <- paste("p =", signif(pvals, 2))
+    text(x = 1:length(test.tiss), y = (plot.lim[4]+(plot.height*0.02)), labels = ptext)
+    par(xpd = FALSE)
+
+    true.weight <- lapply(test.tiss, function(x) (et.vals[which(et.tiss == x)]))
+    names(true.weight) <- test.tiss
+    boxplot(true.weight, main = "Effect Size")
+    stripchart(true.weight, vertical = TRUE, pch = 16, col = "red", 
+    method = "jitter", add = TRUE)
+  }
   
-  enrich.group <- list("Up" = all.up, "Down" = all.down)
-  plot.enrichment.group(enrich.group, plot.label = colnames(just.main)[i], 
-  n.terms = 20, sort.by = "p_value")
   cat("\n\n")
 }
-
 ```
 
-## ET networks {.tabset .tabset-fade .tabset-pills}
+## Specific Main Effects {.tabset .tabset-fade .tabset-pills}
 
-Because the network is the same across all eigentraits, 
-but the main effects differ, we make one network here,
-but add main effect values for each eigentrait.
+Beyond the general trends, we can also look at individual modules that 
+had large effects on each trait.
+
+The plots below show correlations between the markers with the strongest
+positive and negative main effects and the eigentraits for which they 
+have these effects.
+
+```{r spec_mod, results = "asis", fig.width = 8, fig.height = 4}
+var.inf.table <- read.csv(here("Results", "CAPE", exp.dir, "Variant_Influences.csv"),
+stringsAsFactors = FALSE)
+
+pheno <- get_pheno(cross, "eig")
+sub_geno <- get_geno(cross, geno)
+
+for(i in 1:ncol(just.main)){
+  cat("### ET", i, "\n")
+  et <- just.main[,i]
+
+  if(!all(is.na(et))){
+    #par(mfrow = c(1,2))
+    marker1 <- paste0(names(which.min(et)), "_B")
+    marker1.locale <- which(dimnames(sub_geno)[[3]] == strsplit(marker1, "_")[[1]][1])
+    #plot.with.model(sub_geno[,2,marker1.locale], pheno[,i], xlab = marker1,
+    #ylab = colnames(pheno)[i], report = "cor.test")
+    main1.locale <- intersect(which(var.inf.table[,"Source"] == marker1), 
+    which(var.inf.table[,"Target"] == colnames(pheno)[i]))
+    cond.marker1 <- var.inf.table[main1.locale,"conditioning_marker"]
+    #plot_effects(cross, geno, marker1, plot_type = "l", error_bars = "se", pheno_type = "eig")
+    #plot_effects(cross, geno, cond.marker1, plot_type = "l", error_bars = "se", pheno_type = "eig")
+    #plot_effects(cross, geno, marker1, cond.marker1, plot_type = "h")
+    plot_effects(cross, geno, marker1, cond.marker1, plot_type = "h", pheno_type = "eig")
+
+
+    marker2 <- paste0(names(which.max(et)), "_B")
+    marker2.locale <- which(dimnames(sub_geno)[[3]] == strsplit(marker2, "_")[[1]][1])
+    main2.locale <- intersect(which(var.inf.table[,"Source"] == marker2), 
+    which(var.inf.table[,"Target"] == colnames(pheno)[i]))
+    cond.marker2 <- var.inf.table[main2.locale,"conditioning_marker"]
+    #plot.with.model(sub_geno[,2, marker2.locale], pheno[,i], xlab = marker2,
+    #ylab = colnames(pheno)[i], report = "cor.test")
+
+    #plot_effects(cross, geno, marker2, plot_type = "l", error_bars = "se", pheno_type = "eig")
+    #plot_effects(cross, geno, cond.marker1, plot_type = "l", error_bars = "se", pheno_type = "eig")
+    #plot_effects(cross, geno, marker2, cond.marker2, plot_type = "h")
+    plot_effects(cross, geno, marker2, cond.marker2, plot_type = "h", pheno_type = "eig")
+
+  }else{
+    plot.text("No main effects")
+  }
+    cat("\n\n")
+}
+```
+
+
+## Network Plots {.tabset .tabset-fade .tabset-pills}
+
+The network is the same across all eigentraits. 
 
 ```{r ET_nets}
 cape.adj <- just.int
 zero.locale <- which(is.na(cape.adj))
 cape.adj[zero.locale] <- 0
+
 cape.net <- graph_from_adjacency_matrix(cape.adj, mode = "directed", weighted = TRUE)
 E(cape.net)$edge.sign <- sign(E(cape.net)$weight)
 E(cape.net)$weight <- abs(E(cape.net)$weight)
-V(cape.net)$et1 <- just.main[,1]
-V(cape.net)$et2 <- just.main[,2]
-V(cape.net)$et3 <- just.main[,3]
+
+rownames(cape.adj) <- colnames(cape.adj) <- tissues
+pheatmap(cape.adj)
+
+tissue.nets <- lapply(c("adipose", "islet", "liver"), 
+function(x) cape.adj[which(tissues == x), which(tissues == x)])
 ```
 
-The following plots show the networks for each ET. The network edges
-are identical in each case, but which vertices are included is based
-on the main effects for each ET.
+The network grouped by tissue.
 
+```{r mod_net, eval = FALSE}
+edge.vals <- E(cape.net)$weight*E(cape.net)$edge.sign
 
-**Degree and Betweenness:** We examined both degree and betweenness of
-vertices. We looked at in degree, out degree, and total degree. 
+min.val <- 2
+hist(edge.vals, breaks = 100)
+abline(v = c(min.val*-1, min.val), col = "red")
+
+take.out <- which(abs(edge.vals) < min.val)
+if(length(take.out) > 0){
+  cape.net <- delete_edges(cape.net, take.out)
+  edge.vals <- edge.vals[-take.out]
+}
+
+remove.verts <- which(degree(cape.net) == 0)
+keep.verts <- which(degree(cape.net) != 0)
+if(length(remove.verts) > 0){
+  cape.net <- delete_vertices(cape.net, remove.verts)
+}
+
+edge.col <- colors.from.values(edge.vals, split.at.vals = TRUE, 
+col.scale = c("blue", "brown"), grad.dir = "ends")
+
+pdf(file.path("~/Desktop", paste0("tissue_network_min_", min.val, ".pdf")), 
+width = 7, height = 7)
+
+final.net <- plot.modular.net(cape.net, modules = tissues[keep.verts], 
+vertex.size = 7, edge.color = edge.col, vertex.names = NA, 
+micro.layout = layout_on_grid)
+
+edges <- as_edgelist(final.net)
+tiss.edges <- apply(edges, 2, function(x) sapply(strsplit(x, "-"), function(y) y[1]))
+cbind(tiss.edges, E(final.net)$weight)
+edges[11,]
+
+final.net <- plot.modular.net(cape.net, modules = tissues[keep.verts], 
+vertex.size = 7, edge.color = edge.col, vertex.names = NA, 
+micro.layout = layout_in_circle)
+
+final.net <- plot.modular.net(cape.net, modules = tissues[keep.verts], 
+vertex.size = 7, edge.color = edge.col, vertex.names = NA, 
+micro.layout = layout_nicely)
+
+final.net <- plot.modular.net(cape.net, modules = tissues[keep.verts], 
+vertex.size = 7, edge.color = edge.col, vertex.names = NA, 
+micro.layout = layout_on_sphere)
+
+final.net <- plot.modular.net(cape.net, modules = tissues[keep.verts], 
+vertex.size = 7, edge.color = edge.col, vertex.names = NA, 
+micro.layout = layout_with_mds)
+
+dev.off()
+
+tkp_id <- tkplot(final.net)
+readline(prompt = "Press return when ready:\n")
+
+layout_matrix <- tkplot.getcoords(tkp_id)
+tkplot.close(tkp_id)
+
+plot(cape.net, layout = layout_matrix, vertex.color = 
+as.numeric(as.factor(tissues[keep.verts])), vertex.label = NA)
+
+final.net <- set_vertex_attr(final.net, "x", value = layout_matrix[,1])
+final.net <- set_vertex_attr(final.net, "y", value = layout_matrix[,2])
+
+plot.modular.net(cape.net, modules = tissues[keep.verts], 
+vertex.size = 7, edge.color = edge.col,edge.width = E(cape.net)$weight)
+imageWithTextColorbar(matrix(edge.vals, ncol = 1), split.at.vals = TRUE, 
+col.scale = c("blue", "brown"), cex = 1.5, grad.dir = "ends")
+imageWithTextColorbar(matrix(edge.vals, ncol = 1), split.at.vals = TRUE, 
+col.scale = c("blue", "brown"), cex = 1.5, grad.dir = "ends", orientation = "h",
+axis.line = -1.5)
+
+dev.off()
+
+```
 
 ```{r dir_fun}
 #This function gets directed edge weights from a graph
@@ -262,7 +440,7 @@ vertices. We looked at in degree, out degree, and total degree.
 dir_weights <- function(net, mods, source.mod, target.mod){
   
   vnames <- V(net)$name
-  eweights <- E(net)$weight*E(net)$pos.neg
+  eweights <- E(net)$weight*E(net)$edge.sign
   elist <- as_edgelist(net)
 
   #find all edges that go from the source module to the 
@@ -270,7 +448,6 @@ dir_weights <- function(net, mods, source.mod, target.mod){
 
   source.mod.v <- vnames[which(mods == source.mod)]
   target.mod.v <- vnames[which(mods == target.mod)]
-
 
   source.v.locale <- which(elist[,1] %in% source.mod.v)
   target.v.locale <- which(elist[,2] %in% target.mod.v)
@@ -303,15 +480,12 @@ ind_weights <- function(net, vertex.name, et.which = 1){
   in.weights <- eweights[v.as.target]
   names(in.weights) <- sources
 
-  vert.att <- vertex_attr(net)
-  att.locale <- which(names(vert.att) == et.which)
 
-  source.main <- vert.att[[att.locale]][match(sources, vnames)]
+  source.main <- just.main[match(sources, vnames),et.which]
   names(source.main) <- sources
-  target.main <- vert.att[[att.locale]][match(targets, vnames)]
+  target.main <- just.main[match(targets, vnames),et.which]
   names(target.main) <- targets
-
-  vert.main <- vert.att[[att.locale]][which(vnames == vertex.name)]
+  vert.main <- just.main[which(vnames == vertex.name),et.which]
   names(vert.main) <- vertex.name
 
   results.list <- list("num.in.out" = c("in" = n.in, "out" = n.out),
@@ -322,13 +496,17 @@ ind_weights <- function(net, vertex.name, et.which = 1){
 }
 
 plot_net <- function(net, ecol = NULL, mcol = NULL){
-  
   eweights <- E(net)$weight
-  if(length(unique(sign(eweights))) > 1){
-    edge.col <- colors.from.values(eweights, split.at.vals = TRUE, col.scale = c("blue", "brown"), grad.dir = "ends")
+  if(is.null(ecol)){
+    if(length(unique(sign(eweights))) > 1){
+      edge.col <- colors.from.values(eweights, split.at.vals = TRUE, col.scale = c("blue", "brown"), grad.dir = "ends")
+    }else{
+      edge.col = colors.from.values(eweights, col.scale = c("purple"), grad.dir = "high")
+    }
   }else{
-    edge.col = colors.from.values(eweights, col.scale = c("purple"), grad.dir = "high")
+    edge.col <- ecol
   }
+
   E(net)$weight <- abs(E(net)$weight)
 
   if(is.null(mcol)){
@@ -375,7 +553,8 @@ plot_ind_vert <- function(vertex.name, vert.results){
     E(toy_net_in)$weight <- as.numeric(source.verts)  
     common.v.names <- intersect(names(all.main), V(toy_net_in)$name)
     V(toy_net_in)$main.effect <- all.main[match(common.v.names, V(toy_net_in)$name)]
-    plot_net(toy_net_in)
+    toy.in.tissue <- sapply(strsplit(V(toy_net_in)$name, "-"), function(x) x[1])
+    plot_net(toy_net_in, mcol = as.factor(toy.in.tissue))
   }
 
  if(length(target.verts) > 0){
@@ -384,183 +563,503 @@ plot_ind_vert <- function(vertex.name, vert.results){
   E(toy_net_out)$weight <- as.numeric(target.verts)  
   common.v.names <- intersect(names(all.main), V(toy_net_out)$name)
   V(toy_net_out)$main.effect <- all.main[match(common.v.names, V(toy_net_out)$name)]
-  plot_net(toy_net_out)
+  toy.out.tissue <- sapply(strsplit(V(toy_net_out)$name, "-"), function(x) x[1])
+  plot_net(toy_net_out, mcol = as.factor(toy.out.tissue))
  }
 
 }
 ```
 
+
+## Directed Tissue Interactions {.tabset .tabset-fade .tabset-pills}
+
+The following boxplot shows the distribution of edge weights between
+each pair of tissue modules. All of them have both positive and negative
+interactions. 
+
 ```{r net_plots, results = "asis", fig.width = 6, fig.height = 6}
+tissue.pairs <- pair.matrix(u_tissues[1:3], ordered = TRUE, self.pairs = TRUE)
+pair.names <- apply(tissue.pairs, 1, function(x) paste(x, collapse = " -> "))
+#mod.weights <- apply(tissue.pairs, 1, function(x) dir_weights(cape.net, tissues[keep.verts], x[1], x[2]))
+mod.weights <- apply(tissue.pairs, 1, function(x) dir_weights(cape.net, tissues, x[1], x[2]))
+par(mar = c(2,8,4,2))
+boxplot(mod.weights, names = pair.names, horizontal = TRUE, las = 2,
+main = "Bulk Tissue Interactions")
+stripchart(mod.weights, pch = 16, col = "darkblue", add = TRUE, method = "jitter")
+abline(v = 0)
 
-for(i in 1:length(et.nets)){
-  
-  cat("### ET", i, "\n")
-  
-  par(mfrow = c(2,2))
+#abs.weight <- lapply(mod.weights, abs)
+#par(mar = c(2,8,4,2))
+#boxplot(abs.weight, names = pair.names, las = 2, horizontal = TRUE)
+#abline(v = 1)
+```
 
-  par(mar = c(0,0,0,0))
-  vert.weights <- just.main[,et]
-  edge.weights <- E(cape.net)$weight
-  pos.neg <- E(cape.net)$edge.sign
-  
-  edge.col <- colors.from.values(edge.weights*pos.neg, split.at.vals = TRUE,
-  split.point = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
-  vertex.col <- colors.from.values(vert.weights, split.at.vals = TRUE,
-  split.point = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
-  
-  plot(cape.net, vertex.size = 5, vertex.color = vertex.col, 
-  layout = layout_with_kk, edge.color = edge.col, vertex.label.dist = 1,
-  vertex.label.cex = 0.5, edge.arrow.size = 0.3)
 
-  par(mar = c(4,4,2,2), xpd = FALSE)
+### Tissue-Tissue Edge Weights
 
-  #barplot(degree(net))
-  in.deg <- degree(cape.net, mode = "in")
-  out.deg <- degree(cape.net, mode = "out")
-  all.deg <- degree(cape.net, mode = "all")
-  bet <- betweenness(cape.net)
-  
-  max.deg <- max(c(in.deg, out.deg, all.deg))
-  max.bet <- max(bet)
-  xmax <- max.deg*1.05
-  ymax <- max.bet*1.05
+The following heatmap shows the median edge weight from each tissue to 
+each other tissue. Source tissues are in rows and target tissues are 
+in columns. 
 
-  plot(out.deg, bet, xlab = "Out Degree", ylab = "Betweenness", pch = 16, 
-  col = vertex.col, xlim = c(0, xmax), ylim = c(0, ymax), main = "Out Degree")
-  text(out.deg, bet, labels = V(simp.net)$name, pos = 3, cex = 0.7)
+```{r mean_weight}
+weight.mat <- matrix(NA, nrow = length(u_tissues)-1, ncol = length(u_tissues)-1)
+rownames(weight.mat) <- colnames(weight.mat) <- u_tissues[1:3]
+for(i in 1:nrow(tissue.pairs)){
+  weight.mat[tissue.pairs[i,1], tissue.pairs[i,2]] <- mean(mod.weights[[i]])
+}
+imageWithText(weight.mat, split.at.vals = TRUE, col.scale = c("blue", "brown"),
+light.dark = "l", grad.dir = "ends", col.text.rotation = 0, col.text.adj = 0.5,
+col.text.shift = 0.4, row.text.rotation = 90, row.text.adj = 0.5, row.text.shift = 0.4,
+cex = 1)
+```
 
-  plot(in.deg, bet, xlab = "In Degree", ylab = "Betweenness", pch = 16, 
-  col = vertex.col, xlim = c(0, xmax), ylim = c(0, ymax), main = "In Degree")
-  text(in.deg, bet, labels = V(simp.net)$name, pos = 3, cex = 0.7)
+### Tissue-Tissue Edge Counts
 
-  plot(all.deg, bet, xlab = "Total Degree", ylab = "Betweenness", pch = 16, 
-  col = vertex.col, xlim = c(0, xmax), ylim = c(0, ymax), main = "All Degree")
-  text(all.deg, bet, labels = V(simp.net)$name, pos = 3, cex = 0.7)
+The following plot shows the proportion of total possible 
+edges going between tissue pairs. The intra-adipose and 
+liver -> adipose connections are the densest.
 
-  cat("\n\n")
+The number of connections within tissues is comparable to the 
+number of connections between tissues.
 
+```{r edge_counts}
+tissue.edge.counts <- sapply(mod.weights, length)
+count.mat <- matrix(NA, nrow = length(u_tissues)-1, ncol = length(u_tissues)-1)
+rownames(count.mat) <- colnames(count.mat) <- u_tissues[1:3]
+for(i in 1:nrow(tissue.pairs)){
+  edge.count <- tissue.edge.counts[i]
+  #divide the number by the total possible edges between the two tissues
+  num.source.mods <- length(which(tissues[keep.verts] == tissue.pairs[i,1]))
+  num.target.mods <- length(which(tissues[keep.verts] == tissue.pairs[i,2]))
+  #num.source.mods <- length(which(tissues == tissue.pairs[i,1]))
+  #num.target.mods <- length(which(tissues == tissue.pairs[i,2]))
+  #the size of the matrix minus self interactions
+  total.possible <- (num.source.mods * num.target.mods) - min(c(num.source.mods, num.target.mods))
+  count.mat[tissue.pairs[i,1], tissue.pairs[i,2]] <- edge.count/total.possible
+}
+
+imageWithText(count.mat, col.scale = "purple", light.dark = "l", col.text.rotation = 0, 
+grad.dir = "high", col.text.adj = 0.5, col.text.shift = 0.3, row.text.rotation = 90, 
+row.text.adj = 0.5, row.text.shift = 0.3, cex = 1)
+```
+
+### Tissue-Tissue Network
+
+This plot shows the bulk tissue network. The thickness of the lines between
+tissues indicates the number of edges between them, and the color indicates
+the mean weight of the edges.
+
+```{r tissue_net, fig.width = 4, fig.height = 4}
+tissue.pairs <- pair.matrix(u_tissues[1:3], ordered = TRUE, self.pairs = TRUE)
+tissue.idx.pairs <- pair.matrix(1:3, ordered = TRUE, self.pairs = TRUE)
+
+tissue_net <- graph_from_edgelist(tissue.pairs, directed = TRUE)
+int.mean = apply(tissue.idx.pairs, 1, function(x) weight.mat[x[1], x[2]])
+int.count = apply(tissue.idx.pairs, 1, function(x) count.mat[x[1], x[2]])
+
+edge.color <- colors.from.values(int.mean, split.at.vals = TRUE,
+col.scale = c("blue", "brown"), grad.dir = "ends")
+
+plot(tissue_net, vertex.color = c("#7DC0A7", "#ED936B", "#909FC7"), edge.color = edge.color, 
+edge.width = (int.count+1e-6)*150, vertex.size = 60, edge.arrow.size = 1,
+edge.curved = rep(0.3, ecount(tissue_net)))
+
+plot(tissue_net, vertex.color = "lightgray", edge.color = edge.color, 
+edge.width = (int.count+1e-6)*150, vertex.size = 60, edge.arrow.size = 1,
+edge.curved = rep(0.3, ecount(tissue_net)))
+
+```
+
+## Degree and Betweenness
+
+**Degree and Betweenness:** We examined both degree and betweenness of
+vertices. We looked at in degree, out degree, and total degree. 
+
+The following boxplots show the distribution of degree and betweenness
+for the modules in each tissue. Both are shown as raw values and normalized
+for the number of modules in each tissue. Adipose tissue is the most central
+in the network.
+
+
+```{r deg_bet, fig.width = 8, fig.height = 8}
+num.mods <- sapply(u_tissues, function(x) length(which(tissues == x)))
+deg <- degree(cape.net)
+bet <- betweenness(cape.net)
+
+tissue.deg <- lapply(u_tissues, function(x) deg[which(tissues == x)])
+norm.deg <- lapply(1:length(tissue.deg), function(x) tissue.deg[[x]]/num.mods[x])
+alph.order <- order(u_tissues)
+
+par(mfrow = c(2,2))
+boxplot(deg~as.factor(tissues), main = "Degree by Tissue", ylab = "Degree", xlab = "")
+boxplot(norm.deg[alph.order], names = u_tissues[alph.order], 
+main = "Degree by Tissue\nNormalized by Module Number", ylab = "Normalized Degree")
+
+boxplot(bet~as.factor(tissues), main = "Betweenness by Tissue", ylab = "Betweenness",
+xlab = "")
+tissue.bet <- lapply(u_tissues, function(x) bet[which(tissues == x)])
+norm.bet <- lapply(1:length(tissue.bet), function(x) tissue.bet[[x]]/num.mods[x])
+boxplot(norm.bet[alph.order], names = u_tissues[alph.order], 
+main = "Betweenness by Tissue\nNormalized by Module Number", 
+ylab = "Normalized Betweenness")
+```
+
+The following plot shows degree vs. betweenness. Each point is one
+transcriptional module, and is colored based on the tissue of origin.
+
+```{r deg_v_bet, fig.width = 8, fig.height = 4}
+par(mfrow = c(1,2))
+plot(deg, bet, col = as.factor(tissues), pch = 16,
+xlab = "Degree", ylab = "Betweenness",main = "Module Degree and Betweenness")
+legend("topleft", legend = u_tissues, col = as.factor(u_tissues), pch = 16)
+
+tissue.col <- unlist(lapply(1:length(u_tissues), function(x) rep(u_tissues[x], length(norm.deg[[x]]))))
+plot(unlist(norm.deg), unlist(norm.bet), col = as.factor(tissue.col), pch = 16,
+xlab = "Normalized Degree", ylab = "Normalized Betweenness",
+main = "Normalized Degree and Betweenness")
+legend("topleft", legend = u_tissues, col = as.factor(u_tissues), pch = 16)
+
+```
+
+
+The following barplots show in-, out-, and total degree by module.
+
+```{r degree, fig.width = 12, fig.height = 10}
+if(is.interactive){quartz(width = 12, height = 10)}
+in_deg <- degree(cape.net, mode = "in")
+out_deg <- degree(cape.net, mode = "out")
+
+in_deg_order <- order(in_deg)
+out_deg_order <- order(out_deg)
+all_deg_order <- order(deg)
+
+par(mfrow = c(1,3), mar = c(4, 17, 2, 2))
+barplot(in_deg[in_deg_order], horiz = TRUE, las = TRUE, cex.names = 0.7,
+col = as.factor(tissues)[in_deg_order], main = "In Degree")
+barplot(out_deg[out_deg_order], horiz = TRUE, las = TRUE, cex.names = 0.7,
+col = as.factor(tissues)[out_deg_order], main = "Out Degree")
+barplot(deg[all_deg_order], horiz = TRUE, las = TRUE, cex.names = 0.7,
+col = as.factor(tissues)[all_deg_order], main = "All Degree")
+```
+
+## Motif Enrichment
+
+```{r motif_enrich1}
+
+#make sure the network represents the current significance level
+cross <- get_network(cross, geno, p_or_q = sig_level)
+cross <- get_network(cross, geno, p_or_q = 0.05, collapse_linked_markers = FALSE)
+
+motif.obj <- find.motifs(cross)
+motif.counts <- count.motifs(motif.obj)
+
+motif.enrich.file <- here("Results", "CAPE", exp.dir, "Motif_enrichment.RDS")
+if(!file.exists(motif.enrich.file)){
+  motif.enrich <- motif.enrichment(cross, permutations = 1000)
+  saveRDS(motif.enrich, motif.enrich.file)
+}else{
+  motif.enrich <- readRDS(motif.enrich.file)
 }
 ```
+
+The following plot shows the overall frequency for different types of motifs
+at $p =$ `r sig_level`. 
+
+```{r motif_sum}
+#motif frequency
+pheatmap(motif.enrich$motif.frequency, cluster_rows = FALSE, cluster_cols = FALSE)
+```
+
+The following heat map shows the depletion/enrichment p values for 
+each type of motif. Enrichment is shown in brown and depletion is 
+shown in blue. Destabilizing motifs trend toward depletion, while
+stabilizing motifs trend toward enrichment.
+
+```{r motif_enrich}
+#this looks like the same thing that we see in the genetics
+#stabilizing motifs are enriched and destabilizing motifs are depleted
+
+show.cols <- c(2, 3, 7, 8)
+overlay.mat <- motif.enrich$overlayed[,show.cols]
+colnames(overlay.mat) <- colnames(motif.enrich$motif.counts)[show.cols]
+rownames(overlay.mat) <- rownames(motif.enrich$motif.counts)
+class.mat <- motif.enrich$overlayed.class.mat[,show.cols]
+
+overlay.mat[which(overlay.mat == 0)] <- NA
+
+par(mar = c(8, 4, 2, 2))
+imageWithText(overlay.mat, class.mat = class.mat, col.scale = c("brown", "blue"), 
+cex = 1, grad.dir = "low", light.dark = "l", row.text.shift = 0.25, 
+col.text.rotation = 45, col.text.adj = 0.5, col.text.shift = 0.5)
+
+
+#destabilizing motifs
+#1,1 should be more extreme than predicted by additive model
+#i.e. the difference between the predicted value and the actual value
+#should be greatest near 1,1
+enh.coh <- motif.effects.continuous(data.obj = cross, geno.obj = geno, 
+interaction = "enhancing", main = "coherent", source.sign = "pos", n.geno.bins = 4,
+scan.what = "eig", p_or_q = sig_level, separate.windows = is.interactive)
+
+#1,1 should be less extreme than predicted by additive model
+supp.inc <- motif.effects.continuous(data.obj = cross, geno.obj = geno, 
+interaction = "suppressing", main = "incoherent", source.sign = "neg", n.geno.bins = 10, 
+scan.what = "eig", p_or_q = sig_level, separate.windows = is.interactive)
+
+#stabilizing motifs
+#trait 
+supp.coh <- motif.effects.continuous(data.obj = cross, geno.obj = geno, 
+interaction = "suppressing", main = "coherent", source.sign = "any", n.geno.bins = 4, 
+scan.what = "eig", p_or_q = sig_level, separate.windows = is.interactive)
+
+enh.inc <- motif.effects.continuous(data.obj = cross, geno.obj = geno, 
+interaction = "enhancing", main = "incoherent", source.sign = "any", n.geno.bins = 4,
+scan.what = "eig", p_or_q = sig_level, separate.windows = is.interactive)
+
+```
+
+## Clustering the Network
+
+There are no clustering algorithms in igraph that work on directed networks,
+so we're making some things up. Network clustering algorithms mostly cluster
+on density. Dense networks are clustered together. Here, we are also interested
+in the similarity of nodes to each other based on their edges. We can look
+at both density-based clustering and similarity-based clustering. 
+
+The network is very dense overall, and it doesn't cluster very well by density.
+
+### Density-based clustering
+
+```{r net_clust}
+cape.int <- just.int
+cape.int[which(is.na(cape.int))] <- 0
+sym.cape <- cape.int + t(cape.int)
+
+has_out <- which(rowSums(sym.cape) != 0)
+sym.cape <- sym.cape[has_out,]
+
+has_in <- which(colSums(sym.cape) != 0)
+sym.cape <- sym.cape[,has_in]
+
+#pheatmap(sym.cape, show_rownames = FALSE, show_colnames = FALSE)
+sym.net <- graph_from_adjacency_matrix(abs(sym.cape), mode = "undirected", weighted = TRUE)
+fast_clust <- cluster_fast_greedy(sym.net)
+
+plot(sym.net, layout = layout_with_kk, vertex.label = NA, vertex.size = 2)
+plot(sym.net, layout = layout_nicely, vertex.label = NA, vertex.size = 2)
+
+col_pal <- categorical_pal(8)
+sym.tiss <- sapply(strsplit(colnames(sym.cape), "-"), function(x) x[1])
+plot.modular.net(sym.net, fast_clust$membership, vertex.size = 5, 
+vertex.col = as.factor(sym.tiss))
+legend('bottomleft', legend = levels(as.factor(sym.tiss)), 
+fill = col_pal[1:length(levels(as.factor(sym.tiss)))])
+```
+
+### Similarity-based clustering
+
+The plot below is a correlation heatmap showing that the nodes of the network
+do cluster fairly well by similarity into about four clusters.
+
+```{r sim_clust}
+cor_net <- cor(sym.cape)
+pheatmap(cor_net, show_rownames = FALSE, show_colnames = FALSE)
+cor.decomp <- plot.decomp(cor_net, cols = as.factor(tissues))
+net.decomp <- plot.decomp(sym.cape, cols = as.factor(tissues))
+
+plot(sym.net, layout = cor.decomp$u[,1:2], vertex.label = NA, 
+vertex.color = as.factor(sym.tiss))
+
+plot(sym.net, layout = net.decomp$u[,1:2], vertex.label = NA, 
+vertex.color = as.factor(sym.tiss))
+```
+
+```{r testing_clustering, eval = FALSE}
+test <- cluster_label_prop(as.undirected(cape.net))
+test2 <- cluster_fast_greedy(as.undirected(cape.net))
+eweights <- E(cape.net)$weight * E(cape.net)$edge.sign
+
+cape.mods <- test$membership
+cape.mods <- test2$membership
+
+compare_mods <- function(mod1, mod2, label1 = "", label2 = ""){
+  u_mod1 <- sort(unique(mod1))
+  u_mod2 <- sort(unique(mod2))
+  mod.pairs <- cbind(rep(u_mod1, length(u_mod2)), rep(u_mod2, each = length(u_mod1)))
+  jaccard.mat <- matrix(NA, nrow = length(u_mod1), ncol = length(u_mod2))
+  rownames(jaccard.mat) <- paste0(label1, u_mod1)
+  colnames(jaccard.mat) <- paste0(label1, u_mod2)
+  for(i in 1:nrow(mod.pairs)){
+    comp.mod1 <- which(mod1 == mod.pairs[i,1])
+    comp.mod2 <- which(mod2 == mod.pairs[i,2])
+    jaccard.mat[mod.pairs[i,1], mod.pairs[i,2]]<- jaccard.ind(comp.mod1, comp.mod2)
+  }
+  return(jaccard.mat)
+}
+
+sym.comp <- compare_mods(test$membership, test2$membership, label1 = "sym", 
+label2 = "no_sym")
+pheatmap(sym.comp)
+plot.modular.net(cape.net, modules = cape.mods, 
+edge.color = colors.from.values(eweights, use.pheatmap.colors = TRUE),
+vertex.size = 3)
+
+#concatenate the source and target values for each node
+source.target.net <- cbind(cape.int, t(cape.int))
+st.net <- source.target.net[,which(colSums(source.target.net) != 0)]
+st.net <- st.net[which(rowSums(st.net) != 0),]
+#take the row-wise correlations.
+net.cor <- cor(t(st.net), use = "pairwise.complete.obs")
+
+
+cor.tiss1 <- sapply(strsplit(colnames(st.net), "-"), function(x) x[[1]])
+cor.tiss2 <- sapply(strsplit(rownames(st.net), "-"), function(x) x[[1]])
+pheatmap(net.cor, show_rownames = FALSE, show_colnames = FALSE)
+pc <- plot.decomp(net.cor, pc = 3)
+plot.decomp(net.cor, cols = as.factor(cor.tiss2))
+
+
+k = 3
+#km <- pam(net.cor, k, diss = FALSE, metric = "euclidean")
+km <- pam(pc$u, k, diss = FALSE, metric = "euclidean")
+mem <- km$clustering
+mem.f <- data.frame(as.factor(mem))
+si <- silhouette(km)
+plot(si, col = 1:k)
+plot.decomp(net.cor, cols = mem)
+
+comp.methods <- compare_mods(test2$membership, mem, "undirected", "kmeans")
+pheatmap(comp.methods)
+
+plot.modular.net(cape.net, modules = cor.mods$membership, 
+edge.color = colors.from.values(eweights, use.pheatmap.colors = TRUE),
+vertex.size = 3)
+
+
+cape.edges <- as_edgelist(cape.net)
+cape.inc <- incidence.matrix(cape.edges)
+cape.bipartite <- graph_from_incidence_matrix(cape.inc)
+
+proj <- bipartite_projection(cape.bipartite)
+source.proj <- proj[[1]]
+target.proj <- proj[[2]]
+plot(source.proj, main = "source node relationships")
+plot(target.proj, main = "target node relationships")
+
+
+```
+
 
 ## Individual Vertex Placement
 
-Sex had a very high betweenness in this network and was in between the
-two modules. We looked more specifically at how that variable fit into 
-the network.
+Sex had a very high betweenness in this network. We looked more 
+specifically at how that variable fit into the network.
 
-The plots below show that Sex had equal numbers of in and out edges,
-but they were completely sorted by module. All the edges going into 
-sex were from module 2 and were negative. All edges coming out of 
-sex go to module 1 and are positive. That is true for all networks,
-although I do not show them below.
+The plots below show that Sex had more outgoing connections than
+incoming connections. The outgoing connections tended to be 
+enhancing, while the incoming connections tended to be suppressing.
 
-```{r, ind_verts, fig.width = 6, fig.height = 6}
-vert.name <- "MEroyalblue"
-vert.results <- ind_weights(cape.net, vert.name, "et1")
+```{r, ind_verts, fig.width = 6, fig.height = 6, eval = FALSE}
+vert.name <- "sexM"
+vert.results <- ind_weights(cape.net, vert.name, 1)
 plot_ind_vert(vert.name, vert.results) 
 ```
 
-The **MEmagenta**, **MEskyblue3**, and **MEorangered4** modules were related to 
-immune response.
+## Stories by module enrichment
 
-```{r immune_mods}
-immune.mods <- c("MEmagenta", "MEskyblue3", "MEorangered4")
-for(i in 1:length(immune.mods)){
-  vert.results <- ind_weights(cape.net, immune.mods[i], et.which = "et1")
-  plot_ind_vert(immune.mods[i], vert.results) 
+```{r enrich_files, eval = FALSE}
+islet.enrich <- readRDS(here("Results", "Expr_clusters", "islets", "islet.enrich.RDS"))
+adipose.enrich <- readRDS(here("Results", "Expr_clusters", "adipose", "adipose.enrich.RDS"))
+liver.enrich <- readRDS(here("Results", "Expr_clusters", "liver", "liver.enrich.RDS"))
+
+adipose.enrichment.tables <- lapply(adipose.enrich, function(x) x$result)
+liver.enrichment.tables <- lapply(liver.enrich, function(x) x$result)
+islet.enrichment.tables <- lapply(islet.enrich, function(x) x$result)
+
+search_term = "insulin"
+
+liver.term.idx <- lapply(liver.enrichment.tables, function(x) grep(search_term, x[,"term_name"]))
+adipose.term.idx <- lapply(adipose.enrichment.tables, function(x) grep(search_term, x[,"term_name"]))
+islet.term.idx <- lapply(islet.enrichment.tables, function(x) grep(search_term, x[,"term_name"]))
+
+liver.term.mods <- which(sapply(liver.term.idx, length) > 0)
+adipose.term.mods <- which(sapply(adipose.term.idx, length) > 0)
+islet.term.mods <- which(sapply(islet.term.idx, length) > 0)
+
+tissue <- "adipose"; test.mods <- names(adipose.term.mods)
+tissue <- "islet"; test.mods <- names(islet.term.mods)
+tissue <- "liver"; test.mods <- names(liver.term.mods)
+
+for(m in 1:length(test.mods)){
+  test.mod.name <- paste(tissue, test.mods[m], sep = "-")
+  print(test.mod.name)
+  mod.locale <- grep(test.mod.name, rownames(var.inf))
+  source.row <- var.inf[mod.locale[1],]
+  source.row <- source.row[which(!is.na(source.row))]
+  print(source.row)
+  mod.tiss <- sapply(strsplit(names(source.row), "-"), function(x) x[1])
+  mod.name <- sapply(strsplit(names(source.row), "-"), function(x) x[2])
+  cbind(mod.tiss, mod.name)
+  
+  plot.enrichment(liver.enrichment.tables$pink, num.terms = 30, order.by = "p_value",
+  max.term.size = 2000)
+  plot.enrichment(islet.enrichment.tables$green, num.terms = 30, 
+  max.term.size = 3000)
+  plot.enrichment(adipose.enrichment.tables$pink, num.terms = 30, max.term.size = 500)
+  
+  target.row <- grep("islet-red", rownames(var.inf))
+  just.main[target.row[1],]
+
+  target.row <- grep("adipose-tan", rownames(var.inf))
+  just.main[target.row[1],]
+
+  plot_effects(cross, )
 }
 ```
 
-ER and Golgi related modules are 
+```{r null_dist, eval = FALSE}
+pairscan.results <- readRDS(here("Results", "CAPE", exp.dir, "cross_pairscan.RData"))
+plot.null.dist(data.obj = cross, 
+pairscan.obj = pairscan.results, path = here("Results", "CAPE", exp.dir))
+mod.cor <- cor(geno[,2,])
+diag(mod.cor) <- NA
+pheatmap(mod.cor, show_rownames = FALSE, show_colnames = FALSE)
+hist(mod.cor)
 
-```{r er_golgi_mods}
-golgi.mods <- c("MEdarkmagenta", "MEyellow", "MEbrown")
-for(i in 1:length(immune.mods)){
-  quartz()
-  vert.results <- ind_weights(cape.net, golgi.mods[i], et.which = "et1")
-  plot_ind_vert(immune.mods[i], vert.results) 
-}
-```
+sig.pairs <- which(!is.na(just.int), arr.ind = TRUE)
+sig.pairs[,1] <- rownames(just.int)[sig.pairs[,1]]
+sig.pairs[,2] <- rownames(just.int)[as.numeric(sig.pairs[,2])]
+sig.pairs <- cbind(sig.pairs, as.vector(just.int[which(!is.na(just.int))]))
+pair.cor <- apply(sig.pairs, 1, function(x) cor(geno[,2,x[1]], geno[,2,x[2]]))
 
-If we plot in weights vs. out weights, we see that most vertices
-are imbalanced. There are only four vertices that have positive 
-weights going in and out.
-
-There are more that have negative weights in both directions. 
-
-```{r all_vert_results}
-enrich.summ <- c(enrich.summ, "sexM")
-names(enrich.summ)[length(enrich.summ)] <- "sexM"
-
-
-sum.in <- rowSums(just.int, na.rm = TRUE)
-sum.out <- colSums(just.int, na.rm = TRUE)
-mean.in <- rowMeans(just.int, na.rm = TRUE)
-mean.out <- colMeans(just.int, na.rm = TRUE)
-
-plot(sum.in, sum.out, xlab = "Total Out Weight", ylab = "Total In Weight",
-xlim = c(min(sum.in)*1.1, max(sum.in)*2))
-text(sum.in, sum.out, labels = enrich.summ, cex = 0.7, pos = 4)
+#There is no relationship between module correlation and 
+#CAPE coefficient
+par(mfrow = c(1,2))
+hist(pair.cor)
+plot(pair.cor, sig.pairs[,3], xlab = "Pair Correlation", ylab = "CAPE coeiffient")
 abline(h = 0, v = 0)
 
-#quartz(width = 10, height = 10)
-plot(mean.in, mean.out, xlab = "Mean Out Weight", ylab = "Mean In Weight",
-xlim = c(min(mean.in)*1.1, max(mean.in)*2))
-text(mean.in, mean.out, labels = enrich.summ, cex = 0.7, pos = 4)
-abline(h = 0, v = 0)
-```
+high.cor <- which(abs(pair.cor) > 0.6)
+mp = 0 
+mp = mp + 1
+marker1 <- sig.pairs[high.cor[mp],1]
+marker2 <- sig.pairs[high.cor[mp],2]
+plot.with.model(geno[,2,marker1], geno[,2,marker2], report = "cor.test")
 
-I want to explore which modules have enrichment for any given term, for example
-"inflammation." Just using the top terms isn't necessarily descriptive of the 
-whole module.
+m <- 0
+m = m + 1
+marker1 <- gsub("_B", "", var.inf[m,"Source"]);marker2 <- gsub("_B", "", var.inf[m,"Target"])
+common.ind <- intersect(rownames(geno_obj), rownames(ET))
+geno.locale <- match(common.ind, rownames(geno_obj))
+et.locale <- match(common.ind, rownames(ET))
+geno <- geno_obj[geno.locale,,]
 
-```{r term_search}
-search_term <- function(enrichment.table, term.name){
-  if(class(enrichment.table) == "list"){
-    enrichment.table <- enrichment.table[[1]]
-  }
-  term.locale <- grep(term.name, enrichment.table[,"term_name"], ignore.case = TRUE)
-  if(length(term.locale) > 0){
-    return(enrichment.table[term.locale,])
-  }else{
-    return(NULL)
-  }
-}
-
-test.term <- "extracellular matrix"
-mods.which <- lapply(module.enrich, function(x) search_term(x, test.term))
-not.null <- which(sapply(mods.which, length) > 0)
-all.search.terms <- Reduce("rbind", mods.which[not.null])
-
-term.col <- rep("gray", length(mean.in))
-names(term.col) <- names(module.enrich)
-term.col[not.null] <- "red"
-plot(mean.in, mean.out, xlab = "Mean Out Weight", ylab = "Mean In Weight",
-xlim = c(min(mean.in)*1.1, max(mean.in)*2), col = term.col, pch = 16, main = test.term)
-#text(mean.in, mean.out, labels = enrich.summ, cex = 0.7, pos = 4)
-abline(h = 0, v = 0)
-
-```
-
-Let's look at some effects.
-
-
-```{r effects}
-geno_obj <- readRDS(here("Results", exp.dir, "cross_geno.RData"))
-plot_effects(cross, geno_obj, marker1 = "MEyellow_B", pheno_type = "ET", plot_type = "b",
-error_bars = "se")
-plot_effects(cross, geno_obj, marker1 = "MEgrey60_B", pheno_type = "ET", plot_type = "b",
-error_bars = "se")
-plot_effects(cross, geno_obj, marker1 = "MEyellow_B", marker2 = "MEgrey60_B", 
-pheno_type = "ET", plot_type = "h", error_bars = "se")
-
-marker1 = "MEyellow";marker2 = "MEgrey60"
-par(mfrow = c(1,3))
-for(i in 1:ncol(cross$ET)){
-  pheno.col <- colors.from.values(cross$ET[,i], use.pheatmap.colors = TRUE)
-  plot(geno_obj[,2,marker1], geno_obj[,2,marker2], col = pheno.col, pch = 16,
-  main = paste("ET", i), xlab = marker1, ylab = marker2)
-}
-
+et <- 0
+et <- et + 1
+df <- data.frame(cbind(final.cross$ET[,et], geno[,2,marker1], geno[,2,marker2]))
+colnames(df) <- c("ET", "marker1", "marker2")
+model <- lm(ET~marker1*marker2, data = df);summary(model)
+interact_plot(model, marker1, marker2, interval = TRUE, int.width = 0.9, main = paste("ET", et))
+interact_plot(model, marker2, marker1, interval = TRUE, int.width = 0.9, main = paste("ET", et))
 
 ```

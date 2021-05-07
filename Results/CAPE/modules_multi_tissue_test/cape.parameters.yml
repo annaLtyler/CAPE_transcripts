@@ -33,9 +33,6 @@ traits_normalized:
 eig_which:
  - 1
  - 2
- - 3
- - 4
- - 5 
 pval_correction:
  - fdr 
 use_kinship:
@@ -49,7 +46,7 @@ locus:
 save_results:
  - true
 use_saved_results:
- - true
+ - false
 
 #================================================
 # Single Scan Parameters 

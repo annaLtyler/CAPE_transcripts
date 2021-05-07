@@ -1,0 +1,79 @@
+Permutations show that any lambda we choose
+results in highly significant correlations between latent transcripts and 
+latent traits, so we can select lambda based on how many transcripts we 
+want to cluster. 
+
+Perform permutations for PMCA. All selections of lambda yield significant
+correlations. Therefore we can pick any lambda we want, to optimize the number
+of transcripts and traits in each latent variable.
+
+There are some decision points:
+
+*Selecting Transcipts*
+
+1. Penalize very little to get rankings of transcripts, rather than a subset
+of transcripts. Select transcripts post hoc based on correlation to latent
+transcript.
+
+2. Moderate penalty to target a number of desired transcripts. 
+Because we are using sparse CCA, we do not need to dimension-reduce the 
+transcript matrix ahead of time. In Subramanian et al. (2018), they did 
+not reduce the matrix when using SCCA as they did when using CCA. They 
+report the L1 penalty they used, but didn't say how they chose it.
+They must have done
+
+3. Select a penalty to maximize the number of transcripts that are associated
+with only one trait. This seems reasonable, but not necessarily biologically
+motivated, since we know all the traits are related. We could then cluster
+the transcripts all together, or cluster the transcripts for each trait 
+independently. Although, this would leave out transcripts, that still
+affected more than one trait.
+
+*Clustering Transcipts*
+
+1. WGCNA (or variant). If we identify a subset of transcripts that are maximally
+correlated with the trait, we could then use a standard gene clustering algorithm
+to cluster the transcripts.
+    
+    a. It seems likely that clusters on a subset of transcripts would 
+    match 
+
+2. Bin transcripts based on loadings. Dividing evenly will create smaller 
+groups at high and low loadings, and larger groups in the middle. I think 
+this is okay, since we're more interested in the effects of the end groups.
+But it's not a very satisfying way to bin.
+
+
+*Other Considerations*
+
+* If we use ET, we can cluster tissues independently, and 
+always be targeting the same trait combinations.
+
+## Permutation Results {.tabset .tabset-fade .tabset-pills}
+
+The plots below show the results of the permutations for correlating the
+transcriptome from each tissue with the normalized trait matrix.
+
+### Islet Permutations
+
+```{r islet_perm, fig.width = 8, fig.height = 8}
+islet.perm.file <- here("Results", "CCA_Clusters", paste0("islet.", file.text, ".perm.RDS"))
+islet.perm <- CCA_permute_grid(islet.mats$X, islet.mats$Z, filename = islet.perm.file, 
+search_grid = FALSE)
+plot(islet.perm);print(islet.perm$pvals)
+```
+
+### Liver Permutations
+
+```{r liver_perm, fig.width = 8, fig.height = 8}
+liver.perm.file <- here("Results", "CCA_Clusters", paste0("liver.", file.text, ".perm.RDS"))
+liver.perm <- CCA_permute_grid(liver.mats$X, liver.mats$Z, filename = liver.perm.file, search_grid = FALSE)
+plot(liver.perm);print(liver.perm$pvals)
+```
+
+### Adipose Permutations
+```{r adipose_perm, fig.width = 8, fig.height = 8}
+adipose.perm.file <- here("Results", "CCA_Clusters", paste0("adipose.", file.text, ".perm.RDS"))
+adipose.perm <- CCA_permute_grid(adipose.mats$X, adipose.mats$Z, filename = adipose.perm.file, search_grid = FALSE)
+plot(adipose.perm);print(adipose.perm$pvals)
+```

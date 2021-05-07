@@ -8,8 +8,8 @@
 #color.by supercedes cols if specified.
 
 plot.decomp <- function(mat, pc = 2, mean.center = TRUE, 
-scale.col = FALSE, cols = rep("black", nrow(mat)), color.by = NULL, pch = NULL, main = NULL, 
-plot.results = TRUE){
+scale.col = FALSE, cols = rep("black", nrow(mat)), color.by = NULL, 
+pch = NULL, cex = 1, main = NULL, plot.results = TRUE){
 
 	na.rows <- which(apply(mat, 1, function(x) all(!is.na(x))))
 	if(length(na.rows) < nrow(mat)){
@@ -30,7 +30,9 @@ plot.results = TRUE){
 	
 	decomp <- svd(scaled.mat, nu = pc, nv = pc)
 	pc.mat <- decomp$u
-	colnames(pc.mat) <- paste0("PC", 1:ncol(pc.mat))
+	var.exp <- decomp$d^2/sum(decomp$d^2)
+	var.text <- signif(var.exp[1:ncol(pc.mat)]*100, 2)	
+	colnames(pc.mat) <- paste0("PC", 1:ncol(pc.mat), " (", var.text, "%)")
 	decomp$rows.used <- na.rows
 	
 	if(plot.results){
@@ -49,13 +51,18 @@ plot.results = TRUE){
 			
 		for(i in 1:num.plots){
 			if(!is.null(color.by)){
-				cols <- colors.from.values(color.by[na.rows,i])
+				if(is.numeric(color.by[na.rows,i])){
+					cols <- colors.from.values(color.by[na.rows,i])
+				}else{
+					cols <- as.numeric(as.factor(color.by[na.rows,i]))
+				}
 			}
 			if(pc == 2){
-				plot(pc.mat[,1], pc.mat[,2], xlab = "PC1", ylab = "PC2", 
-				main = plot.label[i], col = cols, pch = pch)
+				plot(pc.mat[,1], pc.mat[,2], xlab = colnames(pc.mat)[1], 
+				ylab = colnames(pc.mat)[2], 
+				main = plot.label[i], col = cols, pch = pch, cex = cex)
 			}else{
-				pairs(pc.mat[,1:pc], col = cols, pch = pch, 
+				pairs(pc.mat[,1:pc], col = cols, pch = pch, cex = cex,
 				main = plot.label[i])
 				}
 		}
