@@ -8,10 +8,10 @@
 #SBATCH -e slurm.%N.%j.err # STDERR
 #SBATCH --mail-user=anna.tyler@jax.org
 #SBATCH --mail-type=END
-# example use: sbatch cluster_transcripts
+# example use: sbatch --export=pheno_type="traits",delete_previous="FALSE" cluster_transcripts
 
 cd $SLURM_SUBMIT_DIR
 
 module load singularity
 
-singularity exec ../../Containers/cape_transcripts_latest.sif Rscript -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "cluster_transcripts.Rmd"))'
+singularity exec ../../Containers/cape_transcripts_latest.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "cluster_transcripts_CCA.Rmd"))' --args "$pheno_type" "$delete_previous"
