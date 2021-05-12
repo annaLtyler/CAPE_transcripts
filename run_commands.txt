@@ -5,4 +5,4 @@
 ##=====================================================================================##
 
 R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args "eigentraits"
-R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args "traits"
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args "traits" "FALSE"
