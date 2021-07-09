@@ -26,15 +26,18 @@ if(is.na(tissue.name)){
   #is.interactive = TRUE
 ```
 
-```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-needed.packages <- c("here", "oposSOM", "gProfileR", "pheatmap", "qtl2")
-for(i in 1:length(needed.packages)){library(needed.packages[i], character.only = TRUE)}
-```
-
 ```{r source_code}
+library("here")
 all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
 for(j in 1:length(all.fun)){source(all.fun[j])}
 ```
+
+
+```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
+needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2")
+load_packages(needed.packages)
+```
+
 
 Get the expression for the specified tissue.
 
