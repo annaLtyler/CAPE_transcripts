@@ -35,7 +35,7 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
 needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2")
-load_libraries(needed.packages)
+load_libraries(needed.packages, personal.library = TRUE)
 ```
 
 
