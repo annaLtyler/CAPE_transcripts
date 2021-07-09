@@ -14,4 +14,4 @@ cd $SLURM_SUBMIT_DIR
 
 module load singularity
 
-singularity exec ../../Containers/cape_transcripts_latest.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "SOM.Rmd"))' --args "$tissue_name" "$delete_previous"
+singularity exec ../../Containers/som.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "SOM.Rmd"))' --args "$tissue_name" "$delete_previous"

@@ -1,0 +1,20 @@
+Bootstrap: docker
+From: bioconductor/bioconductor_docker:devel
+Stage: spython-base
+
+%labels
+maintainer="atyler"
+%post
+export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
+&& apt-get install -y libglpk-dev \
+libgmp-dev \
+libxml2-dev
+R --slave -e 'install.packages("here",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("igraph",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("pheatmap",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("qlt2",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("gProfileR",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("gProfileR",repos="https://cran.rstudio.com/")'
+R --slave -e 'BiocManager::install("oposSOM")'
+
+exec /bin/bash R "$@"
