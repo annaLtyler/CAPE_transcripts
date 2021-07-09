@@ -9,7 +9,7 @@ module.weights <- function(net, modules, summ.fun = "mean"){
 	
 	u_modules <- sort(unique(modules))
 	module.locale <- lapply(u_modules, function(x) which(modules == x))
-	mod.pairs <- pair.matrix(u_modules)
+	mod.pairs <- pair.matrix(1:length(u_modules))
 
 	net.adj <- as.matrix(as_adjacency_matrix(net, type = "both", attr = "weight"))
 

@@ -1,16 +1,23 @@
 #This function performs CCA.permute over a grid of penalties
 
-CCA_permute_grid <- function(X, Z, penalty_min = 0, penalty_max = 1, n.penalty = 10, 
-nperms = 100, search_grid = TRUE, filename){
+CCA_permute_grid <- function(X, Z, chromx = NULL, x_penalty = seq(0,1,0.1), 
+z_penalty = seq(0,1,0.1), nperms = 100, search_grid = TRUE, filename){
+
     if(!file.exists(filename)){
-        penalty_seq <- segment_region(penalty_min, penalty_max, n.penalty, "ends")
         if(search_grid){
-            penalty_pairs <- pair.matrix(penalty_seq, ordered = TRUE, self.pairs = TRUE)
+            penalty_pairs <- cbind(rep(x_penalty, length(z_penalty)), 
+            rep(z_penalty, each = length(x_penalty)))
         }else{
-            penalty_pairs <- cbind(penalty_seq, penalty_seq)
+            penalty_pairs <- cbind(x_penalty, z_penalty)
         }
-        perm.results <- CCA.permute(x = X, Z, typex = "standard", typez = "standard", 
-        penaltyxs = penalty_pairs[,1], penaltyzs = penalty_pairs[,2], nperms = nperms)
+        if(is.null(chromx)){
+            perm.results <- CCA.permute(x = X, Z, typex = "standard", typez = "standard", 
+            penaltyxs = penalty_pairs[,1], penaltyzs = penalty_pairs[,2], nperms = nperms)
+        }else{
+            perm.results <- CCA.permute(x = X, Z, typex = "ordered", typez = "standard", 
+            penaltyxs = penalty_pairs[,1], penaltyzs = penalty_pairs[,2], nperms = nperms,
+            chromx = chromx)
+        }
         saveRDS(perm.results, filename)
     }else{
         perm.results <- readRDS(filename)

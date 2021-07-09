@@ -2,7 +2,7 @@
 #set vertex.names to NA to remove the vertex labels
 
 plot.modular.net <- function(net, modules, module.names = NULL, 
-micro.layout = layout_with_kk, macro.layout = layout_with_kk, 
+micro.layout = layout_nicely, macro.layout = layout_nicely, 
 macro.layout.fun = "mean", cluster.layout.matrix = NULL, 
 shiftx = 10, shifty = 10, vertex.col = NULL, vertex.size = 1, 
 vertex.names = NA, edge.color = NULL, vertex.label.dist = 1, 
@@ -57,6 +57,7 @@ highlight.nodes = NULL){
 		pane.x.y <- cluster.layout.matrix[i,,drop=FALSE]
 		mod.layout[[i]][,1] <- mod.layout[[i]][,1] + (shiftx * pane.x.y[,1])
 		mod.layout[[i]][,2] <- mod.layout[[i]][,2] + (shifty * pane.x.y[,2])
+		if(any(which(!is.finite(mod.layout[[i]])))){stop()}
 		}	
 
 	full.layout <- Reduce("rbind", mod.layout)

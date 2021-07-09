@@ -1,5 +1,6 @@
 sort.by.then.by <-
-function(tableX, sort.cols = c(1,2), col.type = c("c", "n"), decreasing = c(FALSE, FALSE), return.order = FALSE){
+function(tableX, sort.cols = c(1,2), col.type = c("c", "n"), 
+decreasing = c(FALSE, FALSE), return.order = FALSE){
 	
 
 	

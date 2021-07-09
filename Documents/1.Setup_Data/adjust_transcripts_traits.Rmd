@@ -1,0 +1,173 @@
+---
+title: "Adjusting Transcripts and Traits for Further Analysis"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+The purpose of this workflow is to set up transcripts and traits 
+for downstream analysis. 
+Both cluster_transcripts_CCA.Rmd and cluster_transcripts.Rmd operate
+on the same adjusted traits and transcripts. This workflow sets up 
+those files for both analyses.
+
+```{r get_args}
+args <- commandArgs(trailingOnly=T)
+exp.name = args[1]
+delete_previous <- as.logical(args[2])
+
+if(is.na(delete_previous)){
+    #exp.name = "weight_adjusted"
+    exp.name = "all_traits"
+    delete_previous <- FALSE
+}
+
+#traits to analyze can either be full names, a pattern to search for, like "TG",
+#or numeric values indicating the column numbers of the traits.
+#the analysis results will be put in a folder named for exp.name
+#adj.traits are full names, partial names, or column numbers of 
+#traits to adjust out of the phenotype matrix. This could be weight,
+#for example, or NULL to not adjust for anything
+
+#exp.name = "TG"
+#   keep.traits <- "TG" #Triglycerides only
+#   adj.traits <- NULL
+
+#exp.name = "ex_vivo"
+#   keep.traits <- c("WPIC", "Ins_per_islet", "num_islets")
+#   adj.traits = NULL
+
+#exp.name = "Homeostasis"    
+#    keep.traits <- c("HOMA_IR_0min", "HOMA_B_0min", "Glu_tAUC", "Ins_tAUC")
+#    adj.traits <- NULL
+
+if(exp.name == "all_traits"){
+    keep.traits <- 1:20 #all traits;
+    adj.traits <- NULL #traits to adjust for, set to NULL to not adjust
+}
+if(exp.name == "weight_adjusted"){
+    keep.traits <- 1:20 #all traits;
+    adj.traits <- "weight" #traits to adjust for, set to NULL to not adjust
+}
+
+```
+
+```{r load_code}
+is.interactive = FALSE
+#is.interactive = TRUE
+library("here")
+
+results.dir <- here("Results", "CCA_Clusters", exp.name)
+if(!file.exists(results.dir)){dir.create(results.dir)}
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r delete_previous}
+if(delete_previous){
+    results.files <- list.files(results.dir, full.names = TRUE)
+    unlink(results.files)
+}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
+"RColorBrewer", "igraph", "corpcor", "easyPubMed", "knitr", "kableExtra",
+"ape")
+load_libraries(all.packages)
+```
+
+
+```{r read_data}
+all.var <- ls()
+data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
+if(!data.loaded){
+  gen.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+  tissue.files <- list.files(here("Data", "RDS_datasets_tissues"), full.names = TRUE)
+  tissue.names <- gsub(".RDS", "", basename(tissue.files))
+  tissue.data <- lapply(tissue.files, readRDS)
+  names(tissue.data) <- tissue.names
+  tissue.counts <- lapply(tissue.data, function(x) x$data$raw)
+  tissue.rz <- lapply(tissue.data, function(x) x$data$rz)
+  tissue.covar <- lapply(tissue.data, function(x) x$covar.matrix)
+  }
+```
+
+
+## Select Traits
+
+Extract clinical traits, expression traits, and covariates from the 
+islet data set. Adjust for covariates.
+
+Here we also select the traits for analysis and adjust for any traits
+that we want to use as covariates, for example, weight.
+
+```{r select_traits}
+pheno <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsAsFactors = FALSE))
+num.pheno <- apply(pheno[,11:(ncol(pheno)-1)], 2, as.numeric)
+rownames(num.pheno) <- pheno[,1]
+
+max.n <- which.max(sapply(tissue.rz, nrow)) #adjust with the largest covariate matrix
+covar <- tissue.covar[[max.n]]
+
+if(is.numeric(keep.traits[1])){
+    keep.trait.locale <- keep.traits
+}else{
+    keep.trait.locale <- sapply(keep.traits, function(x) grep(x, colnames(num.pheno), ignore.case = TRUE))
+}
+
+if(length(adj.traits) > 0){
+    adj.trait.locale <- as.vector(sapply(adj.traits, function(x) grep(x, colnames(num.pheno), ignore.case = TRUE)))
+    keep.trait.locale <- setdiff(keep.trait.locale, adj.trait.locale)
+    all.covar <- Reduce("cbind", get.xz(covar, num.pheno[,adj.trait.locale]))
+}else{
+    all.covar <- covar
+}
+
+adj.pheno <- adjust(num.pheno[,keep.trait.locale], all.covar)
+cca.pheno <- apply(adj.pheno, 2, scale)
+rownames(cca.pheno) <- rownames(adj.pheno)
+
+pheno.file <- here("Results", "CCA_Clusters", exp.name, "Adjusted_Phenotypes.RDS")
+saveRDS(cca.pheno, pheno.file)
+
+covar.file <- here("Results", "CCA_Clusters", exp.name, "Covariates.RDS")
+saveRDS(all.covar, covar.file)
+```
+
+## Filter Expression
+Filter the expression matrices to include only genes that have at least
+a minimum amount of expression. Also regress out covariates using the 
+same covariate matrix generated above.
+
+Here we use the raw expression matrix to select transcripts from the rank Z
+normalized expression matrix. 
+
+```{r adjust_covar}
+min.mean = 10
+
+filter.expr <- function(count.mat, rz.mat, covar.mat, min.mean){
+    trans <- which(colMeans(count.mat) > min.mean)
+    expr <- rz.mat[,trans]
+    adj.expr <- adjust(expr, covar.mat)
+    return(adj.expr)
+}
+
+adj.expr.file <- file.path(results.dir, "Adjusted_Expression.RDS")
+if(!file.exists(adj.expr.file)){
+    tissue.adj.expr <- lapply(1:length(tissue.rz), 
+        function(x) filter.expr(tissue.counts[[x]], tissue.rz[[x]], 
+        all.covar, min.mean))
+    names(tissue.adj.expr) <- tissue.names
+    saveRDS(tissue.adj.expr, adj.expr.file)
+}else{
+    tissue.adj.expr <- readRDS(adj.expr.file)
+}
+```

@@ -789,3 +789,160 @@ pen_seq = penalty.seq, search_grid = search_grid,
 filename = here("Results", "CCA_Clusters", paste0("liver.", file.text, ".sweep.RDS")))
 liver.trait.penalty <- get_best_penalty(liver.grid.results)
 ```
+
+## Sandbox
+
+This is a set of code that is not executed, but can be used to explore networks
+a bit more. 
+
+```{r term_genes, eval = FALSE}
+#here I'm playing around to find genes associated with the GO
+#terms of interest for a given tissue for a plot for Greg
+#We see that liver trait 7 is associated with mitochondrial 
+#respiration, so we look for genes annotated to apoptosis and 
+#find their loadings in our traits
+tissue = "Liver"; ct <- 1; search.term.up = c("histone", "chromatin"); search.term.down = c("fatty", "acid", "lipid")
+#tissue = "Adipose"; ct <- 1; search.term.down = c("cytokine", "leukocyte", "immune"); search.term.up = c("acid", "oxidation")
+#tissue = "Adipose"; ct <- 20; search.term.down = "rna"; search.term.up = "stress"
+#tissue = "Islet"; ct <- 17; search.term.down = c("mitosis", "mitotic", "division", "cycle"); search.term.up = c("rna", "mrna")
+#tissue = "Islet"; ct <- 12; search.term.down = "cytoskeleton"; search.term.up = "cytoskeleton"
+
+tissue.locale <- which(tissue.names == tissue)
+ct.enrich <- get_enrichment_plus(matched.mats[[tissue.locale]], 
+tissue.CCA.results[[tissue.locale]], ct)
+
+plot.enrichment(ct.enrich[[1]], num.terms = 30, max.term.size = 2000)
+plot.enrichment(ct.enrich[[2]], num.terms = 30, max.term.size = 2000)
+
+ct.genes <- enrichment_plus_genes(ct.enrich[[1]], 
+search.term = search.term.up)
+
+ct.genes <- enrichment_plus_genes(ct.enrich[[2]], 
+search.term = search.term.down)
+
+gene.query <- unique(unlist(strsplit(ct.genes[,"intersection"], ",")))
+ct.gene.table <- getBM(c("external_gene_name", "ensembl_gene_id", "chromosome_name", "start_position", "end_position"), 
+"ensembl_gene_id", gene.query, mus)
+
+table(ct.gene.table[,"chromosome_name"])
+ct.gene.locale <- match(ct.gene.table[,"ensembl_gene_id"], colnames(matched.mats[[tissue.locale]]$X))
+gene.vals  <- tissue.CCA.results[[tissue.locale]]$u[ct.gene.locale,ct]
+names(gene.vals) <- ct.gene.table[,"external_gene_name"]
+sort(gene.vals)
+
+#look for connections between these genes and diabetes on pubmed
+lit.genes <- names(head(sort(gene.vals), 10)) #for neg genes
+#lit.genes <- names(tail(sort(gene.vals), 3)) #for pos genes
+#lit.genes <- names(sort(gene.vals))
+all.pubmed <- lapply_pb(as.vector(lit.genes), 
+function(x) get_pubmed_ids(paste("Diabetes AND", tissue, "AND", x)))
+num.papers <- unlist(lapply(all.pubmed, function(x) x$Count))
+with.papers <- which(num.papers != 0)
+cbind(lit.genes, num.papers)
+cbind(lit.genes[with.papers], num.papers[with.papers])
+has.data <- all.pubmed[with.papers]
+all.abstracts <- lapply(has.data, function(x) fetch_pubmed_data(x, format = "abstract"))
+names(all.abstracts) <- lit.genes[with.papers]
+```
+
+## Code for GSEA analyais
+
+
+```{r setup_gsea}
+#get cell-type specific gene sets (category C8)
+#see https://www.gsea-msigdb.org/gsea/msigdb/genesets.jsp?
+go.types <- c("BP", "CC", "MF")
+go.genes <- vector(mode = "list", length = length(go.types))
+names(go.genes) <- go.types
+
+for(i in 1:length(go.gene.files)){
+    gene.set.file <- here("Data", "GO_Sets", paste0(go.types[i], "_sets.RDS"))
+    if(!file.exists(gene.set.file)){
+        go.set <- msigdbr(species = "Mus musculus", category = "C5", 
+            subcategory = paste0("GO:", go.types[i]))
+        go.gene.set <- set_to_list(go.set)
+        saveRDS(go.gene.set, gene.set.file)
+    }else{
+        go.gene.set <- readRDS(gene.set.file)
+    }
+    go.genes[[i]] <- go.gene.set
+}
+
+
+
+rename_gene_list <- function(tissue.gene.list, annotation.table){
+ tissue.gene.names <- lapply(tissue.gene.list, 
+    function(x) unlist(annotation.table[match(names(x), 
+        annotation.table[[1]]),"symbol"]))
+
+    for(tg in 1:length(tissue.gene.list)){
+        names(tissue.gene.list[[tg]]) <- tissue.gene.names[[tg]]
+    }
+    return(tissue.gene.list)
+}
+
+gsea_enrichment <- function(tissue.gene.list, go.term.list, filename){
+    if(!file.exists(filename)){
+        tissue.enrich <- lapply(tissue.gene.list, 
+            function(x) fgsea::fgseaMultilevel(pathways = go.term.list, 
+            stats = abs(x), minSize=15, maxSize=600, gseaParam = 1, 
+            scoreType = "pos"))
+        saveRDS(tissue.enrich, filename)
+    }else{
+        tissue.enrich <- readRDS(filename)
+    }
+    result <- list("Tissue_Transcripts" = tissue.gene.list, "Enrichments" = tissue.enrich)
+    return(result)
+}
+
+
+ 
+    tissue.gene.names <- rename_gene_list(tissue.gene.list, gene.tables[[i]])
+    tissue.go.enrich <- vector(mode = "list", length = length(go.types))
+    names(tissue.go.enrich) <- go.types
+    for(g in 1:length(go.types)){
+        filename = paste0("Enrichment.GSEA.", tissue.names[i], ".", go.types[g], ".RDS")
+        tissue.go.enrich[[g]] <- gsea_enrichment(tissue.gene.names, 
+        go.genes[[g]], file.path(results.dir, filename))
+    }
+
+```
+
+## Network Projections onto Traits {.tabset .tabset-fade .tabset-pills}
+
+Here we look at the trait projection of each bipartite 
+network constructed above.
+
+```{r trait_proj, fig.width = 10, fig.height = 15, results = "asis"}
+for(i in 1:length(tissue.names)){
+    cat("###", tissue.names[i], "\n")
+    if(class(enrich.mats[[i]])[1] == "matrix"){
+        plot(enrich.bips[[i]]$Projections[[2]], 
+        vertex.size = 5, layout = layout_with_kk) #trait projection
+    }else{
+        plot.text("No Enrichments")
+    }
+    cat("\n\n")
+}
+```
+
+## Network Projections onto Terms {.tabset .tabset-fade .tabset-pills}
+
+Here we look at the term projection of each bipartite 
+network constructed above.
+
+```{r term_proj, fig.width = 10, fig.height = 15, results = "asis"}
+for(i in 1:length(tissue.names)){
+    cat("###", tissue.names[i], "\n")
+    if(class(enrich.mats[[i]])[1] == "matrix"){
+        if(is.interactive){pdf(file.path(results.dir, paste0("Enrichment.Term.Projection.", tissue.names[i], ".pdf")), width = 20, height = 20)}
+        plot(enrich.bips[[i]]$Projections[[1]], 
+        vertex.size = 5, layout = layout_with_kk) #trait projection
+    }else{
+        plot.text("No Enrichments")
+    }
+    if(is.interactive){dev.off()}
+    cat("\n\n")
+}
+
+```

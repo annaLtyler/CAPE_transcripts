@@ -1,0 +1,7 @@
+
+
+cca.results <- CCA(matched.mats[[i]]$X[,ordered.transcripts[[i]]], 
+                matched.mats[[i]]$Z, typex = "ordered", typez = "standard", 
+                K = num.components, penaltyx = tissue.trait.penalty[[i]][1], 
+                penaltyz = tissue.trait.penalty[[i]][2], chromx = chr.labels[[i]],
+                niter = 100, trace = FALSE)

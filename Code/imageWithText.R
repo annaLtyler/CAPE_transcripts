@@ -228,7 +228,7 @@ sig.digs = 3, use.pheatmap.colors = FALSE, na.col = "lightgray", gridlines = FAL
 			par(xpd = TRUE)
 			# text(x.coord[1,], (min(y.coord)-(max(y.coord)) - col.text.shift), labels = col.names, srt = col.text.rotation, adj = col.text.adj)
 			plot.range <- max(y.coord) - min(y.coord)
-			text((x.coord[1,]), (min(y.coord) - (plot.range*0.1) - col.text.shift), labels = col.names, srt = col.text.rotation, adj = col.text.adj, cex = col.text.cex)
+			text((x.coord[1,]), (min(y.coord) - (plot.range*0.01) - col.text.shift), labels = col.names, srt = col.text.rotation, adj = col.text.adj, cex = col.text.cex)
 			}
 
 		if(!is.null(row.names)){

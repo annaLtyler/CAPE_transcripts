@@ -1,5 +1,5 @@
 ---
-title: "CAPE in using clustered transcripts in multiple tissues"
+title: "Clusters to CAPE"
 author: Anna L Tyler
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: 
@@ -13,7 +13,7 @@ output:
 ```{r set_type}
 
 args <- commandArgs(trailingOnly=T)
-exp.name = args[1]
+exp_name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(delete_previous)){
@@ -22,30 +22,20 @@ if(is.na(delete_previous)){
     delete_previous <- FALSE
 }
 
-
-
 #set testing to FALSE to run full gene expression networks and to TRUE
 #to run a subset.
 #testing = TRUE
 testing = FALSE
 is.interactive = FALSE
 #is.interactive = TRUE
+geno.type <- "modules"
+include.real.genotypes = FALSE #whether to include true genotypes or just expression
 ```
 
-The purpose of this workflow is to set up data for CAPE using clustered
-transcripts. We use CoExpNets to cluster the transcripts in multiple 
-tissues from the same animals. We can then run cape on the multi-tissue
-transcript clusters to see if we see interactions between transcripts
-from different tissues. 
+The purpose of this workflow is to use data derived from adjust_transcripts_traits.Rmd
+and cluster_transcripts.Rmd to data objects that can be used in CAPE.
 
-In this workflow we cluster transcripts separately in liver,
-pancreatic islets, and adipose tissue. We run functional enrichment
-on each to characterize the modules.
-
-We use these modules in place of genotypes in a CAPE model
-to explain traits through interactions bewteen multi-tissue gene expression. 
-For traits, we will use the first three eigentraits of the trait 
-matrix including all traits except for weight.
+This has not yet been updated for the new data object format.
 
 
 ```{r load_code}
@@ -59,12 +49,12 @@ all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "CoExpNets", "abind"
 load_libraries(all.packages)
 ```
 
-Read in pre-filtered and pre-adjusted transcript data from adjust_transcripts_traits.Rmd
+Read in pre-filtered and pre-adjusted transcript data from cluster_transcripts_CCA.Rmd
+
 
 ```{r read_data}
 data.dir <- here("Results", "CCA_Clusters", exp.name)
 expr.data <- readRDS(file.path(data.dir, "Adjusted_Expression.RDS"))
-load(here("Data", "dataset.DO.CUBE.multissue.RData"))
 ```
 
 ## Cluster gene expression using CoExpNets
@@ -180,40 +170,7 @@ for(i in 1:length(tissue.nets)){
 
 ## Trait-Module Correlation {.tabset .tabset-fade .tabset-pills}
 
-The figures below show the correlations between module eigengenes
-and the physiological traits.
-
-```{r read_pheno}
-pheno.file <- here("Results", "CCA_Clusters", exp.name, "Adjusted_Phenotypes.RDS")
-pheno <- readRDS(pheno.file)
-```
-
-
-```{r cor_fun}
-mod_trait_cor <- function(trait.matrix, MEs){
-  xz <- get.xz(trait.matrix, as.matrix(MEs))
-  cor.mat <- matrix(NA, nrow = ncol(trait.matrix), ncol = ncol(MEs))
-  rownames(cor.mat) <- colnames(trait.matrix)
-  colnames(cor.mat) <- colnames(MEs)
-  for(i in 1:ncol(trait.matrix)){
-    for(j in 1:ncol(MEs)){
-      cor.mat[i,j] <- cor(xz$X[,i], xz$Z[,j])
-    }
-  }
-  return(cor.mat)
-}
-```
-
-```{r mod.trait.cor, results = "asis"}
-all.mod.cor <- lapply(tissue.nets, function(x) mod_trait_cor(pheno, x$MEs))
-for(i in 1:length(all.mod.cor)){
-  cat("###", names(tissue.nets)[i], "\n")
-  pheatmap(all.mod.cor[[i]])
-  cat("\n\n")
-}
-```
-
-## Module Correlations {.tabset .tabset-fade .tabset-pills}
+## Module overlap {.tabset .tabset-fade .tabset-pills}
 
 We were interested in comparing gene modules from the different tissues. 
 The figure below shows the correlation matrix for the module eigengenes. 
@@ -221,7 +178,7 @@ Interestingly, the module eigengenes tend to cluster by tissue, and not
 as much by function. For example, modules labeled with "immune" tend not
 to cluster near each other.
 
-```{r mod_overlap, fig.height = 20, fig.width = 20}
+```{r mod_overlap}
 module.descriptions <- lapply(1:length(tissue.nets), 
 function(x) paste0(names(tissue.nets)[x], "_", tissue.nets[[x]]$mod.description))
 #get module eigengenes for each tissue
@@ -248,34 +205,130 @@ We have more modules than were reported previously. We see the same
 chromosome 11 hotspot spanning multiple modules. We also see a similar
 pleiotropic region on the X.
 
-```{r map_mods, fig.width = 12, fig.height = 10}
-all.tissue.scans <- vector(mode = "list", length = length(tissue.nets))
-names(all.tissue.scans) <- names(tissue.nets)
-
+```{r map_liver_mods, fig.width = 12, fig.height = 5, results = "asis"}
 for(i in 1:length(tissue.nets)){
-  
-  scan.file <- here("Results", "Expr_Clusters", 
-    paste(names(tissue.nets)[i], exp.name, sep = "_"), 
-    paste0(names(tissue.nets)[i], "_scan.RDS"))
-
+  cat("###", names(tissue.nets)[i], "\n")
+  scan.file <- file.path("Results", "Expr_Clusters", 
+  paste(names(tissue.nets)[i], exp.name, sep = "_"), 
+  paste0(names(tissue.nets)[i], "_scan.RDS"))
   if(!file.exists(scan.file)){
     scan.results <- scan1(genoprobs, tissue.nets[[i]]$MEs)
     saveRDS(scan.results, scan.file)
   }else{
     scan.results <- readRDS(scan.file)
   }
-  all.tissue.scans[[i]] <- scan.results
+
+  par(xpd = TRUE)
+  mod.dist <- dist(t(scan.results))
+  mod.order <- hclust(mod.dist)$order
+  multilod.plot(scan.results[,mod.order], map = map, lod.thresh = 5, border.lwd = 1, 
+  row.names = colnames(scan.results)[mod.order], row.name.shift = -500, 
+  row.text.cex = 0.7, mar = c(2,6,2,0))
+  par(xpd = FALSE)
+}
+```
+
+## Read in adjusted phenotypes
+
+```{r read_pheno}
+adj.pheno <- readRDS(here("Results", "CCA_Clusters", exp.name, "Adjusted_Phenotypes.RDS"))
+covar <- readRDS(here("Results", "CCA_Clusters", exp.name, "Covariates.RDS"))
+```
+
+## Create "Genotype" Object and Information Table
+In CAPE we use a table of information about the markers to keep track
+of where the markers are positioned on the genome. When we use modules,
+we lose positional information. Here we create a dummy table labeling 
+the modules from each tissue as being from a different chromosome.
+
+```{r genotypes}
+expr.geno <- eig.mat
+```
+
+## Build CAPE objects
+
+Include all traits. Subsets of traits can be specified
+in the cape yml file.
+
+```{r to_geno}
+#This function takes a matrix of numeric values and converts
+#it into a 3D genotype array with the values scaled between
+#0 and 1.
+
+add_to_geno <- function(geno.obj, matX){
+
+  #scale to be between 0 and 1 for cape genotypes
+  pos.mat <- apply(matX, 2, function(x) x+abs(min(x)))
+  #boxplot(pos.mat)
+  scaled.mat <- apply(pos.mat, 2, function(x) x/max(x))
+  #boxplot(scaled.mat)
+
+  #create a 3D array of the scaled PCs
+  new.geno <- array(NA, dim = c(nrow(matX), ncol(geno.obj), ncol(matX)))
+  dimnames(new.geno) <- list(rownames(matX), colnames(geno.obj), colnames(scaled.mat))
+  for(i in 1:ncol(scaled.mat)){
+    one.mat <- matrix(scaled.mat[,i], nrow = nrow(scaled.mat), ncol = ncol(geno.obj))
+    new.geno[,,i] <- one.mat
+  }
+
+  aug.geno <- abind(geno.obj, new.geno, along = 3)
+  return(aug.geno)
 }
 
-all.scan.mat <- Reduce("cbind", all.tissue.scans)
-mod.names <- unlist(lapply(1:length(tissue.nets), function(x) 
-paste0(names(tissue.nets)[x], "_", tissue.nets[[x]]$mod.description)))
-colnames(all.scan.mat) <- mod.names
-
-lodthresh = 8
-all.scan.mat[which(all.scan.mat > lodthresh)] <- lodthresh
-
-multilod.plot(all.scan.mat, map = map, lod.thresh = 5, border.lwd = 1, 
-row.name.shift = -500, row.text.cex = 0.7, mar = c(2,6,2,0), row.names = mod.names)
-
 ```
+
+```{r subset_ind}
+#Subset one of the objects to only the individuals
+#with expression before we make the cape object.
+#Then we don't need to do build large objects and 
+#subset them later
+common.ind <- intersect(rownames(expr.geno), rownames(adj.pheno))
+ind.locale <- match(common.ind, rownames(adj.pheno))
+sub.obj <- list()
+sub.obj$pheno <- adj.pheno[ind.locale,]
+```
+
+```{r cross_obj}
+cape.obj <- qtl2_to_cape(cross = sub.obj, genoprobs, map, covar)
+data.obj <- cape.obj$data_obj
+geno.obj <- cape.obj$geno_obj
+
+#replace data.obj$pheno with the numeric phenotype matrix and covariates
+data.obj$pheno <- cbind(adj.pheno[ind.locale,], covar[ind.locale,1,drop=FALSE])
+
+#scale expression data and add to the genotype object
+new.geno.obj <- add_to_geno(geno.obj, expr.geno)
+
+#add the information for the new "genotypes" to the data object
+data.obj$geno_names <- dimnames(new.geno.obj)
+names(data.obj$geno_names) <- c("mouse", "allele", "locus")
+
+#add pseudo-chromosome data to data.obj
+#cbind(liver.MEs, adipose.MEs, islet.MEs)
+new.chr <- c(rep(1, ncol(liver.MEs)), rep(2, ncol(adipose.MEs)), rep(3, ncol(islet.MEs)))
+new.pos <- c(1:ncol(liver.MEs), 1:ncol(adipose.MEs), 1:ncol(islet.MEs))
+data.obj$chromosome <- c(data.obj$chromosome, new.chr)
+data.obj$marker_location <- c(data.obj$marker_location, new.pos)
+data.obj$marker_num <- 1:length(data.obj$chromosome)
+
+
+#if we only want to include expression values, take out the actual genotypes
+if(!include.real.genotypes){
+  true.geno.locale <- 1:dim(geno.obj)[3]
+  expr.geno.locale <- setdiff(1:dim(new.geno.obj)[3], true.geno.locale)
+  data.obj$chromosome <- data.obj$chromosome[expr.geno.locale]
+  data.obj$marker_location <- data.obj$marker_location[expr.geno.locale]
+  data.obj$marker_num <- 1:length(data.obj$chromosome)
+  #also reduce the "genotypes" to just two alleles.
+  #we don't need all 8 if we're just looking at expression
+  new.geno.obj <- new.geno.obj[,1:2,expr.geno.locale]
+  data.obj$geno_names[[3]] <- data.obj$geno_names[[3]][expr.geno.locale]
+  data.obj$geno_names[[2]] <- data.obj$geno_names[[2]][1:2]
+}
+
+saveRDS(data.obj, here("Data", paste0("cape_data_", geno.type, ".RDS")))
+saveRDS(new.geno.obj, here("Data", paste0("cape_geno_", geno.type, ".RDS")))
+```
+
+Now run 2.cape_run_expression.Rmd.
+Use the same data set name as set here.

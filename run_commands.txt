@@ -1,8 +1,41 @@
 ## Steps to Re-Run Analysis and Create Manuscript ##
 
 ##=====================================================================================##
+## Adjust traits and transcriptomes for experiment-specific covariates
+##=====================================================================================##
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'adjust_transcripts_traits.Rmd'))" --args "all_traits" "FALSE"
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'adjust_transcripts_traits.Rmd'))" --args "weight_adjusted" "FALSE"
+
+
+
+##=====================================================================================##
+## Set parameters
+##=====================================================================================##
+
+exp_name="weight_adjusted"
+
+exp_name="all_traits"
+delete_results="FALSE"
+fused_lasso="FALSE"
+
+
+##=====================================================================================##
+## Cluster transcriptomes using CoExpNets
+##=====================================================================================##
+
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts.Rmd'))" --args $exp_name $delete_results
+mv Documents/1.Setup_Data/cluster_transcripts.html Documents/1.Setup_Data/cluster_transcripts_$exp_name.html
+
+
+
+##=====================================================================================##
 ## Traits and Transcripts with CCA                                                     ##
 ##=====================================================================================##
 
-R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args "eigentraits"
-R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args "traits" "FALSE"
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args $exp_name $delete_results $fused_lasso
+
+
+
+
+
+

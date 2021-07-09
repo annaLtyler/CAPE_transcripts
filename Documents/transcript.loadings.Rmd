@@ -1,0 +1,53 @@
+## Transcript Loadings {.tabset .tabset-fade .tabset-pills}
+
+It might be helpful to look at the actual loadings of the composite transcripts.
+How evenly distributed are they?
+
+```{r plot_transcript_loadings}
+
+enrich.summ <- apply(enrich.mat, 2, function(x) rownames(enrich.mat)[which(x != 0)])
+transcript.loadings <- tissue.CCA.results[[i]]$u
+pdf("~/Desktop/enrichment3.pdf", width = 7, height = 5)
+for(m in 1:length(tissue.mod.enrich[[i]])){
+    mod.x <- mean(which(chr.labels[[i]] == m))
+    term.table <- plot.enrichment.vis(tissue.mod.enrich[[i]][[m]], 
+    plot.label = m) 
+}
+dev.off()
+
+pdf("~/Desktop/loadings3.pdf", width = 9, height = 5)
+for(tl in 1:ncol(transcript.loadings)){
+    plot(transcript.loadings[,tl], cex = 0.7, pch = 16, col = chr.labels[[i]], main = tl)
+}
+dev.off()
+```
+
+```{r tissue_results, results = "asis", eval = FALSE}
+loading.thresh = 0.2
+for(i in 1:length(tissue.CCA.results)){
+    cat("###", tissue.names[i], "\n")
+    boxplot(tissue.CCA.results[[i]]$u, main = tissue.names[i])
+    abline(h = c(-loading.thresh, loading.thresh))
+    transcript.loadings <- tissue.CCA.results[[i]]$u
+    outsized.id <- apply(transcript.loadings, 2, 
+    function(x) colnames(matched.mats[[i]]$X)[which(abs(x) > loading.thresh)])
+    u_genes <- unique(unlist(outsized.id))
+    gene.names <- gene.table[match(u_genes, gene.table[,1]),"symbol"]
+    table(unlist(outsized.id))
+    u_gene.idx <- match(u_genes, colnames(matched.mats[[i]]$X))
+    transcript.trait.cor <- apply(matched.mats[[i]]$Z, 2, 
+        function(x) sapply(u_gene.idx, function(y) cor(x, matched.mats[[i]]$X[,y])))
+    rownames(transcript.trait.cor) <- gene.names
+    pheatmap(transcript.trait.cor, main = tissue.names[i])
+
+    pc1 <- svd(matched.mats[[i]]$Z)$u[,1]
+    all.pc.cor <- apply(matched.mats[[i]]$X, 2, function(x) cor(x, pc1))
+    sorted.cor <- sort(all.pc.cor)
+    match(u_genes, names(sorted.cor))
+
+    transcript.trait.scans <- scan1(genoprobs, matched.mats[[i]]$X[,u_gene.idx])
+    #plot(transcript.trait.scans, map = map, lodcol = 4)
+    multilod.plot(transcript.trait.scans, lod.thresh = 4, map = map)
+}
+
+```

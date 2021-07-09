@@ -1,0 +1,189 @@
+---
+title: "SOM DO mice"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+The purpose of this workflow is examine the use of self-organizing maps 
+to analyze transcriptome data for DO mice.
+
+```{r set_tissue}
+tissue.name = "Adipose"
+is.interactive = FALSE
+#is.interactive = TRUE
+```
+
+```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
+needed.packages <- c("here", "oposSOM", "gProfileR", "pheatmap", "qtl2")
+for(i in 1:length(needed.packages)){library(needed.packages[i], character.only = TRUE)}
+```
+
+```{r source_code}
+all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
+for(j in 1:length(all.fun)){source(all.fun[j])}
+```
+
+Get the expression for the specified tissue.
+
+```{r read_data}
+vars <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+expr.name <- paste0("dataset.DO.Cube.", tissue.name)
+expr.data <- get(expr.name)
+
+#filter expression to transcripts that have at least a mean
+#transcription level of 10
+mean.lim <- 10
+expr.count <- expr.data$data$raw
+mean.expr <- colMeans(expr.count)
+#hist(log10(mean.expr), breaks = 100)
+high.trans <- which(mean.expr > 10)
+
+expr <- expr.data$data$rz[,high.trans]
+covar <- expr.data$covar.matrix
+
+pheno <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), 
+  stringsAsFactors = FALSE))
+num.pheno <- apply(pheno[,11:(ncol(pheno)-1)], 2, as.numeric)
+rownames(num.pheno) <- pheno[,1]
+```
+
+Adjust phenotypes and expression for covaraites.
+
+```{r adjust}
+adj.pheno <- adjust(num.pheno, covar)
+adj.expr <- adjust(expr, covar)
+```
+
+Run the SOM.
+
+```{r som}
+som.result.file <- here("Documents", "1.Setup_Data", paste0("DO_", tissue.name, ".RData"))
+
+if(!file.exists(som.result.file)){
+  exp.name <- gsub(".RData", "", basename(som.result.file))
+  env <- opossom.new(list(dataset.name = exp.name))
+  env$indata <- adj.expr
+  opossom.run(env)
+}
+
+load(som.result.file)
+```
+
+
+## Look for phenotype variation among individual clusters
+
+```{r pheno_clusters}
+groups <- env$group.labels
+group.colors <- env$group.colors
+u_groups <- unique(groups)
+u_colors <- unique(group.colors)
+ind.groups <- lapply(u_groups, function(x) names(groups)[which(groups == x)])
+names(ind.groups) <- u_groups
+```
+
+The plots below show the distribution of phenotypes over each
+group identified by the SOM based on transcriptional clustering.
+
+```{r pheno_by_group, width = 12, height = 8}
+pheno.ind <- lapply(ind.groups, function(x) which(rownames(adj.pheno) %in% x))
+mean.pheno <- matrix(NA, nrow = length(pheno.ind), ncol = ncol(adj.pheno))
+rownames(mean.pheno) <- names(pheno.ind)
+colnames(mean.pheno) <- colnames(adj.pheno)
+
+layout.mat <- get.layout.mat(ncol(adj.pheno))
+layout(layout.mat)
+par(mar = c(4,2,2,2))
+for(i in 1:ncol(adj.pheno)){
+  group.pheno <- lapply(pheno.ind, function(x) adj.pheno[x,i])
+  med.order <- order(sapply(group.pheno, function(x) median(x, na.rm = TRUE)), 
+  decreasing = FALSE)
+  boxplot(group.pheno[med.order], main = colnames(adj.pheno)[i],
+  col = u_colors[med.order], las = 2)
+  mean.pheno[,i] <- sapply(group.pheno, function(x) mean(x, na.rm = TRUE))
+}
+```
+
+The following heatmap shows the mean phenotype across groups and phenotypes.
+
+```{r mean_pheno}
+pheatmap(mean.pheno)
+```
+
+From these groups, we can look at differential expression of individual
+groups that have extreme phenotypes of interest. For example, Group D 
+above has very low HOMA values and differentially expresses genes related 
+to insulin response and chromatin remodeling. The top overexpressed genes
+are Calm1 and insulin receptor. Group NQRS has very high HOMA values and 
+is differentially expresses genes related to immune function and endocytosis.
+
+
+## Map metagenes
+
+For each of the K-means clusters, identify the genes in the group,
+and calculate the eigengene of the cluster.
+
+The barplot below shows the number of genes in each of the K-means clusters.
+They are remarkably even in size.
+
+```{r metagenes}
+kmeta <- env$spot.list.kmeans$spots
+cluster.sizes <- sapply(kmeta, function(x) length(x$genes))
+barplot(cluster.sizes)
+```
+
+The followind code takes the first two principle components
+of each expression cluster.
+
+```{r meta_eig}
+eig.kmeans <- vector(mode = "list", length = length(kmeta))
+names(eig.kmeans) <- names(kmeta)
+for(i in 1:length(kmeta)){
+  cluster.genes <- kmeta[[i]]$genes
+  gene.locale <- match(cluster.genes, colnames(adj.expr))
+  cluster.expr <- adj.expr[,gene.locale]
+  #pheatmap(cluster.expr, show_rownames = FALSE, show_colnames = FALSE)
+  #pheatmap(cor(cluster.expr), show_rownames = FALSE, show_colnames = FALSE)
+  #plot.decomp(t(cluster.expr))
+  cluster.eig <- plot.decomp(cluster.expr, plot = FALSE)
+  #take the first two components
+  eig.mat <- cluster.eig$u
+  rownames(eig.mat) <- rownames(adj.expr)[cluster.eig$rows.used]
+  eig.kmeans[[i]] <- eig.mat
+}
+```
+
+## Map Expression Clusters {.tabset .tabset-fade .tabset-pills}
+
+```{r map_clusters}
+pc.scan.file <- here("Results", "SOM", paste0("Cluster_Scans_", tissue.name, ".RDS"))
+cluster.scans <- vector(mode = "list", length = length(eig.kmeans))
+names(cluster.scans) <- names(eig.kmeans)
+if(!file.exists(pc.scan.file)){
+  for(i in 1:length(eig.kmeans)){
+    if(is.interactive){report.progress(i, length(eig.kmeans))}
+    cluster.scans[[i]] <- scan1(genoprobs, eig.kmeans[[i]], addcovar = covar)
+  }
+  saveRDS(cluster.scans, pc.scan.file)
+}else{
+  cluster.scans <- readRDS(pc.scan.file)
+}
+```
+
+
+```{r plot_scans, results = "asis", fig.width = 10, fig.height = 7}
+for(i in 1:length(cluster.scans)){
+    cat("###", names(cluster.scans)[i], "\n")
+    if(is.interactive){quartz(width = 10, height = 7)}
+    par(mfrow = c(2,1))
+    plot(cluster.scans[[i]], lodcol = 1, map = map, main = paste("Cluster", names(eig.kmeans)[i], "PC 1"))
+    plot(cluster.scans[[i]], lodcol = 2, map = map, main = paste("Cluster", names(eig.kmeans)[i], "PC 2"))
+    cat("\n\n")
+}
+
+```

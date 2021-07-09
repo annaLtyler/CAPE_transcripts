@@ -2,12 +2,16 @@
 #This function creates a bipartite graph from the enrichment
 #matrix and returns the bipartite projection onto the terms
 #and the traits.
+#term cluster is a data frame returned from simplifyGO
+#providing a cluster assignment for each term in the 
+#enrichment matrix.
 
 enrich_bipartite_proj <- function(enrich.mat, vertex.col = "gray", 
 label.vertex = NULL, label.col = "lightblue", 
 search.name = c("full", "partial")){
 
     #find columns with no enrichment
+    terms <- rownames(enrich.mat)
     no.enrich <- which(colSums(enrich.mat) == 0)
     if(length(no.enrich) > 0){
         cat("Removing columns with no enrichment:", "\n")
@@ -25,8 +29,6 @@ search.name = c("full", "partial")){
     }
 
     search.name = search.name[1]
-
-    terms <- rownames(enrich.mat)
     l.traits <- colnames(enrich.mat)
 
     pair.list <- lapply(1:ncol(enrich.mat), function(x) enrich.mat[which(enrich.mat[,x] != 0),x,drop=FALSE])
@@ -52,6 +54,7 @@ search.name = c("full", "partial")){
     }
 
     proj <- bipartite_projection(inc.net)
+
     result <- list("Network" = inc.net, "Projections" = proj)
     return(result)
 }

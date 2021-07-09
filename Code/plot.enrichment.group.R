@@ -8,15 +8,19 @@
 
 plot.enrichment.group <- function(enrichment.list, n.terms = 10, max.char = 40, 
 cluster_cols = TRUE, cluster_rows = TRUE, transformation = NULL, plot.results = TRUE,
-plot.label = NULL, sort.by = c("p_value", "default"), max.term.size = NULL){
+plot.label = NULL, sort.by = c("p_value", "default"), max.term.size = NULL, 
+pval.thresh = 0.05){
 	if(is.null(enrichment.list)){
 		plot.text("No enrichment")
 		return(NULL)
 	}
 
-	list.len <- sapply(enrichment.list, length)
+	#threshold on the specified p value and check again for results
+	sig.enrich <- lapply(enrichment.list, function(x) x$result[which(x$result[,"p_value"] <= p_val_thresh),])
+
+	list.len <- sapply(sig.enrich, length)
 	has.results <- which(list.len != 0)
-	enrichment.list <- enrichment.list[has.results]
+	enrichment.list <- sig.enrich[has.results]
 
 	if(class(enrichment.list[[1]]) == "list"){
 		enrich.list <- lapply(enrichment.list, function(x) x[[1]])
@@ -25,7 +29,8 @@ plot.label = NULL, sort.by = c("p_value", "default"), max.term.size = NULL){
 	}
 	
 	if(length(enrich.list) == 1){
-		term.mat <- plot.enrichment.vis(enrich.list[[1]], num.terms = n.terms, order.by = sort.by, 
+		term.mat <- plot.enrichment.vis(enrich.list[[1]], num.terms = n.terms, 
+		order.by = sort.by, 
 		plot.label = plot.label, max.term.size = max.term.size)
 		}else{
 
@@ -59,8 +64,8 @@ plot.label = NULL, sort.by = c("p_value", "default"), max.term.size = NULL){
 			n.row <- nrow(enrich)
 			if(length(n.row) == 0){return(NULL)}
 			keep <- min(c(n.row, n.terms))
-			term.vals <- enrich[1:keep,c("term_name", "p_value")]
-			term.vals[,2] <- -log10(term.vals[,2])
+			term.vals <- enrich[1:keep,c("term_id", "term_name", "p_value")]
+			term.vals[,"p_value"] <- -log10(term.vals[,"p_value"])
 			return(term.vals)
 			}
 			
@@ -76,15 +81,18 @@ plot.label = NULL, sort.by = c("p_value", "default"), max.term.size = NULL){
 		}
 
 		all.terms <- lapply(sorted.enrich, function(x) get.terms(x, n.terms))		
-		u_terms <- unique(unlist(lapply(all.terms, function(x) x[,1])))
-		u_terms <- u_terms[which(!is.na(u_terms))]
-		
-		term.mat <- matrix(0, nrow = length(u_terms), ncol = length(sorted.enrich))
-		rownames(term.mat) <- u_terms
+		u_term.id <- unique(unlist(lapply(all.terms, function(x) x[,1])))
+		u_term.name <- unique(unlist(lapply(all.terms, function(x) x[,2])))
+		no.na <- which(!is.na(u_term.id))
+		u_term.id <- u_term.id[no.na]
+		u_term.name <- u_term.name[no.na]
+
+		term.mat <- matrix(0, nrow = length(u_term.name), ncol = length(sorted.enrich))
+		rownames(term.mat) <- u_term.name
 		colnames(term.mat) <- names(sorted.enrich)
 		for(i in 1:length(sorted.enrich)){
-			term.idx <- match(all.terms[[i]][,1], rownames(term.mat))
-			term.mat[term.idx,i] <- all.terms[[i]][,2]
+			term.idx <- match(all.terms[[i]][,1], u_term.id)
+			term.mat[term.idx,i] <- all.terms[[i]][,3]
 			}
 			
 		if(!is.null(max.char)){
@@ -107,5 +115,6 @@ plot.label = NULL, sort.by = c("p_value", "default"), max.term.size = NULL){
 			}
 		}
 		}
+		names(rownames(term.mat)) <- u_term.id
 		invisible(term.mat)
 	}
