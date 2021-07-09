@@ -13,10 +13,17 @@ output:
 The purpose of this workflow is examine the use of self-organizing maps 
 to analyze transcriptome data for DO mice.
 
-```{r set_tissue}
-tissue.name = "Adipose"
-is.interactive = FALSE
-#is.interactive = TRUE
+```{r get_args}
+args <- commandArgs(trailingOnly=T)
+tissue.name = args[1]
+delete_previous <- as.logical(args[2])
+
+if(is.na(tissue.name)){
+  tissue.name = "Adipose"
+  delete_previous = FALSE
+}
+  is.interactive = FALSE
+  #is.interactive = TRUE
 ```
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
