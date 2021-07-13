@@ -78,7 +78,7 @@ som.result.file <- here("Documents", "1.Setup_Data", paste0("DO_", tissue.name, 
 if(!file.exists(som.result.file)){
   exp.name <- gsub(".RData", "", basename(som.result.file))
   env <- opossom.new(list(dataset.name = exp.name))
-  env$indata <- adj.expr
+  env$indata <- t(adj.expr)
   opossom.run(env)
 }
 
