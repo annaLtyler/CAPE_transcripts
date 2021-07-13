@@ -151,20 +151,42 @@ The followind code takes the first two principle components
 of each expression cluster.
 
 ```{r meta_eig}
-eig.kmeans <- vector(mode = "list", length = length(kmeta))
-names(eig.kmeans) <- names(kmeta)
-for(i in 1:length(kmeta)){
-  cluster.genes <- kmeta[[i]]$genes
-  gene.locale <- match(cluster.genes, colnames(adj.expr))
-  cluster.expr <- adj.expr[,gene.locale]
-  #pheatmap(cluster.expr, show_rownames = FALSE, show_colnames = FALSE)
-  #pheatmap(cor(cluster.expr), show_rownames = FALSE, show_colnames = FALSE)
-  #plot.decomp(t(cluster.expr))
-  cluster.eig <- plot.decomp(cluster.expr, plot = FALSE)
-  #take the first two components
-  eig.mat <- cluster.eig$u
-  rownames(eig.mat) <- rownames(adj.expr)[cluster.eig$rows.used]
-  eig.kmeans[[i]] <- eig.mat
+eig.kmeans.file <- here("Results", "SOM", paste0("Cluster_Eigengenes_", tissue.name, ".RDS"))
+
+if(!file.exists(eig.kmeans.file)){
+  eig.kmeans <- vector(mode = "list", length = length(kmeta))
+  names(eig.kmeans) <- names(kmeta)
+  for(i in 1:length(kmeta)){
+    cluster.genes <- kmeta[[i]]$genes
+    gene.locale <- match(cluster.genes, colnames(adj.expr))
+    cluster.expr <- adj.expr[,gene.locale]
+
+    #library(umap)
+    #Utest <- umap(cluster.expr)
+    
+    #library(Rtsne)
+    #norm <- normalize_input(cluster.expr)
+    #nodup1 <- unique(norm)
+    #nodup2 <- unique(t(nodup1))
+    #tsn <- Rtsne(nodup2)
+
+    #par(mfrow = c(1,3))
+    #plot.decomp(cluster.expr, main = "SVD")
+    #plot(Utest$layout, main = "Umap")
+    #plot(tsn$Y[,1], tsn$Y[,2], main = "TSNE")
+    
+    #pheatmap(cluster.expr, show_rownames = FALSE, show_colnames = FALSE)
+    #pheatmap(cor(cluster.expr), show_rownames = FALSE, show_colnames = FALSE)
+    #plot.decomp(t(cluster.expr))
+    cluster.eig <- plot.decomp(cluster.expr, plot = FALSE)
+    #take the first two components
+    eig.mat <- cluster.eig$u
+    rownames(eig.mat) <- rownames(adj.expr)[cluster.eig$rows.used]
+    eig.kmeans[[i]] <- eig.mat
+  }
+  saveRDS(eig.kmeans, eig.kmeans.file)
+}else{
+  eig.kmeans <- readRDS(eig.kmeans.file)
 }
 ```
 
@@ -172,12 +194,14 @@ for(i in 1:length(kmeta)){
 
 ```{r map_clusters}
 pc.scan.file <- here("Results", "SOM", paste0("Cluster_Scans_", tissue.name, ".RDS"))
-cluster.scans <- vector(mode = "list", length = length(eig.kmeans))
-names(cluster.scans) <- names(eig.kmeans)
 if(!file.exists(pc.scan.file)){
+  cluster.scans <- vector(mode = "list", length = length(eig.kmeans))
+  names(cluster.scans) <- names(eig.kmeans)
   for(i in 1:length(eig.kmeans)){
     if(is.interactive){report.progress(i, length(eig.kmeans))}
     cluster.scans[[i]] <- scan1(genoprobs, eig.kmeans[[i]], addcovar = covar)
+    #plot(cluster.scans[[i]], lodcol = 1, map = map)
+    #plot(cluster.scans[[i]], lodcol = 2, map = map)
   }
   saveRDS(cluster.scans, pc.scan.file)
 }else{
@@ -196,4 +220,35 @@ for(i in 1:length(cluster.scans)){
     cat("\n\n")
 }
 
+```
+
+## Cluster-Trait Correlation
+
+The following plots examing the correlation between gene clusters
+and traits.
+
+```{r trait_cluster_cor}
+common.ind <- intersect(rownames(num.pheno), rownames(adj.expr))
+expr.idx <- match(common.ind, rownames(adj.expr))
+pheno.idx <- match(common.ind, rownames(num.pheno))
+
+#Since I mapped to eigengenes, make a correlation matrix
+#for each
+trait.cluster.cor <- vector(mode = "list", length = 2)
+names(trait.cluster.cor) <- c("PC1", "PC2")
+for(i in 1:length(trait.cluster.cor)){
+  cor.mat <- matrix(NA, ncol = ncol(num.pheno), nrow = length(kmeta))
+  colnames(cor.mat) <- colnames(num.pheno)
+  rownames(cor.mat) <- names(kmeta)
+  for(k in 1:length(eig.kmeans)){
+    cluster.eig <- eig.kmeans[[k]]
+    trait.cor <- apply(num.pheno, 2, function(x) cor(x[pheno.idx], cluster.eig[,i], 
+    use = "pairwise.complete.obs", method = "spearman"))
+    cor.mat[k,] <- trait.cor
+  }
+  trait.cluster.cor[[i]] <- cor.mat
+}
+
+pheatmap(t(trait.cluster.cor[[1]]), main = "Trait Correlations with Cluster PC1")
+pheatmap(t(trait.cluster.cor[[2]]), main = "Trait Correlations with Cluster PC2")
 ```
