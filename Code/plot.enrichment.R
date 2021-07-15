@@ -53,7 +53,7 @@ if(class(enrichment) == "list"){
 		}
 	y.pts <- segment.region(y.start,y.end, (num.terms+1))
 	# min.gap = 0.03; maj.gap = 0.08
-	y.pts.dist <- mean(apply(consec.pairs(y.pts), 1, function(x) x[1] - x[2]))
+	y.pts.dist <- mean(apply(consec_pairs(y.pts), 1, function(x) x[1] - x[2]))
 
 	plot.new()
 	plot.window(xlim = c(0, 1), ylim = c(0, 1))

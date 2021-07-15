@@ -4,7 +4,7 @@
 
 instant.slope <- function(x, y){
 	
-	consec.mat <- consec.pairs(1:length(x))
+	consec.mat <- consec_pairs(1:length(x))
 	
 	all.slopes <- apply(consec.mat, 1, function(v) slope(x[v[1]], x[v[2]], y[v[1]], y[v[2]]))
 	

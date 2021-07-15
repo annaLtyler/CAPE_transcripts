@@ -26,6 +26,8 @@ if(is.na(tissue.name)){
   #is.interactive = TRUE
 ```
 
+## SOM Results for `r tissue.name`
+
 ```{r source_code}
 library("here")
 all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
@@ -34,7 +36,7 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2")
+needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2", "grid")
 load_libraries(needed.packages, personal.library = TRUE)
 ```
 
@@ -75,6 +77,10 @@ Run the SOM.
 ```{r som}
 som.result.file <- here("Documents", "1.Setup_Data", paste0("DO_", tissue.name, ".RData"))
 
+if(delete_previous){
+  unlink(som.result.file)
+}
+
 if(!file.exists(som.result.file)){
   exp.name <- gsub(".RData", "", basename(som.result.file))
   env <- opossom.new(list(dataset.name = exp.name))
@@ -86,7 +92,11 @@ load(som.result.file)
 ```
 
 
-## Look for phenotype variation among individual clusters
+## Look for phenotype variation among clusters of individuals
+
+As part of the SOM, the individual mice are clustered according to their
+overall gene expression patterns. We look here to ask whether the groupings
+correlate with any of the traits. 
 
 ```{r pheno_clusters}
 groups <- env$group.labels
@@ -106,7 +116,8 @@ mean.pheno <- matrix(NA, nrow = length(pheno.ind), ncol = ncol(adj.pheno))
 rownames(mean.pheno) <- names(pheno.ind)
 colnames(mean.pheno) <- colnames(adj.pheno)
 
-layout.mat <- get.layout.mat(ncol(adj.pheno))
+if(is.interactive){quartz(width = 10, height = 12)}
+layout.mat <- get.layout.mat(9)
 layout(layout.mat)
 par(mar = c(4,2,2,2))
 for(i in 1:ncol(adj.pheno)){
@@ -122,7 +133,170 @@ for(i in 1:ncol(adj.pheno)){
 The following heatmap shows the mean phenotype across groups and phenotypes.
 
 ```{r mean_pheno}
-pheatmap(mean.pheno)
+pheatmap(t(mean.pheno), scale = "row")
+```
+
+## Metagenes
+
+The transcriptome is also clustered. The genes are clustered into a 
+grid of metagenes. The distribution of genes per metagene is shown 
+below. 
+
+```{r genes_per_metagene}
+metagene.assig <- env$som.result$feature.BMU
+n.meta <- max(metagene.assig)
+meta.genes <- lapply(1:n.meta, function(x) names(metagene.assig)[which(metagene.assig == x)])
+n.genes <- sapply(meta.genes, length)
+
+hist(n.genes, breaks = 100, main = "Number of Genes per Metagene",
+xlab = "Number of Genes")
+```
+
+The following boxplot show the absolute value of the correlations
+between phenotypes and metagenes.
+
+```{r spot_cor}
+pheno.metagene.cor <- vector(mode = "list", length = ncol(adj.pheno))
+names(pheno.metagene.cor) <- colnames(adj.pheno)
+
+metagenes <- env$metadata
+map.dim <- sqrt(nrow(metagenes))
+
+common.ind <- intersect(colnames(metagenes), rownames(adj.pheno))
+metagene.locale <- match(common.ind, colnames(metagenes))
+pheno.locale <- match(common.ind, rownames(adj.pheno))
+#head(cbind(colnames(metagenes)[metagene.locale], rownames(adj.pheno)[pheno.locale]))
+
+for(m in 1:ncol(adj.pheno)){
+  metagene.cor <- apply(metagenes[,metagene.locale], 1, 
+    function(x) cor(adj.pheno[pheno.locale,m], x, use = "pairwise.complete.obs"))
+  pheno.metagene.cor[[m]] <- matrix(metagene.cor, nrow = map.dim, ncol = map.dim, byrow = FALSE)
+  #pheatmap(pheno.metagene.cor[[m]], cluster_rows = FALSE, cluster_cols = FALSE,main = colnames(adj.pheno)[m])
+}
+
+boxplot(lapply(pheno.metagene.cor, abs), las = 2)
+```
+
+## Correlation Maps  {.tabset .tabset-fade .tabset-pills}
+
+The following plots show maps of the correlations between traits and metagenes.
+Each trait has roughly the same correlation pattern with the metagenes. 
+
+In one tab we show the correlations all on the same scale to show that 
+correlations with diet days, for example, are weaker than those for the
+HOMAs.
+
+The second tab shows each correlation plot on its own scale to better highligh
+the overall patterns in the correlations. These plots show that the islet traits,
+WPIC, Ins_per_islet, and num_islets, tend to have one correlation pattern with
+the transcriptome, while the rest of the traits have a different pattern. 
+
+Overall the patterns are strikingly similar. The correlations are on par with
+those seen in WGCNA modules. However in this case, the number of genes in each 
+metagene tends to be smaller than the number of genes in WGCNA modules. This is
+neither good nor bad.
+
+The correlations are much lower than I had thought they would be, and are
+also much lower than what we saw with CCA. With CCA we maximize the correlation
+between transcripts and traits. We were able to achive correlations from -0.6 
+to 0.6 across all tissues. Here, when we cluster the transcripts without taking
+the traits into account, we get much lower correlations. 
+
+The following histogram shows the distribution of correlations between
+all metagenes and all traits for `r tissue.name`.
+
+```{r cor_dist}
+hist(unlist(pheno.metagene.cor), main = "Trait-Metagene Correlations",
+xlab = "Pearson Correlation", breaks = 100)
+```
+
+### Global Color Scale
+```{r metagene_cor_maps, fig.width = 10, fig.height = 9}
+min.cor <- min(unlist(pheno.metagene.cor))
+max.cor <- max(unlist(pheno.metagene.cor))
+
+layout.mat <- get.layout.mat((length(pheno.metagene.cor)+1))
+
+layout(layout.mat)
+par(mar = c(0,0,4,0))
+for(m in 1:length(pheno.metagene.cor)){
+  imageWithText(pheno.metagene.cor[[m]], use.pheatmap.colors = TRUE, 
+  show.text = FALSE, global.color.scale = TRUE, global.min = min.cor, 
+  global.max = max.cor, main = colnames(adj.pheno)[m])
+}
+par(mar = c(0,4,4,4))
+imageWithTextColorbar(matrix(segment_region(min.cor, max.cor, 10), ncol = 1), 
+  use.pheatmap.colors = TRUE, cex = 1)
+```
+
+### Individual Color Scale
+
+```{r, ind_color_scale, fig.width = 10, fig.height = 9}
+layout(layout.mat)
+par(mar = c(0,0,4,0))
+for(m in 1:length(pheno.metagene.cor)){
+  imageWithText(pheno.metagene.cor[[m]], use.pheatmap.colors = TRUE, 
+  show.text = FALSE, main = colnames(adj.pheno)[m])
+}
+```
+
+
+## Gene Set Correlations {.tabset .tabset-fade .tabset-pills}
+
+The following code looks for gene sets with maximal correlations with clinical
+phenotypes. Here we plot the top and bottom 10 processes associated with each
+trait.
+
+```{r gsz_cor}
+gsz <- env$samples.GSZ.scores
+
+common.ind <- intersect(colnames(gsz), rownames(adj.pheno))
+gsz.locale <- match(common.ind, colnames(gsz))
+pheno.locale <- match(common.ind, rownames(adj.pheno))
+
+gsz.cor.mat <- matrix(NA, nrow = nrow(gsz), ncol = ncol(adj.pheno))
+rownames(gsz.cor.mat) <- rownames(gsz)
+colnames(gsz.cor.mat) <- colnames(adj.pheno)
+
+for(m in 1:ncol(adj.pheno)){
+  gsz.cor.mat[,m] <- apply(gsz[,gsz.locale], 1, 
+    function(x) cor(adj.pheno[pheno.locale,m], x, use = "pairwise.complete.obs"))
+}
+```
+
+```{r top_assoc, results = "asis"}
+all.top.cor <- vector(mode = "list", length = ncol(adj.pheno))
+names(all.top.cor) <- colnames(adj.pheno)
+for(ph in 1:ncol(gsz.cor.mat)){
+  cat("###", colnames(adj.pheno)[ph], "\n")
+  sorted.cor <- sort(gsz.cor.mat[,ph])
+  top.cor <- c(head(sorted.cor, 10), tail(sorted.cor, 10))
+  all.top.cor[[ph]] <- top.cor
+  par(mar = c(3, 18, 4, 2))
+  barplot(top.cor, las = 2, horiz = TRUE, cex.names = 0.7, main = colnames(adj.pheno)[ph])
+  cat("\n\n")
+}
+```
+
+## Trait-Process Correlation Heatmap
+
+The following heatmap shows the top processes associated with all traits.
+A box plot of this matrix can be found in the SOM results folder. 
+
+```{r process_cor, fig.height = 20, fig.width = 9}
+u_processes <- unique(unlist(lapply(all.top.cor, function(x) names(x))))
+process.locale <- match(u_processes, rownames(gsz.cor.mat))
+pheatmap(gsz.cor.mat[process.locale,])
+
+process.order <- order(rowMeans(gsz.cor.mat[process.locale,]))
+
+pdf(here("Results", "SOM", paste0("Top_Processes_", tissue.name, ".pdf")), 
+  width = 7, height = 20)
+par(mar = c(4, 15, 2, 2))
+boxplot(t(gsz.cor.mat[process.locale[process.order],]), horizontal = TRUE, las = 2,
+cex.axis = 0.5, main = "Top Correlated Processes")
+abline(v = 0)
+dev.off()
 ```
 
 From these groups, we can look at differential expression of individual
@@ -132,14 +306,16 @@ to insulin response and chromatin remodeling. The top overexpressed genes
 are Calm1 and insulin receptor. Group NQRS has very high HOMA values and 
 is differentially expresses genes related to immune function and endocytosis.
 
+## Clustered Metagenes
 
-## Map metagenes
+The SOM clusters metagenes into clusters using k-means clustering. 
+Neighboring metagenes are very highly correlated with each other. 
+The clustering of metagenes allows us to reduce the dimentionality 
+even more. 
 
-For each of the K-means clusters, identify the genes in the group,
-and calculate the eigengene of the cluster.
 
-The barplot below shows the number of genes in each of the K-means clusters.
-They are remarkably even in size.
+The barplot below shows the number of genes in each of the K-means 
+clusters. They are remarkably even in size.
 
 ```{r metagenes}
 kmeta <- env$spot.list.kmeans$spots
@@ -147,108 +323,142 @@ cluster.sizes <- sapply(kmeta, function(x) length(x$genes))
 barplot(cluster.sizes)
 ```
 
-The followind code takes the first two principle components
-of each expression cluster.
 
-```{r meta_eig}
-eig.kmeans.file <- here("Results", "SOM", paste0("Cluster_Eigengenes_", tissue.name, ".RDS"))
 
-if(!file.exists(eig.kmeans.file)){
-  eig.kmeans <- vector(mode = "list", length = length(kmeta))
-  names(eig.kmeans) <- names(kmeta)
-  for(i in 1:length(kmeta)){
-    cluster.genes <- kmeta[[i]]$genes
-    gene.locale <- match(cluster.genes, colnames(adj.expr))
-    cluster.expr <- adj.expr[,gene.locale]
+## Metagene Cluster Trends
 
-    #library(umap)
-    #Utest <- umap(cluster.expr)
-    
-    #library(Rtsne)
-    #norm <- normalize_input(cluster.expr)
-    #nodup1 <- unique(norm)
-    #nodup2 <- unique(t(nodup1))
-    #tsn <- Rtsne(nodup2)
+look at correlation matrices for clustered metagenes. Here we find all the 
+metagenes in a single cluster and decompose the cluster using SVD. We then
+use the first principle component of the metagene matrix as the clustered
+metagene. We calculated the correlation of each of these clustered metagenes
+to the clinical traits, and scanned each. 
 
-    #par(mfrow = c(1,3))
-    #plot.decomp(cluster.expr, main = "SVD")
-    #plot(Utest$layout, main = "Umap")
-    #plot(tsn$Y[,1], tsn$Y[,2], main = "TSNE")
-    
-    #pheatmap(cluster.expr, show_rownames = FALSE, show_colnames = FALSE)
-    #pheatmap(cor(cluster.expr), show_rownames = FALSE, show_colnames = FALSE)
-    #plot.decomp(t(cluster.expr))
-    cluster.eig <- plot.decomp(cluster.expr, plot = FALSE)
-    #take the first two components
-    eig.mat <- cluster.eig$u
-    rownames(eig.mat) <- rownames(adj.expr)[cluster.eig$rows.used]
-    eig.kmeans[[i]] <- eig.mat
+The correlations with the traits were abysmal. The mapping is on par with
+mapping of other gene modules. 
+
+```{r metagene_clusters}
+kmeans <- env$spot.list.kmeans
+kmap <- kmeans$overview.map
+u_k <- sort(unique(as.vector(kmap)))
+
+k.gene.cor <- matrix(NA, nrow = length(u_k), ncol = ncol(adj.pheno))
+rownames(k.gene.cor) <- names(kmeans$spots)
+colnames(k.gene.cor) <- colnames(adj.pheno)
+
+k.gene.mat <- matrix(NA, nrow = nrow(adj.pheno), ncol = length(u_k))
+colnames(k.gene.mat) <- names(kmeans$spots)
+rownames(k.gene.mat) <- rownames(adj.pheno)
+
+for(k in 1:length(u_k)){
+  k.locale <- which(kmap == u_k[k])
+  k.genes <- metagenes[k.locale,]
+  #take the first principal component of the cluster
+  #pheatmap(cor(t(k.genes)))
+  #plot.decomp(t(k.genes))
+  k.gene <- plot.decomp(t(k.genes), plot.results = FALSE)$u[,1]
+  k.gene.mat[,k] <- k.gene
+  k.cor <- apply(adj.pheno, 2, function(x) cor(x, k.gene, use = "pairwise.complete.obs"))
+  k.gene.cor[k,] <- k.cor
+}
+
+pheatmap(k.gene.cor)
+```
+
+```{r kgene_scan, fig.width = 12, fig.height = 6}
+
+k.gene.scan <- scan1(genoprobs, k.gene.mat)
+
+par(xpd = NA)
+multilod.plot(k.gene.scan, map = map, lod.thresh = 4, row.names = colnames(k.gene.scan),
+row.name.shift = -1000)
+par(xpd = TRUE)
+```
+
+## LOD traces for clustered metagenes {.tabset .tabset-fade .tabset-pills}
+
+```{r plot_ind, fig.width = 12, fig.height = 6, results = "asis"}
+for(i in 1:ncol(k.gene.scan)){
+  cat("###", colnames(k.gene.scan)[i], "\n")
+  plot(k.gene.scan, map = map, lodcol = i)
+  cat("\n\n")
+}
+```
+
+## Peak Allele Effects {.tabset .tabset-fade .tabset-pills}
+
+```{r plot_alleles, results = "asis", fig.height = 8, fig.widdth = 12}
+metagene.scan.file <- here("Results", "SOM", "Metagene.Mapping.RDS")
+peak.table <- find_peaks(k.gene.scan, map = map, threshold = 6)
+
+if(!file.exists(metagene.scan.file)){
+  metagene.scans <- vector(mode = "list", length = nrow(peak.table))
+  scan.names <- apply(peak.table, 1, function(x) paste(x[,"lodcolumn"], "_Chr", x["chr"], collapse = ""))
+  for(i in 1:nrow(peak.table)){
+    peak.chr <- as.vector(peak.table[i,"chr"])
+    if(peak.chr != "X"){
+      cat("###", peak.table[i,"lodcolumn"], "Chr", peak.chr, "\n")
+      peak.pos <- as.numeric(peak.table[i,"pos"])
+      peak.trait <- peak.table[i,"lodcolumn"]
+      chr.locale <- which(names(map) == peak.chr)
+      lod.scan <- scan1(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
+      coef.scan <- scan1coef(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
+      #coef.scan <- scan1blup(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
+      par(mfrow = c(2,1), mar = c(2,2,2,2))
+      plot(lod.scan, map = map);abline(v = peak.pos)
+      plot_coefCC(coef.scan, map = map);abline(v = peak.pos)
+      cat("\n\n")
+    }
   }
-  saveRDS(eig.kmeans, eig.kmeans.file)
 }else{
-  eig.kmeans <- readRDS(eig.kmeans.file)
-}
-```
-
-## Map Expression Clusters {.tabset .tabset-fade .tabset-pills}
-
-```{r map_clusters}
-pc.scan.file <- here("Results", "SOM", paste0("Cluster_Scans_", tissue.name, ".RDS"))
-if(!file.exists(pc.scan.file)){
-  cluster.scans <- vector(mode = "list", length = length(eig.kmeans))
-  names(cluster.scans) <- names(eig.kmeans)
-  for(i in 1:length(eig.kmeans)){
-    if(is.interactive){report.progress(i, length(eig.kmeans))}
-    cluster.scans[[i]] <- scan1(genoprobs, eig.kmeans[[i]], addcovar = covar)
-    #plot(cluster.scans[[i]], lodcol = 1, map = map)
-    #plot(cluster.scans[[i]], lodcol = 2, map = map)
-  }
-  saveRDS(cluster.scans, pc.scan.file)
-}else{
-  cluster.scans <- readRDS(pc.scan.file)
-}
-```
-
-
-```{r plot_scans, results = "asis", fig.width = 10, fig.height = 7}
-for(i in 1:length(cluster.scans)){
-    cat("###", names(cluster.scans)[i], "\n")
-    if(is.interactive){quartz(width = 10, height = 7)}
-    par(mfrow = c(2,1))
-    plot(cluster.scans[[i]], lodcol = 1, map = map, main = paste("Cluster", names(eig.kmeans)[i], "PC 1"))
-    plot(cluster.scans[[i]], lodcol = 2, map = map, main = paste("Cluster", names(eig.kmeans)[i], "PC 2"))
-    cat("\n\n")
+  metagene.scans <- readRDS(metagene.scan.file)
 }
 
 ```
 
-## Cluster-Trait Correlation
+## Plot cis-trans for clusters {.tabset .tabset-fade .tabset-pills}
 
-The following plots examing the correlation between gene clusters
-and traits.
+The following plots show the eQTL positions vs. gene positions for each 
+cluster. I'm growing of the opinion that finding eigengenes and mapping
+them is not any different than just looking for trans bands and cis effects
+among the transcripts in the module. Any gene cluster that contains any genes
+with eQTLs has a genetic effect, so why do we want to summarize the module 
+and map it? We're just losing information. 
 
-```{r trait_cluster_cor}
-common.ind <- intersect(rownames(num.pheno), rownames(adj.expr))
-expr.idx <- match(common.ind, rownames(adj.expr))
-pheno.idx <- match(common.ind, rownames(num.pheno))
-
-#Since I mapped to eigengenes, make a correlation matrix
-#for each
-trait.cluster.cor <- vector(mode = "list", length = 2)
-names(trait.cluster.cor) <- c("PC1", "PC2")
-for(i in 1:length(trait.cluster.cor)){
-  cor.mat <- matrix(NA, ncol = ncol(num.pheno), nrow = length(kmeta))
-  colnames(cor.mat) <- colnames(num.pheno)
-  rownames(cor.mat) <- names(kmeta)
-  for(k in 1:length(eig.kmeans)){
-    cluster.eig <- eig.kmeans[[k]]
-    trait.cor <- apply(num.pheno, 2, function(x) cor(x[pheno.idx], cluster.eig[,i], 
-    use = "pairwise.complete.obs", method = "spearman"))
-    cor.mat[k,] <- trait.cor
-  }
-  trait.cluster.cor[[i]] <- cor.mat
+```{r cis_trans, results = "asis"}
+#get a table with eQTL chromosome, position,
+#and lod score.
+get_eqtl_table <- function(gene.ids){
+    gene.locale <- match(gene.ids, lod.table[[1]])
+    gene.locale <- gene.locale[which(!is.na(gene.locale))]
+    sub.table <- as.matrix(lod.table[gene.locale,])
+    split.qtl.pos <- strsplit(sub.table[,2], "_")
+    qtl.chr <- sapply(split.qtl.pos, function(x) x[1])
+    qtl.pos <- as.numeric(sapply(split.qtl.pos, function(x) x[2]))/1e6
+    final.table <- cbind(sub.table[,1], qtl.chr, qtl.pos)
+    return(final.table)
 }
 
-pheatmap(t(trait.cluster.cor[[1]]), main = "Trait Correlations with Cluster PC1")
-pheatmap(t(trait.cluster.cor[[2]]), main = "Trait Correlations with Cluster PC2")
+#get a table with transcript chromosome and
+#position
+get_transcript_table <- function(gene.ids){
+    trans.locale <- match(gene.ids, gene.info[[1]])
+    sub.table <- as.matrix(gene.info[trans.locale,])
+    final.table <- sub.table[,c(1,4,5)]
+    return(final.table)
+}
+
+lod.table <- expr.data$lod$additive
+gene.info <- expr.data$annot.mrna
+for(i in 1:length(kmeta)){
+  cat("### Group", names(kmeta)[i], "\n")
+  cluster.genes <- kmeta[[i]]$genes
+  eqtl.table <- get_eqtl_table(cluster.genes)
+  transcript.table <- get_transcript_table(cluster.genes)
+  if(is.interactive){quartz()}
+  lod.col <- colors.from.values(sqrt(as.numeric(eqtl.table[,3])), 
+  col.scale = "blue", light.dark = "d")
+  plot.cistrans.table(eqtl.table, transcript.table, map = map,
+    add = FALSE, cex = 0.3, col = lod.col)
+  cat("\n\n")
+}
 ```

@@ -4,7 +4,7 @@
 
 bin.vector2 <- function(vectorX, breaks = seq(0,1,0.5)){
 	
-    bin.boundaries <- consec.pairs(breaks)
+    bin.boundaries <- consec_pairs(breaks)
     bin.labels <- apply(bin.boundaries, 1, function(x) paste(x, collapse = "-"))
     binned.vals <- lapply(1:nrow(bin.boundaries), 
         function(x) vectorX[intersect(which(vectorX >= bin.boundaries[x,1]), which(vectorX <= bin.boundaries[x,2]))])

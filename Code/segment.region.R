@@ -26,7 +26,7 @@ segment.region <- function(region.min, region.max, num.points, alignment = c("ce
 		#first break the segment into n+1 regions
 		point.seq <- seq(region.min, region.max, total.region/num.points)
 		#find the center of each region
-		cons.pairs <- consec.pairs(1:length(point.seq))
+		cons.pairs <- consec_pairs(1:length(point.seq))
 		center.points <- apply(cons.pairs, 1, function(x) mean(c(point.seq[x[1]], point.seq[x[2]])))
 		return(center.points)
 		}

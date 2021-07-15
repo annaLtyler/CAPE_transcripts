@@ -8,7 +8,7 @@
 #SBATCH -e slurm.%N.%j.err # STDERR
 #SBATCH --mail-user=anna.tyler@jax.org
 #SBATCH --mail-type=END
-# example use: sbatch --export=tissue_name="Adipose",delete_previous="FALSE" SOM
+# example use: sbatch --export=tissue_name="SkeletalMuscle",delete_previous="FALSE" SOM
 
 cd $SLURM_SUBMIT_DIR
 

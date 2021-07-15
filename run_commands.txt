@@ -27,7 +27,6 @@ R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcr
 mv Documents/1.Setup_Data/cluster_transcripts.html Documents/1.Setup_Data/cluster_transcripts_$exp_name.html
 
 
-
 ##=====================================================================================##
 ## Traits and Transcripts with CCA                                                     ##
 ##=====================================================================================##
@@ -36,6 +35,19 @@ R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcr
 
 
 
+##=====================================================================================##
+## SOM
+##=====================================================================================##
 
+tissue="Adipose"
+tissue="Islet"
+tissue="Liver"
+tissue="SkeletalMuscle"
+
+delete_results="FALSE"
+
+
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'SOM.Rmd'))" --args $tissue $delete_results
+mv Documents/1.Setup_Data/SOM.html Documents/1.Setup_Data/SOM-$tissue.html
 
 
