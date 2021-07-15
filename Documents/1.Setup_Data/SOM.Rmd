@@ -36,7 +36,7 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2", "grid")
+needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2", "grid", "stringr")
 load_libraries(needed.packages, personal.library = TRUE)
 ```
 
@@ -116,11 +116,12 @@ mean.pheno <- matrix(NA, nrow = length(pheno.ind), ncol = ncol(adj.pheno))
 rownames(mean.pheno) <- names(pheno.ind)
 colnames(mean.pheno) <- colnames(adj.pheno)
 
-if(is.interactive){quartz(width = 10, height = 12)}
+if(is.interactive){quartz(width = 8, height = 8)}
+if(is.interactive){quartz(width = 8, height = 8)}
 layout.mat <- get.layout.mat(9)
 layout(layout.mat)
 par(mar = c(4,2,2,2))
-for(i in 1:ncol(adj.pheno)){
+for(i in 1:ncol(adj.pheno)){  
   group.pheno <- lapply(pheno.ind, function(x) adj.pheno[x,i])
   med.order <- order(sapply(group.pheno, function(x) median(x, na.rm = TRUE)), 
   decreasing = FALSE)
@@ -313,11 +314,10 @@ Neighboring metagenes are very highly correlated with each other.
 The clustering of metagenes allows us to reduce the dimentionality 
 even more. 
 
-
 The barplot below shows the number of genes in each of the K-means 
 clusters. They are remarkably even in size.
 
-```{r metagenes}
+```{r metagenes, fig.width = 9, fig.height = 5}
 kmeta <- env$spot.list.kmeans$spots
 cluster.sizes <- sapply(kmeta, function(x) length(x$genes))
 barplot(cluster.sizes)
@@ -333,8 +333,9 @@ use the first principle component of the metagene matrix as the clustered
 metagene. We calculated the correlation of each of these clustered metagenes
 to the clinical traits, and scanned each. 
 
-The correlations with the traits were abysmal. The mapping is on par with
-mapping of other gene modules. 
+The correlations with the traits are very comparable to WGCNA eigengene
+correlations with traits. The mapping is also par with mapping of other 
+gene modules. Maybe a little better.
 
 ```{r metagene_clusters}
 kmeans <- env$spot.list.kmeans
@@ -349,6 +350,10 @@ k.gene.mat <- matrix(NA, nrow = nrow(adj.pheno), ncol = length(u_k))
 colnames(k.gene.mat) <- names(kmeans$spots)
 rownames(k.gene.mat) <- rownames(adj.pheno)
 
+common.ind <- intersect(rownames(adj.pheno), colnames(metagenes))
+pheno.locale <- match(common.ind, rownames(adj.pheno))
+metagene.locale <- match(common.ind, colnames(metagenes))
+
 for(k in 1:length(u_k)){
   k.locale <- which(kmap == u_k[k])
   k.genes <- metagenes[k.locale,]
@@ -357,7 +362,8 @@ for(k in 1:length(u_k)){
   #plot.decomp(t(k.genes))
   k.gene <- plot.decomp(t(k.genes), plot.results = FALSE)$u[,1]
   k.gene.mat[,k] <- k.gene
-  k.cor <- apply(adj.pheno, 2, function(x) cor(x, k.gene, use = "pairwise.complete.obs"))
+  k.cor <- apply(adj.pheno[pheno.locale,], 2, function(x) cor(x, k.gene[metagene.locale], 
+  use = "pairwise.complete.obs"))
   k.gene.cor[k,] <- k.cor
 }
 
@@ -365,8 +371,14 @@ pheatmap(k.gene.cor)
 ```
 
 ```{r kgene_scan, fig.width = 12, fig.height = 6}
+metagene.scan.file <- here("Results", "SOM", paste0("Metagene.Scan.", tissue.name, ".RDS"))
 
-k.gene.scan <- scan1(genoprobs, k.gene.mat)
+if(!file.exists(metagene.scan.file)){
+  k.gene.scan <- scan1(genoprobs, k.gene.mat)
+  saveRDS(k.gene.scan, metagene.scan.file)
+}else{
+  k.gene.scan <- readRDS(metagene.scan.file)
+}
 
 par(xpd = NA)
 multilod.plot(k.gene.scan, map = map, lod.thresh = 4, row.names = colnames(k.gene.scan),
@@ -376,55 +388,11 @@ par(xpd = TRUE)
 
 ## LOD traces for clustered metagenes {.tabset .tabset-fade .tabset-pills}
 
-```{r plot_ind, fig.width = 12, fig.height = 6, results = "asis"}
-for(i in 1:ncol(k.gene.scan)){
-  cat("###", colnames(k.gene.scan)[i], "\n")
-  plot(k.gene.scan, map = map, lodcol = i)
-  cat("\n\n")
-}
-```
+The following plots show the LOD trace for each metagene along with its
+cis-trans eQTL plot to help show where the metagene QTLs might be coming
+from.
 
-## Peak Allele Effects {.tabset .tabset-fade .tabset-pills}
-
-```{r plot_alleles, results = "asis", fig.height = 8, fig.widdth = 12}
-metagene.scan.file <- here("Results", "SOM", "Metagene.Mapping.RDS")
-peak.table <- find_peaks(k.gene.scan, map = map, threshold = 6)
-
-if(!file.exists(metagene.scan.file)){
-  metagene.scans <- vector(mode = "list", length = nrow(peak.table))
-  scan.names <- apply(peak.table, 1, function(x) paste(x[,"lodcolumn"], "_Chr", x["chr"], collapse = ""))
-  for(i in 1:nrow(peak.table)){
-    peak.chr <- as.vector(peak.table[i,"chr"])
-    if(peak.chr != "X"){
-      cat("###", peak.table[i,"lodcolumn"], "Chr", peak.chr, "\n")
-      peak.pos <- as.numeric(peak.table[i,"pos"])
-      peak.trait <- peak.table[i,"lodcolumn"]
-      chr.locale <- which(names(map) == peak.chr)
-      lod.scan <- scan1(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
-      coef.scan <- scan1coef(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
-      #coef.scan <- scan1blup(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
-      par(mfrow = c(2,1), mar = c(2,2,2,2))
-      plot(lod.scan, map = map);abline(v = peak.pos)
-      plot_coefCC(coef.scan, map = map);abline(v = peak.pos)
-      cat("\n\n")
-    }
-  }
-}else{
-  metagene.scans <- readRDS(metagene.scan.file)
-}
-
-```
-
-## Plot cis-trans for clusters {.tabset .tabset-fade .tabset-pills}
-
-The following plots show the eQTL positions vs. gene positions for each 
-cluster. I'm growing of the opinion that finding eigengenes and mapping
-them is not any different than just looking for trans bands and cis effects
-among the transcripts in the module. Any gene cluster that contains any genes
-with eQTLs has a genetic effect, so why do we want to summarize the module 
-and map it? We're just losing information. 
-
-```{r cis_trans, results = "asis"}
+```{r eqtl_fun}
 #get a table with eQTL chromosome, position,
 #and lod score.
 get_eqtl_table <- function(gene.ids){
@@ -446,19 +414,106 @@ get_transcript_table <- function(gene.ids){
     final.table <- sub.table[,c(1,4,5)]
     return(final.table)
 }
+```
 
+```{r plot_ind, fig.width = 12, fig.height = 8, results = "asis"}
 lod.table <- expr.data$lod$additive
 gene.info <- expr.data$annot.mrna
-for(i in 1:length(kmeta)){
-  cat("### Group", names(kmeta)[i], "\n")
+
+all.marker.chr <- unlist(sapply(1:length(map), function(x) rep(names(map)[x], length(map[[x]]))))
+all.marker.pos <- as.numeric(unlist(map))
+rel.marker.pos <- get_relative_genomic_position(all.marker.chr, all.marker.pos, map)
+chr.col <- rep("darkgray", length(all.marker.chr))
+chr.col[which(as.numeric(all.marker.chr) %% 2 == 1)] <- "#1f78b4"
+
+layout.mat <- matrix(c(1,2), ncol = 1)
+
+for(i in 1:ncol(k.gene.scan)){
+  if(is.interactive){quartz(width = 10, height = 6)}
+  cat("###", colnames(k.gene.scan)[i], "\n")
+  layout(layout.mat, heights = c(0.5, 1))
+
+  par(mar = c(0,2,2,2))
+  #plot(k.gene.scan, map = map, lodcol = i)
+  plot(rel.marker.pos, k.gene.scan[,i], col = chr.col, type = "h", 
+    axes = FALSE, ylab = "LOD Score")
+  axis(2);abline(h = 6)
+
   cluster.genes <- kmeta[[i]]$genes
   eqtl.table <- get_eqtl_table(cluster.genes)
-  transcript.table <- get_transcript_table(cluster.genes)
-  if(is.interactive){quartz()}
+  transcript.pos.table <- get_transcript_table(cluster.genes)
   lod.col <- colors.from.values(sqrt(as.numeric(eqtl.table[,3])), 
   col.scale = "blue", light.dark = "d")
-  plot.cistrans.table(eqtl.table, transcript.table, map = map,
-    add = FALSE, cex = 0.3, col = lod.col)
+  par(mar = c(2,2,0,2))
+  plot.cistrans.table(eqtl.table, transcript.pos.table, map = map,
+    add = FALSE, cex = 0.5, col = lod.col)  
+  
+  mtext(side = 3, outer = TRUE, text = paste("Metagene", colnames(k.gene.scan)[i]),
+  line = -2.5)
   cat("\n\n")
 }
+```
+
+## Peak Allele Effects {.tabset .tabset-fade .tabset-pills}
+
+```{r scan_allele_effects}
+metagene.peak.scan.file <- here("Results", "SOM", 
+  paste0("Metagene.LOD.Scores.", tissue.name, ".RDS"))
+metagene.peak.allele.file <- here("Results", "SOM", 
+  paste0("Metagene.Allele.Effects.", tissue.name, ".RDS"))
+
+peak.table <- find_peaks(k.gene.scan, map = map, threshold = 6)
+
+if(!file.exists(metagene.peak.scan.file)){
+  metagene.peak.lod.scans <- metagene.peak.allele.scans <- vector(mode = "list", length = nrow(peak.table))
+  scan.names <- apply(peak.table, 1, function(x) paste0(x[2], "_Chr", str_trim(x[3])))
+  for(i in 1:nrow(peak.table)){
+    peak.chr <- as.vector(peak.table[i,"chr"])
+    if(peak.chr != "X"){
+      peak.pos <- as.numeric(peak.table[i,"pos"])
+      peak.trait <- peak.table[i,"lodcolumn"]
+      chr.locale <- which(names(map) == peak.chr)
+      lod.scan <- scan1(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
+      metagene.peak.lod.scans[[i]] <- lod.scan
+      #coef.scan <- scan1coef(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
+      coef.scan <- scan1blup(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
+      metagene.peak.allele.scans[[i]] <- coef.scan
+    }
+  }
+  saveRDS(metagene.peak.allele.scans, metagene.peak.allele.file)
+  saveRDS(metagene.peak.lod.scans, metagene.peak.scan.file)
+}else{
+  metagene.peak.allele.scans <- readRDS(metagene.peak.allele.file)
+  metagene.peak.lod.scans <- readRDS(metagene.peak.scan.file)
+}
+```
+
+```{r plot_scans, results = "asis", fig.height = 8, fig.widdth = 12}
+for(i in 1:length(metagene.peak.lod.scans)){
+  peak.chr <- peak.table[i,"chr"]
+  peak.pos <- as.numeric(peak.table[i,"pos"])
+  if(peak.chr != "X"){
+    cat("###", peak.table[i,"lodcolumn"], "Chr", peak.chr, "\n")
+    par(mfrow = c(2,1), mar = c(2,2,2,2))
+    plot(metagene.peak.lod.scans[[i]], map = map);abline(v = peak.pos)
+    plot_coefCC(metagene.peak.allele.scans[[i]], map = map);abline(v = peak.pos)
+    cat("\n\n")
+  }
+}
+```
+
+
+```{r cluster_analysis, eval = FALSE}
+cluster.name = "L"
+p.thresh <- 20
+cluster.locale <- which(names(kmeta) == cluster.name)
+cluster.enrich <- kmeta[[cluster.locale]]$Fisher.p
+log.p <- -log10(cluster.enrich)
+par(mar = c(4, 18, 2, 2))
+barplot(sort(log.p[which(log.p > p.thresh)]), horiz = TRUE, las = 2, xlab = "-log10(p)",
+main = paste("Metagene", cluster.name))
+
+cl.names <- lapply(kmeta, function(x) tail(sort(-log10(x$Fisher.p)), 1)
+
+names(tail(sort(log.p), 1))
 ```

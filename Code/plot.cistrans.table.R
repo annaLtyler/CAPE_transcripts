@@ -16,61 +16,65 @@
 plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NULL, 
 	add = FALSE, cex = 0.3){
 	
-	if(is.null(col)){col = rep("black", nrow(transcript.pos.table))}
-	if(length(col) == 1){col <- rep(col, nrow(transcript.pos.table))}
+    #we will plot one point per eQTL. Make a color vector
+    #based on the entries in the eQTL table
+	if(is.null(col)){col = rep("black", nrow(eqtl.table))}
+	if(length(col) == 1){col <- rep(col, nrow(eqtl.table))}
 
 	#make relative positions for each SNP by chromosome
-	chr.max <- sapply(map, function(x) max(x)) #get the max position for making relative positions of transcripts
-	rel.snp <- sapply(map, function(x) x/max(x))
-	for(i in 1:length(rel.snp)){
-		rel.snp[[i]] <- rel.snp[[i]] + i
-	}
-	snp.pos.table <- Reduce("c", rel.snp)
-
-	rel.pos <- function(chr, pos){
-		chr.locale <- which(names(chr.max) == chr)
-		chr.size <- chr.max[chr.locale]
-		rel.loc <- (pos/chr.size) + chr.locale
-		return(rel.loc[1])
-	}
-
-	#convert physical transcript positions, and eQTL positions
-	#to relative positions.
-	transcript.pos <- apply(transcript.pos.table, 1, function(x) rel.pos(x[2], as.numeric(x[3])))
-	eqtl.pos <- apply(eqtl.table, 1, function(x) rel.pos(x[2], as.numeric(x[3])))
+	 #get the max position for making relative positions of transcripts
+	chr.max <- sapply(map, function(x) max(x))
+	chr.sum <- sum(chr.max)
 	
-	#group the eQTL positions by transcript ID
-	eqtl.pos.list <- lapply(transcript.pos.table[,1], 
-		function(x) eqtl.pos[which(eqtl.table[,1] == x)])
-	names(eqtl.pos.list) <- transcript.pos.table[,1]
-	
-	#now plot each lod score where
-	#x values are the position of the eQTL peak (from lod.thresh.idx)
-	#y values are the position of the transcript for which the peak was found (from gene.loc)	
-	
-	#for each transcript, at the y value where it is encoded, plot
-	#points at the positions of SNPs with high lod scores for that transcript
-	#I'm still confused about x and y. Need to review this carefully
-
 	if(!add){
+		plot.max <- sum(chr.max)
+
 		plot.new()
-		plot.window(xlim = c(0, 20), ylim = c(0, 20))
+		plot.window(xlim = c(0, plot.max), ylim = c(0, plot.max))
+
+        chr.max.coord <- cumsum(chr.max)
+        chr.min.coord <- chr.max.coord - chr.max
 
 		#add chromosome boundaries and labels
 		par(xpd = TRUE)
-		for(i in seq(1,length(map), 2)){
-			draw.rectangle(i, i+1, 1, length(map)+1, fill = rgb(189/256 ,189/256 ,189/256, alpha = 0.5),
-			border = NA)
-			text(x = i+0.5, y = 0.5, labels = i)
-			#if(i < length(map)){text(x = i+1.5, y = 0.5, labels = i+1)}
+		for(i in 1:length(map)){
+			if(i %% 2 == 1){
+                chr.mean.x <- mean(c(chr.max.coord[i], chr.min.coord[i]))
+				draw.rectangle(chr.min.coord[i], chr.max.coord[i], 0, plot.max, 
+				fill = rgb(189/256 ,189/256 ,189/256, 
+				alpha = 0.5), border = NA)
+				text(x = chr.mean.x, y = 0, labels = i)
+				#if(i < length(map)){text(x = i+1.5, y = 0.5, labels = i+1)}
+			}
 		}
-	}
+    }
+    
+	#for each eQTL, figure out its relative position on the x axis
+    rel.pos <- function(chr, pos){
+        chr.locale <- which(names(map) == chr)
+        rel.loc <- pos/chr.max[chr.locale]
+        chr.len <- (chr.max.coord[chr.locale] - chr.min.coord[chr.locale])
+        adjust.pos <- chr.len * rel.loc
+        rel.x <-  chr.min.coord[chr.locale] + adjust.pos
+        return(rel.x)
+    }
 
-	all.x <- unlist(eqtl.pos.list)
-	all.y <- unlist(sapply(1:length(eqtl.pos.list), function(x) if(length(eqtl.pos.list[[x]]) > 0){rep(transcript.pos[x], length(eqtl.pos.list[[x]]))}))
-	all.col <- unlist(sapply(1:length(eqtl.pos.list), function(x) if(length(eqtl.pos.list[[x]]) > 0){rep(col[x], length(eqtl.pos.list[[x]]))}))
-	points(all.x, all.y, col = all.col, pch = 16, cex = cex)
+    eqtl.x <- apply(eqtl.table, 1, function(x) rel.pos(x[2], as.numeric(x[3])))
+    
+    #build a transcript position table for the eQTL
+    eqtl.transcripts <- t(apply(eqtl.table, 1, function(x) transcript.pos.table[which(transcript.pos.table[,1] == x[1]),]))
+    
+	transcript.y <- apply(eqtl.transcripts, 1, function(x) rel.pos(x[2], as.numeric(x[3])))
+    
+    #we won't get positions for anything on chromosomes Y or MT
+	has.position <- which(sapply(transcript.y, length) > 0)
+    eqtl.x <- eqtl.x[has.position]
+    transcript.y <- unlist(transcript.y[has.position])
+    all.col <- col[has.position]
 
-	coord.table <- cbind(all.x, all.y)
+    points(eqtl.x, transcript.y, col = all.col, pch = 16, cex = cex)
+
+	coord.table <- cbind(eqtl.x, transcript.y, all.col)
+    colnames(coord.table) <- c("x", "y", "col")
 	invisible(coord.table)
 }
