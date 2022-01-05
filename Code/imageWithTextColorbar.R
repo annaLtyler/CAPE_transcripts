@@ -223,7 +223,6 @@ n.ax.ticks = NULL, hadj = NA, padj = NA, bounding.box = TRUE){
         if(orientation == "h"){
 			plot(x = num.mat[,1], y = rep(1, nrow(num.mat)), col = col.key[,2], 
 			type = "h", axes = FALSE, xlab = "", ylab = "")
-			axis(1)
             }else{
 	            # Original
 				plot.new()

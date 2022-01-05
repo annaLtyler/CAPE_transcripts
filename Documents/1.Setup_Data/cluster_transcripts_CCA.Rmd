@@ -50,7 +50,8 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
 "RColorBrewer", "igraph", "corpcor", "easyPubMed", "knitr", "kableExtra",
-"ape", "simplifyEnrichment")
+"ape")
+#library("simplifyEnrichment")
 load_libraries(all.packages, personal.library = TRUE)
 data(CCcolors)
 ```
@@ -96,7 +97,7 @@ all.expr <- Reduce("cbind", matched.expr)
 
 expr.decomp.file <- file.path(results.dir, "all.expr.decomp.RDS")
 if(!file.exists(expr.decomp.file)){
-    expr.decomp <- plot.decomp(all.expr, plot.results = FALSE)
+    expr.decomp <- plot.decomp(all.expr, plot.results = FALSE, pc = 5)
     saveRDS(expr.decomp, expr.decomp.file)
 }else{
     expr.decomp <- readRDS(expr.decomp.file)
@@ -115,6 +116,114 @@ for(i in 1:length(tissue.adj.expr)){
     plot(expr.decomp$v[tissue.locale,], pch = 16, xlim = xlim, ylim = ylim,
     xlab = "PC1", ylab = "PC2", main = names(tissue.adj.expr)[i])
 }
+```
+
+## Overall Transcript and Trait Correlation {.tabset .tabset-fade .tabset-pills}
+
+I'm curious as to whether the top PCs of the transcriptomes either overall, 
+or in individual tissues, correlate with the top PCs of the trait matrix.
+
+The following plots show the top 2 PCs from all tissue gene expression,
+and the top 5 PCs from the trait matrix plotted against each other.
+
+The first PC of both matrices are highly correlated. Also PC 3 from the 
+trait matrix is negatively correlated with PC1 of the expression matrix.
+
+```{r trait_trans_pc_cor, fig.width = 10, fig.height = 10}
+trait.decomp <- plot.decomp(cca.pheno, pc = 5)
+overall.cor.mat <- matrix(NA, nrow = 5, ncol = 5)
+common.ind <- intersect(names(expr.decomp$rows.used), names(trait.decomp$rows.used))
+expr.locale <- match(common.ind, names(expr.decomp$rows.used))
+trait.locale <- match(common.ind, names(trait.decomp$rows.used))
+
+par(mfrow = c(5,5), mar = c(3,3,3,3))
+for(i in 1:5){
+    for(j in 1:5){
+    result <- plot.with.model(expr.decomp$u[expr.locale,i], trait.decomp$u[trait.locale,j], 
+    xlab = paste("Expression PC", i), ylab = paste("Trait PC", j))
+    overall.cor.mat[i,j] <- result[1]
+    }
+}
+```
+
+The following plots show the same figures as above but for each tissue.
+Trait PCs increase going from left to right, and expression PCs increase
+going from top to bottom. There are some interesting patterns here!
+
+The top PC of islet expression is not correlated with the first trait PC.
+But the second PC is.
+
+In contrast, the top PC of adipose expression is very highly correlated
+with the top trait PC. It is also modestly correlated with the third 
+trait PC.
+
+The top liver PC is also strongly correlated with the top trait PC. The
+second is too, though the effect isn't as great. Even the fourth and fifth
+liver PCs are modestly correlated with the top trait PC.
+
+The skeletal muscle transcriptome is not really correlated with the traits 
+at all until the fourth and fifth PC. There are also two funny blobs in these 
+plots. My first thought was that these were sex differences, but I think I've 
+already taken those out. 
+```{r tissue_decomp, results = "asis", fig.width = 10, fig.height = 10}
+tissue.pc.cor.mats <- vector(mode = "list", length = length(tissue.names))
+names(tissue.pc.cor.mats) <- tissue.names
+for(i in 1:length(tissue.adj.expr)){
+    tissue.cor.mat <- matrix(NA, nrow = 5, ncol = 5)
+    
+    cat(tissue.names[i], "\n")
+    tissue.decomp <- plot.decomp(tissue.adj.expr[[i]], plot.results = FALSE, pc = 5)
+    common.ind <- intersect(names(tissue.decomp$rows.used), names(trait.decomp$rows.used))
+    tissue.locale <- match(common.ind, names(tissue.decomp$rows.used))
+    trait.locale <- match(common.ind, names(trait.decomp$rows.used))
+
+    pdf(file.path(results.dir, paste0("PC_Correlations_", tissue.names[i], ".pdf")), width = 10, height = 10)
+    par(mfrow = c(5,5), mar = c(4,4,3,2))
+    for(trans.pc in 1:5){
+        for(trait.pc in 1:5){
+        result <- plot.with.model(tissue.decomp$u[tissue.locale,trans.pc], trait.decomp$u[trait.locale,trait.pc], 
+        xlab = paste("Expression PC", trans.pc), ylab = paste("Trait PC", trait.pc), report = "cor.test")
+        tissue.cor.mat[trans.pc, trait.pc] <- result[1]
+        }
+    }
+    tissue.pc.cor.mats[[i]] <- tissue.cor.mat
+    dev.off()
+    cat("\n\n")
+}
+```
+
+## Expression-Trait PC Correlation Heatmaps {.tabset .tabset-fade .tabset-pills}
+The figures below show the absolute values of the PC correlations 
+as a heat map. This makes the magnitude of the correlations easier to 
+compare.
+
+```{r pc_cor_heat, results = "asis"}
+global.max <- max(sapply(tissue.pc.cor.mats, function(x) max(abs(x))))
+global.min <- 0
+
+#pdf(paste0("~/Desktop/PC_cor.pdf"), width = 4, height = 4)
+for(i in 1:length(tissue.names)){
+    cat("###", tissue.names[i], "\n")
+    imageWithText(abs(tissue.pc.cor.mats[[i]]), global.color.scale = TRUE, global.min = global.min,
+    global.max = global.max, use.pheatmap.colors = TRUE, cex = 0.7, main = tissue.names[i],
+    row.names = paste("E PC", 1:5), col.names = paste("T PC", 1:5), col.text.rotation = 0,
+    col.text.adj = 0.5, col.text.shift = 0.15, row.text.rotation = 90, row.text.adj = 0.5, 
+    row.text.shift = 0.15, main.shift = 0.2, col.text.cex = 0.7, row.text.cex = 0.7, main.cex = 2)
+    cat("\n\n")
+}
+
+cat("### Overall\n")
+imageWithText(abs(overall.cor.mat), global.color.scale = TRUE, global.min = global.min,
+    global.max = global.max, use.pheatmap.colors = TRUE, cex = 0.7, main = "All Tissues Together",
+    row.names = paste("E PC", 1:5), col.names = paste("T PC", 1:5), col.text.rotation = 0,
+    col.text.adj = 0.5, col.text.shift = 0.15, row.text.rotation = 90, row.text.adj = 0.5, 
+    row.text.shift = 0.15, main.shift = 0.2, col.text.cex = 0.7, row.text.cex = 0.7, main.cex = 2)
+cat("\n\n")
+    
+#dev.off()
+
+#imageWithTextColorbar(abs(tissue.pc.cor.mats[[i]]), global.color.scale = TRUE, global.min = 0,
+#    global.max = 0.7, use.pheatmap.colors = TRUE, axis.line = 0, cex = 1.5, orientation = "h")
 ```
 
 ## Transcript Correlation
@@ -1175,7 +1284,9 @@ for(i in 1:length(tissue.names)){
 Attempting to simplify GO term enrichments using the R package 
 simplifyEnrichment.
 
-```{r simpEnrich, message = FALSE, error = FALSE, warning = FALSE}
+```{r simpEnrich, message = FALSE, error = FALSE, warning = FALSE, eval = FALSE}
+#I'm turning this off so I can run on sumner for now. For some 
+#reason I can get simplifyEnrichment to install.
 
 go.domains <- c("BP")
 cluster.col <- brewer.pal(12, "Paired")

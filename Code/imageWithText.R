@@ -218,7 +218,8 @@ sig.digs = 3, use.pheatmap.colors = FALSE, na.col = "lightgray", gridlines = FAL
 		if(!is.null(main)){
 			par(xpd = TRUE)
 			plot.range = max(y.coord) - min(y.coord)
-			text(mean(x.coord[1,]), max(y.coord)+(plot.range*main.shift), labels = main, cex = main.cex)
+			main.y <- max(y.coord) + (plot.range*(main.shift)) #positive numbers move out of plotting area
+			text(mean(x.coord[1,]), main.y, labels = main, cex = main.cex)
 			par(xpd = FALSE)
 			}
 			
@@ -227,9 +228,8 @@ sig.digs = 3, use.pheatmap.colors = FALSE, na.col = "lightgray", gridlines = FAL
 				stop("There is a different number of column names than columns.")
 				}
 			par(xpd = TRUE)
-			# text(x.coord[1,], (min(y.coord)-(max(y.coord)) - col.text.shift), labels = col.names, srt = col.text.rotation, adj = col.text.adj)
 			plot.range <- max(y.coord) - min(y.coord)
-			col.text.y <- min(y.coord) - (plot.range*(col.text.shift/100))
+			col.text.y <- min(y.coord) - (plot.range*(col.text.shift)) #positive numbers move out of plotting area
 			text((x.coord[1,]), col.text.y, labels = col.names, srt = col.text.rotation, adj = col.text.adj, cex = col.text.cex)
 			}
 
@@ -239,7 +239,7 @@ sig.digs = 3, use.pheatmap.colors = FALSE, na.col = "lightgray", gridlines = FAL
 				}
 			par(xpd = TRUE)
 			plot.range <- (max(x.coord) - min(x.coord))
-			row.text.x <- min(x.coord) - (plot.range*(row.text.shift/100))
+			row.text.x <- min(x.coord) - (plot.range*(row.text.shift)) #positive numbers move out of plotting area
 			text(row.text.x, y.coord[,1], labels = rev(row.names), adj = row.text.adj, cex = row.text.cex, srt = row.text.rotation)
 			}
 
