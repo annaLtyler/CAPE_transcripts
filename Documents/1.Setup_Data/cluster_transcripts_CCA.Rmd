@@ -50,7 +50,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
 "RColorBrewer", "igraph", "corpcor", "easyPubMed", "knitr", "kableExtra",
-"ape")
+"ape", "wordcloud", "wordcloud2")
 #library("simplifyEnrichment")
 load_libraries(all.packages, personal.library = TRUE)
 data(CCcolors)
@@ -79,6 +79,8 @@ full transcript matrix.
 I was expecting separation by tissue, but they all overlap each other. 
 
 ```{r transcript_overlap}
+n.expr.pc = n.trait.pc = 5
+
 transcript.list <- lapply(tissue.adj.expr, colnames)
 #plotVenn(transcript.list)
 
@@ -97,7 +99,7 @@ all.expr <- Reduce("cbind", matched.expr)
 
 expr.decomp.file <- file.path(results.dir, "all.expr.decomp.RDS")
 if(!file.exists(expr.decomp.file)){
-    expr.decomp <- plot.decomp(all.expr, plot.results = FALSE, pc = 5)
+    expr.decomp <- plot.decomp(all.expr, plot.results = FALSE, pc = n.expr.pc)
     saveRDS(expr.decomp, expr.decomp.file)
 }else{
     expr.decomp <- readRDS(expr.decomp.file)
@@ -123,22 +125,22 @@ for(i in 1:length(tissue.adj.expr)){
 I'm curious as to whether the top PCs of the transcriptomes either overall, 
 or in individual tissues, correlate with the top PCs of the trait matrix.
 
-The following plots show the top 2 PCs from all tissue gene expression,
-and the top 5 PCs from the trait matrix plotted against each other.
+The following plots show the top `r n.expr.pc` PCs from all tissue gene expression,
+and the top `r n.trait.pc` PCs from the trait matrix plotted against each other.
 
 The first PC of both matrices are highly correlated. Also PC 3 from the 
 trait matrix is negatively correlated with PC1 of the expression matrix.
 
 ```{r trait_trans_pc_cor, fig.width = 10, fig.height = 10}
-trait.decomp <- plot.decomp(cca.pheno, pc = 5)
-overall.cor.mat <- matrix(NA, nrow = 5, ncol = 5)
+trait.decomp <- plot.decomp(cca.pheno, pc = n.trait.pc)
+overall.cor.mat <- matrix(NA, nrow = n.expr.pc, ncol = n.trait.pc)
 common.ind <- intersect(names(expr.decomp$rows.used), names(trait.decomp$rows.used))
 expr.locale <- match(common.ind, names(expr.decomp$rows.used))
 trait.locale <- match(common.ind, names(trait.decomp$rows.used))
 
-par(mfrow = c(5,5), mar = c(3,3,3,3))
-for(i in 1:5){
-    for(j in 1:5){
+par(mfrow = c(n.expr.pc,n.trait.pc), mar = c(3,3,3,3))
+for(i in 1:n.expr.pc){
+    for(j in 1:n.trait.pc){
     result <- plot.with.model(expr.decomp$u[expr.locale,i], trait.decomp$u[trait.locale,j], 
     xlab = paste("Expression PC", i), ylab = paste("Trait PC", j))
     overall.cor.mat[i,j] <- result[1]
@@ -169,18 +171,18 @@ already taken those out.
 tissue.pc.cor.mats <- vector(mode = "list", length = length(tissue.names))
 names(tissue.pc.cor.mats) <- tissue.names
 for(i in 1:length(tissue.adj.expr)){
-    tissue.cor.mat <- matrix(NA, nrow = 5, ncol = 5)
+    tissue.cor.mat <- matrix(NA, nrow = n.expr.pc, ncol = n.trait.pc)
     
     cat(tissue.names[i], "\n")
-    tissue.decomp <- plot.decomp(tissue.adj.expr[[i]], plot.results = FALSE, pc = 5)
+    tissue.decomp <- plot.decomp(tissue.adj.expr[[i]], plot.results = FALSE, pc = n.expr.pc)
     common.ind <- intersect(names(tissue.decomp$rows.used), names(trait.decomp$rows.used))
     tissue.locale <- match(common.ind, names(tissue.decomp$rows.used))
     trait.locale <- match(common.ind, names(trait.decomp$rows.used))
 
     pdf(file.path(results.dir, paste0("PC_Correlations_", tissue.names[i], ".pdf")), width = 10, height = 10)
-    par(mfrow = c(5,5), mar = c(4,4,3,2))
-    for(trans.pc in 1:5){
-        for(trait.pc in 1:5){
+    par(mfrow = c(n.expr.pc,n.trait.pc), mar = c(4,4,3,2))
+    for(trans.pc in 1:n.expr.pc){
+        for(trait.pc in 1:n.trait.pc){
         result <- plot.with.model(tissue.decomp$u[tissue.locale,trans.pc], trait.decomp$u[trait.locale,trait.pc], 
         xlab = paste("Expression PC", trans.pc), ylab = paste("Trait PC", trait.pc), report = "cor.test")
         tissue.cor.mat[trans.pc, trait.pc] <- result[1]
