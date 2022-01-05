@@ -51,7 +51,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
 "RColorBrewer", "igraph", "corpcor", "easyPubMed", "knitr", "kableExtra",
 "ape", "simplifyEnrichment")
-load_libraries(all.packages)
+load_libraries(all.packages, personal.library = TRUE)
 data(CCcolors)
 ```
 
