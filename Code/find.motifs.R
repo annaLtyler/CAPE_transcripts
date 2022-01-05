@@ -1,27 +1,46 @@
 #This function finds specific motifs in the gene interaction network
+#if sig.motifs is set to FALSE, this finds the motifs with the smallest
+#interaction coefficients. This is for comparing markers from significant
+#motifs to markers from additive interactions
 
-find.motifs <- function(data.obj, p_or_q = 0.05, include.covar = FALSE){
+find.motifs <- function(data.obj, collapsed.net = TRUE, include.covar = FALSE){
 
 
-	var.inf <- plot_variant_influences(cross, covar_width = 1, pheno_width = 1,
-		show_marker_labels =TRUE, p_or_q = p_or_q)
-		dev.off()
-	just.int <- var.inf[,1:nrow(var.inf)]
-	just.main <- var.inf[,(nrow(var.inf)+1):ncol(var.inf)]
-	num.pheno <- ncol(just.main)
+	if(collapsed.net){
+		total.net <- data.obj$collapsed_net
+		}else{
+		total.net <- data.obj$full_net
+		}
+
+		# total.net[which(total.net == 0)] <- NA
+		# imageWithText(total.net, split.at.vals = TRUE, show.text = FALSE)
+		# imageWithTextColorbar(total.net, split.at.vals = TRUE)
+
+		gene.ind <- 1:min(dim(total.net))
+		full.ind <- 1:max(dim(total.net))
 	
 	if(!include.covar){
 		covar.info <- get_covar(data.obj)
 		covar.names <- covar.info$covar_names
-		covar.locale <- match(covar.names, rownames(just.main))
+		covar.locale <- match(covar.names, colnames(total.net))
 		if(length(covar.locale) > 0 && !is.na(covar.locale)){
-			just.int <- just.int[-covar.locale,-covar.locale]
-			just.main <- just.main[-covar.locale,]
+			gene.ind <- gene.ind[-covar.locale]
+			full.ind <- full.ind[-covar.locale]
 			}
 		}
 		
+	pheno <- get_pheno(data.obj, scan_what = data.obj$scan_what, covar = data.obj$p_covar)
+	pheno.names <- colnames(pheno)
+	pheno.ind <- match(pheno.names, colnames(total.net)) 
+
+	#pull out the gene network
+	gene.net <- total.net[gene.ind, gene.ind]
+	#and the edges to the phenotypes
+	pheno.net <- total.net[gene.ind, pheno.ind]
+	num.pheno <- dim(pheno.net)[2]
+	
 	#find all the edges
-	gene.edge.locale <- which(just.int != 0, arr.ind = TRUE)
+	gene.edge.locale <- which(gene.net != 0, arr.ind = TRUE)
 	
 	if(length(gene.edge.locale) == 0){stop("There are no edges at this p value.")}
 	
@@ -30,32 +49,23 @@ find.motifs <- function(data.obj, p_or_q = 0.05, include.covar = FALSE){
 	#phenotype as well. Each phenotype will get its own set
 	#of motifs
 	all.triplets <- vector(mode = "list", length = num.pheno)
-	names(all.triplets) <- colnames(just.main)
+	names(all.triplets) <- colnames(pheno.net)
 	
 	all.triplet.signs <- vector(mode = "list", length = num.pheno)
-	names(all.triplet.signs) <- colnames(just.main)
+	names(all.triplet.signs) <- colnames(pheno.net)
 	
 	for(ph in 1:num.pheno){
-		triplet.list <- matrix(NA, ncol = 3, nrow = nrow(gene.edge.locale))
-		triplet.signs <- matrix(NA, ncol = 3, nrow = nrow(gene.edge.locale))
+		triplet.list <- matrix(NA, ncol = 3, nrow = dim(gene.edge.locale)[1])
+		triplet.signs <- matrix(NA, ncol = 3, nrow = dim(gene.edge.locale)[1])
 		colnames(triplet.list) <- c("source", "target", "pheno")
 		colnames(triplet.signs) <- c("source-target", "source-Ph", "target-Ph")
 		for(g in 1:nrow(gene.edge.locale)){
-			source.locale <- gene.edge.locale[g,1]
-			target.locale <- gene.edge.locale[g,2]
-			
-			source.main <- just.main[source.locale,ph]
-			target.main <- just.main[target.locale,ph]
-			
-			#motifs must have two main effects
-			if(!is.na(source.main) && !is.na(target.main)){
-				triplet.names <- c(colnames(just.int)[source.locale], 
-				colnames(just.int)[target.locale], colnames(just.main)[ph])
-				triplet.list[g,] <- triplet.names
-				
-				int.val <- just.int[source.locale,target.locale]
-				trip.signs <- sign(c(source.main, target.main, int.val))
-				triplet.signs[g,] <- trip.signs
+			#for each edge, look for an entry in the phenotype
+			#matrix corresponding to each gene in the interaction
+			#to find open triplets, just change && to ||
+			if(pheno.net[gene.edge.locale[g,1],ph] != 0 && pheno.net[gene.edge.locale[g,2],ph] != 0){
+				triplet.list[g,] <- c(colnames(gene.net)[gene.edge.locale[g,]], colnames(pheno.net)[ph])
+				triplet.signs[g,] <- c(sign(gene.net[gene.edge.locale[g,1], gene.edge.locale[g,2]]), sign(pheno.net[gene.edge.locale[g,1],ph]), sign(pheno.net[gene.edge.locale[g,2],ph]))
 				}
 			}
 		#take out the NA rows, and the non-interactions 
@@ -68,7 +78,8 @@ find.motifs <- function(data.obj, p_or_q = 0.05, include.covar = FALSE){
 		all.triplet.signs[[ph]] <- triplet.signs
 	}
 	
-	result <- list("triplets" = all.triplets, "triplet-signs" = all.triplet.signs)
+	result <- list("triplets" = all.triplets, "triplet-signs" = all.triplet.signs, 
+	"used.collapsed.net" = collapsed.net)
 	return(result)		
 	
 	

@@ -14,8 +14,11 @@
 #an existing plot.
 
 plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NULL, 
-	add = FALSE, cex = 0.3){
+	add = FALSE, cex = 0.3, show.cross.chromosome.boundaries = TRUE, label.cex = 1){
 	
+	if(class(eqtl.table)[1] != "matrix"){stop("It looks as if eqtl.table might be a data.frame or a tibble. Please convert to a matrix.")}
+	if(class(transcript.pos.table)[1] != "matrix"){stop("It looks as if transcript.pos.table might be a data.frame or a tibble. Please convert to a matrix.")}
+
     #we will plot one point per eQTL. Make a color vector
     #based on the entries in the eQTL table
 	if(is.null(col)){col = rep("black", nrow(eqtl.table))}
@@ -28,6 +31,7 @@ plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NUL
 	
 	if(!add){
 		plot.max <- sum(chr.max)
+		label.pos <- plot.max*-0.02
 
 		plot.new()
 		plot.window(xlim = c(0, plot.max), ylim = c(0, plot.max))
@@ -37,16 +41,35 @@ plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NUL
 
 		#add chromosome boundaries and labels
 		par(xpd = TRUE)
+		#draw a rectangle around the whole plot
+		draw.rectangle(0, plot.max, 0, plot.max, border = "darkgray")
+
 		for(i in 1:length(map)){
+			chr.mean.x <- mean(c(chr.max.coord[i], chr.min.coord[i]))
 			if(i %% 2 == 1){
-                chr.mean.x <- mean(c(chr.max.coord[i], chr.min.coord[i]))
+				#QTL location rectangles
 				draw.rectangle(chr.min.coord[i], chr.max.coord[i], 0, plot.max, 
 				fill = rgb(189/256 ,189/256 ,189/256, 
 				alpha = 0.5), border = NA)
-				text(x = chr.mean.x, y = 0, labels = i)
-				#if(i < length(map)){text(x = i+1.5, y = 0.5, labels = i+1)}
+
+				if(show.cross.chromosome.boundaries){
+					#transcript position rectangles
+					draw.rectangle(min.y = chr.min.coord[i], max.y = chr.max.coord[i], 
+					min.x = 0, max.x = plot.max, fill = rgb(189/256 ,189/256 ,189/256, 
+					alpha = 0.5), border = NA)
+				}
+				
+				#lines for transcript position chromosome boundaries
+				#segments(x0 = 0, x1 = plot.max, y0 = chr.max.coord[i], lty = 2, col = "darkgray")
+				#segments(x0 = 0, x1 = plot.max, y0 = chr.min.coord[i], lty = 2, col = "darkgray")
+
 			}
+			text(x = chr.mean.x, y = label.pos, labels = names(map)[i], cex = label.cex)
+			text(y = chr.mean.x, x = label.pos, labels = names(map)[i], cex = label.cex)
+
 		}
+	
+		par(xpd = FALSE)
     }
     
 	#for each eQTL, figure out its relative position on the x axis
@@ -76,5 +99,6 @@ plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NUL
 
 	coord.table <- cbind(eqtl.x, transcript.y, all.col)
     colnames(coord.table) <- c("x", "y", "col")
+
 	invisible(coord.table)
 }

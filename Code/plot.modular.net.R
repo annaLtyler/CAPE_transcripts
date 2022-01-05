@@ -5,9 +5,10 @@ plot.modular.net <- function(net, modules, module.names = NULL,
 micro.layout = layout_nicely, macro.layout = layout_nicely, 
 macro.layout.fun = "mean", cluster.layout.matrix = NULL, 
 shiftx = 10, shifty = 10, vertex.col = NULL, vertex.size = 1, 
-vertex.names = NA, edge.color = NULL, vertex.label.dist = 1, 
-vertex.label.cex = 1, edge.arrow.size = 1, edge.width = 1, edge.alpha = 0.5, 
-highlight.nodes = NULL){
+vertex.names = NA, edge.color = NULL, edge.split.vals = TRUE, edge.color.split = 0,
+edge.colorscale = c("blue", "brown"), edge.grad.dir = c("ends"), 
+vertex.label.dist = 1, vertex.label.cex = 1, edge.arrow.size = 1, 
+edge.width = 1, edge.alpha = 0.5, highlight.nodes = NULL){
 
 	if(is.null(V(net)$name)){stop("Network vertices must have names.")}
 
@@ -63,24 +64,19 @@ highlight.nodes = NULL){
 	full.layout <- Reduce("rbind", mod.layout)
 	full.layout.order <- match(V(net)$name, rownames(full.layout))
 	full.layout <- full.layout[full.layout.order,]
-
-	mypal <- colorRampPalette(c("blue", "#007FFF", "cyan","#7FFF7F", "#7FFF7F", "yellow", "#FF7F00", "red"))
-	ColorRamp <- mypal(256)
-	possible.weights <- segment.region(0,1,256)
 	
 	if(is.null(edge.color)){
-		if(is.null(E(net)$weight)){
-			E(net)$weight <- rep(1, ecount(net))
-			}
-		edge.col <- unlist(lapply(E(net)$weight, function(x) ColorRamp[get.nearest.pt(possible.weights, x)]))
-		edge.rgb <- lapply(edge.col, function(x) col2rgb(x, alpha = TRUE))
-		if(!is.null(edge.alpha)){
-			edge.rgb <- lapply(edge.rgb, function(x) round(x*c(1,1,1, edge.alpha)))
-			edge.col <- sapply(edge.rgb, function(x) rgb(x[1,1]/256, x[2,1]/256, x[3,1]/256, alpha = x[4,1]/256))
-			}
+		eweight <- E(net)$weight
+		if(length(unique(eweight)) == 1){
+			edge.col = rep("gray", ecount(net))
 		}else{
-		edge.col <- edge.color
+			edge.col <- colors.from.values(vals = eweight, 
+			col.scale = edge.color.scale, split.points = edge.color.split,
+			grad.dir = edge.grad.dir, split.at.vals = edge.split.vals)
 		}
+	}else{
+		edge.col <- edge.color
+	}
 	
 
 	par(mar = c(0, 2, 2, 2))
@@ -97,18 +93,15 @@ highlight.nodes = NULL){
 	#2: edge weight legend
 	par(mar = c(3,3,3,3))
 	if(is.null(edge.color)){
-		barplot(matrix(rep(1, 256), ncol = 1), col = ColorRamp, border = FALSE, axes = FALSE, main = "Edge Weights")
-		axis(2, at = segment.region(1,256,6, "ends"), labels = segment.region(0,1,6, "ends"), cex.axis = 2)
-		}else{
-		plot.new()
-		}
-
+		imageWithTextColorbar(matrix(E(net)$weight, ncol = 1), col.scale = edge.color.scale, 
+		axis.line = 0, cex = 1, grad.dir = edge.grad.dir, split.at.vals = edge.split.vals,
+		split.points = edge.color.split)	
+	}
 
 	par(mar = c(2,0,0,0))
 	plot.new()
 	plot.window(xlim = c(0,1), ylim = c(0,1))
 	legend(x = 0.2, y = 1, fill = mod.cols[1:length(u_modules)], legend = mod.names)	
-
 
 	net <- set_edge_attr(net, "edge.color", value = edge.col)
 	net <- set_vertex_attr(net, "vertex.color", value = node.col)

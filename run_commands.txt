@@ -16,7 +16,6 @@ exp_name="weight_adjusted"
 
 exp_name="all_traits"
 delete_results="FALSE"
-fused_lasso="FALSE"
 
 
 ##=====================================================================================##
@@ -31,7 +30,7 @@ mv Documents/1.Setup_Data/cluster_transcripts.html Documents/1.Setup_Data/cluste
 ## Traits and Transcripts with CCA                                                     ##
 ##=====================================================================================##
 
-R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args $exp_name $delete_results $fused_lasso
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'cluster_transcripts_CCA.Rmd'))" --args $exp_name $delete_results
 
 
 

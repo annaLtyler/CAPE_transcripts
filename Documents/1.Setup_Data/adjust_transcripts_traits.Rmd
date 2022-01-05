@@ -89,17 +89,17 @@ load_libraries(all.packages)
 all.var <- ls()
 data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
 if(!data.loaded){
-  gen.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
-  tissue.files <- list.files(here("Data", "RDS_datasets_tissues"), full.names = TRUE)
-  tissue.names <- gsub(".RDS", "", basename(tissue.files))
-  tissue.data <- lapply(tissue.files, readRDS)
-  names(tissue.data) <- tissue.names
-  tissue.counts <- lapply(tissue.data, function(x) x$data$raw)
-  tissue.rz <- lapply(tissue.data, function(x) x$data$rz)
-  tissue.covar <- lapply(tissue.data, function(x) x$covar.matrix)
-  }
+    gen.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+    tissue.files <- list.files(here("Data", "RDS_datasets_tissues"), full.names = TRUE)
+    tissue.names <- gsub(".RDS", "", basename(tissue.files))
+    tissue.data <- lapply(tissue.files, readRDS)
+    names(tissue.data) <- tissue.names
+    tissue.counts <- lapply(tissue.data, function(x) x$data$raw)
+    tissue.rz <- lapply(tissue.data, function(x) x$data$rz)
+    tissue.norm <- lapply(tissue.data, function(x) x$data$norm)
+    tissue.covar <- lapply(tissue.data, function(x) x$covar.matrix)
+}
 ```
-
 
 ## Select Traits
 
@@ -114,7 +114,7 @@ pheno <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsA
 num.pheno <- apply(pheno[,11:(ncol(pheno)-1)], 2, as.numeric)
 rownames(num.pheno) <- pheno[,1]
 
-max.n <- which.max(sapply(tissue.rz, nrow)) #adjust with the largest covariate matrix
+max.n <- which.max(sapply(tissue.norm, nrow)) #adjust with the largest covariate matrix
 covar <- tissue.covar[[max.n]]
 
 if(is.numeric(keep.traits[1])){
@@ -131,7 +131,16 @@ if(length(adj.traits) > 0){
     all.covar <- covar
 }
 
-adj.pheno <- adjust(num.pheno[,keep.trait.locale], all.covar)
+#remove batch effects from transcript data and 
+#phenotype data.
+common.ind <- intersect(rownames(num.pheno), rownames(covar))
+pheno.idx <- match(common.ind, rownames(num.pheno))
+covar.idx <- match(common.ind, rownames(covar))
+
+adj.pheno <- adjust(matX = num.pheno[,keep.trait.locale], 
+    adj.mat = all.covar, retain.intercept = TRUE)
+
+
 cca.pheno <- apply(adj.pheno, 2, scale)
 rownames(cca.pheno) <- rownames(adj.pheno)
 
@@ -151,23 +160,142 @@ Here we use the raw expression matrix to select transcripts from the rank Z
 normalized expression matrix. 
 
 ```{r adjust_covar}
-min.mean = 10
-
-filter.expr <- function(count.mat, rz.mat, covar.mat, min.mean){
-    trans <- which(colMeans(count.mat) > min.mean)
-    expr <- rz.mat[,trans]
-    adj.expr <- adjust(expr, covar.mat)
-    return(adj.expr)
-}
+min.mean = 5
 
 adj.expr.file <- file.path(results.dir, "Adjusted_Expression.RDS")
 if(!file.exists(adj.expr.file)){
-    tissue.adj.expr <- lapply(1:length(tissue.rz), 
-        function(x) filter.expr(tissue.counts[[x]], tissue.rz[[x]], 
-        all.covar, min.mean))
-    names(tissue.adj.expr) <- tissue.names
-    saveRDS(tissue.adj.expr, adj.expr.file)
+    tissue.fil.expr <- lapply(tissue.norm, 
+        function(x) x[,which(colMeans(x, na.rm = TRUE) > min.mean)])
+
+    #adjust expression for covarates
+    adj.expr <- lapply(tissue.fil.expr, function(x) adjust(x, all.covar, TRUE))
+    saveRDS(adj.expr, adj.expr.file)
 }else{
-    tissue.adj.expr <- readRDS(adj.expr.file)
+adj.expr <- readRDS(adj.expr.file)
 }
+
+```
+
+## Tissue Gene Expression Decomposition
+
+```{r expr_decomp}
+transcript.list <- lapply(adj.expr, colnames)
+
+if(is.interactive){quartz()}
+plotVenn(transcript.list)
+
+
+common.transcripts <- Reduce("intersect", transcript.list)
+common.transcript.idx <- lapply(adj.expr, function(x) match(common.transcripts, colnames(x)))
+common.ind <- Reduce("intersect", lapply(adj.expr, rownames))
+common.ind.idx <- lapply(adj.expr, function(x) match(common.ind, rownames(x)))
+
+matched.expr <- lapply(1:length(adj.expr), 
+function(x) adj.expr[[x]][common.ind.idx[[x]], common.transcript.idx[[x]]])
+
+tissue.label <- unlist(lapply(1:length(matched.expr), 
+function(x) rep(names(adj.expr)[x], ncol(matched.expr[[x]]))))
+
+all.expr <- Reduce("cbind", matched.expr)
+
+expr.decomp.file <- file.path(results.dir, "all.expr.decomp.RDS")
+if(!file.exists(expr.decomp.file)){
+    expr.decomp <- plot.decomp(t(all.expr), plot.results = FALSE)
+    saveRDS(expr.decomp, expr.decomp.file)
+}else{
+    expr.decomp <- readRDS(expr.decomp.file)
+}
+
+if(is.interactive){quartz()}
+plot(expr.decomp$u, col = as.numeric(as.factor(tissue.label)), pch = 16,
+xlab = "PC1", ylab = "PC2")
+legend("topleft", legend = levels(as.factor(tissue.label)), 
+col = 1:length(unique(tissue.label)), pch = 16)
+
+if(is.interactive){quartz()}
+xlim <- c(min(expr.decomp$u[,1]), max(expr.decomp$u[,1]))
+ylim <- c(min(expr.decomp$u[,2]), max(expr.decomp$u[,2]))
+par(mfrow = c(2,2))
+for(i in 1:length(adj.expr)){
+    tissue.locale <- which(tissue.label == names(adj.expr)[i])
+    plot(expr.decomp$u[tissue.locale,], pch = 16, xlim = xlim, ylim = ylim,
+    xlab = "PC1", ylab = "PC2", main = names(adj.expr)[i])
+}
+```
+
+## Transcript Correlation
+
+How well does the expression of a single transcript in one 
+tissue correlate with its expression in another tissue?
+
+The following plot shows the distribution of correlations across
+individuals of transcript i in one tissue with transcript i in another 
+tissue. 
+
+Transcripts in one tisse are expressed very differently across 
+individuals than the same transcript in another tissue.
+
+```{r plot_transcript_cor, fig.height = 10, fig.width = 3.5}
+tissue.pairs <- pair.matrix(1:length(tissue.names))
+tissue.expr.comp <- vector(mode = "list", length = nrow(tissue.pairs))
+for(i in 1:nrow(tissue.pairs)){
+    tissue.expr.comp[[i]] <- sapply(1:ncol(matched.expr[[1]]),
+    function(x) cor(matched.expr[[tissue.pairs[i,1]]][,x], matched.expr[[tissue.pairs[i,2]]][,x]))
+}
+
+if(is.interactive){quartz(height = 9, width = 3.5)}
+par(mfrow = c(length(matched.expr),1), mar = c(0, 2, 0, 2))
+for(i in 1:length(matched.expr)){
+    tissue1 <- tissue.names[tissue.pairs[i,1]]
+    tissue2 <- tissue.names[tissue.pairs[i,2]]
+    a <- hist(tissue.expr.comp[[i]], xlim = c(-1, 1), axes = FALSE, xlab = "", 
+    ylab = "", main = "", breaks = 100, border = NA)
+    points(x = median(tissue.expr.comp[[i]]), y = 0, pch = "*", 
+    col = "#2b8cbe", cex = 3)
+    text(x = -0.1, y = max(a$counts)*0.75, paste(tissue1, tissue2, sep = "-"), 
+    adj = 1, cex = 2)
+}
+axis(1, cex.axis = 2)
+par(xpd = NA)
+abline(v = 0, col = "darkgray", lty = 2)
+par(xpd = FALSE)
+```
+
+## Tissue Pairs
+
+How well are the transcript means correlated across tissues? Are transcripts
+that are highly expressed in one tissue also highly expressed in another
+tissue? Do transcripts with low mean expression in one tissue also have
+low mean expression in another tissue?
+
+The following plots show how well mean expression for common transcripts
+align across tissue pairs. Transcripts in different tissues have different
+relative expression levels.
+
+In each case below the expression of the tissues mean compared are adjusted
+to have the same overall mean.
+
+
+```{r tissue.correlation, fig.height = 8, fig.width = 8}
+par(mfrow = c(2,2))
+mean.tx <- sapply(adj.expr, colMeans)
+for(i in 1:nrow(tissue.pairs)){
+    tissue1.idx <- tissue.pairs[i,1]
+    tissue2.idx <- tissue.pairs[i,2]
+    tissue1.mean <- mean.tx[[tissue1.idx]]
+    tissue2.mean <- mean.tx[[tissue2.idx]]
+    tissue.means <- c(mean(tissue1.mean), mean(tissue2.mean))
+    overall.mean <- mean(tissue.means)
+    mean.diffs <- tissue.means - overall.mean
+    tissue1.mean <- tissue1.mean - mean.diffs[1]
+    tissue2.mean <- tissue2.mean - mean.diffs[2]
+
+    common.tx <- intersect(names(tissue1.mean), names(tissue2.mean))
+
+    plot.with.model(tissue1.mean[common.tx], tissue2.mean[common.tx], 
+        main = paste(tissue.names[tissue1.idx], "vs.", tissue.names[tissue2.idx]),
+        xlab = tissue.names[tissue1.idx], ylab = tissue.names[tissue2.idx],
+        report = "cor.test")
+}
+
 ```

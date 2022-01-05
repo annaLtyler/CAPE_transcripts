@@ -1,0 +1,85 @@
+
+```{r test, eval = FALSE}
+#This code shows portraits for the top and bottom examples
+#of each trait. My primary conclusion is there there are lots
+#of ways to have high traits and low traits. The portraits
+#are so diverse.
+
+plot_portrait <- function(portraitV, global.min = NULL, global.max = NULL){
+  map.dim <- sqrt(length(portraitV))
+  map.mat <- matrix(portraitV, nrow = map.dim, ncol = map.dim, byrow = FALSE)
+  if(!is.null(global.min)){
+    imageWithText(map.mat, show.text = FALSE, use.pheatmap.colors = TRUE, 
+      global.color.scale = TRUE, global.min = global.min, global.max = global.max)  
+  }else{
+    imageWithText(map.mat, show.text = FALSE, use.pheatmap.colors = TRUE)
+  }
+}
+
+#portraits <- env$p.m
+#portraits <- env$t.m
+portraits <- env$metadata
+dim.map <- sqrt(nrow(portraits))
+global.min <- min(portraits)
+global.max <- max(portraits)
+ind.groups <- env$group.colors
+u_groups <- unique(ind.groups)
+group.portraits <- lapply(u_groups, function(x) portraits[,which(ind.groups == x)])
+
+#pcs <- lapply(group.portraits, function(x) plot.decomp(x, plot.results = FALSE)$u[,1])
+pmeans <- lapply(group.portraits, rowMeans)
+
+par(mfrow = c(2,5), mar = c(2,2,2,2))
+#test <- lapply(group.portraits, function(x) plot(rowMeans(x), axes = FALSE))
+#lapply(pcs, function(x) plot_portrait(x, global.min, global.max))
+lapply(pmeans, function(x) plot_portrait(x, global.min, global.max))
+lapply(pmeans, function(x) plot_portrait(x))
+
+
+n.examples <- 10
+pheno.name <- "HOMA_B_0min"
+top.pheno <- head(sort(adj.pheno[,pheno.name]), n.examples)
+bottom.pheno <- tail(sort(adj.pheno[,pheno.name]), n.examples)
+
+par(mfrow = c(2,n.examples), mar = c(0,0,0,0))
+for(i in 1:length(top.pheno)){
+  pmap <- matrix(portraits[,names(top.pheno)[i]], nrow = dim.map, ncol = dim.map, 
+  byrow = FALSE)
+  imageWithText(rotate.mat(rotate.mat(rotate.mat(pmap))), use.pheatmap.colors = TRUE,
+  show.text = FALSE)
+}
+
+for(i in 1:length(bottom.pheno)){
+  pmap <- matrix(portraits[,names(bottom.pheno)[i]], nrow = dim.map, ncol = dim.map, 
+  byrow = FALSE)
+  imageWithText(rotate.mat(rotate.mat(rotate.mat(pmap))), use.pheatmap.colors = TRUE,
+  show.text = FALSE)
+}
+
+#take averages
+
+
+layout.mat <- matrix(c(1,1,2,3), byrow = TRUE, nrow = 2)
+bins <- round(segment.region(1, nrow(adj.pheno), 7, "ends"))
+
+pheno.name <- "HOMA_B_0min"
+sorted.pheno <- sort(adj.pheno[,pheno.name])
+binned.pheno <- lapply(1:(length(bins)-1), function(x) sorted.pheno[bins[x]:bins[(x+1)]])
+
+all.port <- lapply(binned.pheno, function(x) portraits[,names(x)])
+avg.port <- sapply(all.port, rowMeans)
+#quartz()
+pairs(avg.port)
+
+#quartz()
+layout(layout.mat)
+boxplot(binned.pheno, main = pheno.name)
+par(mfrow = c(2,5))
+for(i in 1:ncol(avg.port)){
+  pmap <- rotate.mat(rotate.mat(rotate.mat(matrix(avg.port[,i], nrow = dim.map, 
+  ncol = dim.map, byrow = FALSE))))
+  imageWithText(pmap, show.text = FALSE, use.pheatmap.colors = TRUE, 
+    global.color.scale = TRUE, global.min = global.min, global.max = global.max)
+  }
+
+```

@@ -541,3 +541,212 @@ for(i in 1:ncol(just.main)){
 }
 
 ```
+
+## Cell Type Specificity {.tabset .tabset-fade .tabset-pills}
+
+We were interested to see which of the genes might be cell-type specific,
+and whether cell-specific genes clustered in either module. To do this, 
+we downloaded cell-type specific gene lists from 
+[GSEA](https://www.gsea-msigdb.org/gsea/msigdb/genesets.jsp?collection=C8)
+
+We downloaded all text files listing pancreas cell types.
+
+The following plots show the network for ET1 with the vertices
+colored by cell type. Alpha and Beta cell-specific transcripts are scattered
+pretty randomly throughout the network.
+
+```{r cell_types, results = "asis"}
+cell.files <- list.files(here("Data"), pattern = "GeneSet")
+cell.types <- sapply(strsplit(cell.files, "_"), function(x) x[2])
+cell.genes <- lapply(cell.files, 
+function(x) read.table(here("Data", x), header = TRUE, stringsAsFactors = FALSE))
+ortho.file <- here("Data", "Cell.Type.Orthologs.RDS")
+if(!file.exists(ortho.file)){
+  cell.orthos <- lapply(cell.genes, function(x) gorth(x[,1]))
+  saveRDS(cell.orthos, ortho.file)
+}else{
+  cell.orthos <- readRDS(ortho.file)
+}
+
+vnames <- V(et.nets[[et]])$name
+gene.cell.type <- matrix(0, nrow = length(vnames), ncol = length(cell.types))
+rownames(gene.cell.type) <- vnames
+colnames(gene.cell.type) <- cell.types
+for(i in 1:length(vnames)){
+  type.locale <- grep(vnames[i], cell.orthos)
+  if(length(type.locale) > 0){
+    gene.cell.type[i,type.locale] <- 1
+  }
+}
+
+simp.net <- et.nets[[et]]
+vert.weights <- V(simp.net)$main.effect
+
+mod.df <- data.frame(cbind(as.factor(all.net.mods[[et]]), vert.weights))
+rownames(mod.df) <- vnames
+colnames(mod.df) <- c("Module", "Main_Effect")
+pheatmap(gene.cell.type[order(mod.df[,1]),], cluster_rows =FALSE, annotation_row = mod.df)
+
+edge.weights <- E(simp.net)$weight
+pos.neg <- E(simp.net)$pos.neg
+edge.col <- colors.from.values(edge.weights*pos.neg, split.at.vals = TRUE,
+split.point = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
+
+for(i in 1:length(cell.types)){
+  cat("### ", cell.types[i], "\n")
+  #quartz()
+  vertex.col <- gene.cell.type[,i]*3
+  
+  plot(simp.net, vertex.size = 5, vertex.color = vertex.col, 
+  layout = layout_with_kk, edge.color = edge.col, vertex.label.dist = 1,
+  vertex.label.cex = 0.5, edge.arrow.size = 0.3)
+  cat("\n\n")
+}
+```
+
+
+## Use regular genetic mapping to map CAPE expression modules
+
+Because the two modules are extremely highly correlated, 
+we will just look at the eigengene for the whole network.
+Mapping the modules separately gives almost identical results.
+
+The plot below shows the LOD plot for the network eigengene.
+There is one mQTL on chromosome 18 that has a LOD score greater
+than 6. Could this be a trans eQTL hotspot? Could a gene or
+genes encoded here be master regulators of our network?
+
+```{r mod_eigengenes}
+#the expression is stored as the 'genotype' matrix.
+expr <- readRDS(here("Results", exp.name, "cross_geno.RData"))
+net.eigengene <- matrix(NA, nrow = nrow(expr), ncol = 1)
+rownames(net.eigengene) <- rownames(expr)
+colnames(net.eigengene) <- "Network_Eigengene"
+
+net.verts <- V(et.nets[[et]])$name
+vert.locale <- match(net.verts, dimnames(expr)[[3]])
+vert.locale <- vert.locale[which(!is.na(vert.locale))]
+net.expr <- expr[,2,vert.locale]
+net.decomp <- plot.decomp(net.expr, plot.results = FALSE)
+net.eigengene[,1] <- net.decomp$u[,1]
+```
+
+
+```{r map_mods, fig.width = 10, fig.height = 4}
+all.var <- ls()
+data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
+if(!data.loaded){
+  islets <- load(here("Data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
+  kin <- readRDS(here("Data", "cross_kinship.RData"))
+  }
+covar <- dataset.clinical.phenotypes$covar
+
+mapping.file <- here("Results", exp.name, "Mod_Mapping.RData")
+if(!file.exists(mapping.file)){
+  mapping.results <- scan1(genoprobs, pheno = net.eigengene[,1], kin = kin, 
+  addcovar = covar[,"sexM"])
+  saveRDS(mapping.results, mapping.file)
+}else{
+  mapping.results <- readRDS(mapping.file)
+}
+
+plot(mapping.results, map = map)
+```
+
+To investigate this further, we performed an eQTL scan for 
+all the transcripts in the network and looked at the cis-trans plot.
+
+(transcripts on Chr 18?)
+
+```{r eqtl}
+peak.table <- find_peaks(mapping.results, map =  map, threshold = 6, drop = 1.3)
+
+for(i in 1:nrow(peak.table)){
+  peak.chr <- as.numeric(peak.table[i,"chr"])
+  chr.locale <- which(cross$chromosome == peak.chr)
+  chr.markers <- cross$geno_names[[3]][chr.locale]
+  chr.coord <- as.numeric(cross$marker_location[chr.locale])
+  peak.min <- peak.table[i,"ci_lo"]
+  peak.max <- peak.table[i,"ci_hi"]
+  chr.region <- intersect(which(chr.coord >= peak.min), which(chr.coord <= peak.max))
+  chr.trans <- chr.markers[chr.region]
+  expr.locale <- match(chr.trans, dimnames(expr)[[3]])
+  chr.locale <- which(names(genoprobs) == peak.chr)
+
+  mapping.file <- here("Results", exp.name, 
+  paste0("Peak.Transcript.Mapping.Chr", peak.chr, ".", signif(peak.min, 2), 
+  ".to.", signif(peak.max, 2)))
+
+  if(!file.exists(mapping.file)){
+    eqtl.results <- lapply(expr.locale[1:5], 
+    function(x) scan1coef(genoprobs[,chr.locale], pheno = expr[,2,x], kin = kin[[chr.locale]], 
+    addcovar = covar[,"sexM"], cores = 3))
+    #i = 2
+    #plot_coefCC(eqtl.results[[i]], map = map, main = chr.trans[i])
+    saveRDS(eqtl.results, mapping.file)
+  }else{
+    eqtl.results <- readRDS(mapping.file)
+  }
+
+}
+
+```
+
+## Haplotype coefficients {.tabset .tabset-fade .tabset-pills}
+
+The haplotype coefficients of many of the transcripts in the 
+network match the coefficients in the ET, but are not driving 
+the pattern. Coefficient patterns match across the whole chromosome,
+without there being cis eQTL. Does this mean the transcripts are
+downstream of another process that is driving the eigentrait and 
+the gene expression?
+
+```{r coef, eval = TRUE, results = "asis", fig.width = 10, fig.height = 4.5}
+transcript.chr  <- get_marker_chr(cross, rownames(var.inf))
+
+for(chr in 1:19){
+  cat("### Chr", chr, "\n")
+
+  chr.trans <- rownames(var.inf)[which(transcript.chr == chr)] 
+  chr.locale <- which(names(genoprobs) == chr)
+  trans.locale <- match(chr.trans, dimnames(expr)[[3]])
+  trans.pos <- as.numeric(get_marker_location(cross, chr.trans))
+
+  chr.map.file <- here("Results", exp.name, paste0("Chr.", chr, ".Mapping.RDS"))
+  if(!file.exists(chr.map.file)){
+    mapping.results <- vector(mode = "list", length = 3)
+    names(mapping.results) <- c("Eigentrait", "Net_Eigengene", "Transcripts")
+
+    #map the first eigentrait  
+    mapping.results[[1]] <- scan1coef(genoprobs[,chr.locale], pheno = cross$ET[,1],
+    kin = kin[[chr.locale]], addcovar = covar[,"sexM"])
+
+    #map network eigengene
+    mapping.results[[2]] <- scan1coef(genoprobs[,chr.locale], pheno = net.eigengene, 
+    kin = kin[[chr.locale]], addcovar = covar[,"sexM"])
+
+    #Map the local transcripts
+    mapping.results[[3]] <- lapply(trans.locale, 
+    function(x) scan1coef(genoprobs[,chr.locale], pheno = expr[,2,x], 
+    kin = kin[[chr.locale]], addcovar = covar[,"sexM"]))
+  
+    saveRDS(mapping.results, chr.map.file)
+  }else{
+    mapping.results <- readRDS(chr.map.file)
+  }
+  
+  #quartz(width = 10, height = 4.5)
+  par(mar = c(4,4,2,2))
+  plot_coefCC(mapping.results$Eigentrait, map = map, main = "ET 1")
+  plot_coefCC(mapping.results$Net_Eigengene, map = map, main = "Net Eigengene")
+  trans.results <- mapping.results$Transcripts
+  for(tr in 1:length(trans.results)){
+    plot_coefCC(trans.results[[tr]], map = map, main = chr.trans[tr])
+    abline(v = trans.pos[tr])
+  }
+
+  cat("\n\n")
+}
+
+```
+

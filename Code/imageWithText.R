@@ -145,6 +145,7 @@ sig.digs = 3, use.pheatmap.colors = FALSE, na.col = "lightgray", gridlines = FAL
 						ColorLevels <- seq(min.cl, max.cl, length=256)
 						}else{
 						ColorLevels <- exp.color.fun(min.cl, max.cl, steepness = exp.steepness, num.cols=256)	
+						#plot(ColorLevels)
 						}
 	
 					#make the function to generate 
@@ -207,8 +208,8 @@ sig.digs = 3, use.pheatmap.colors = FALSE, na.col = "lightgray", gridlines = FAL
 		plot(c(1, dim(mat)[2]), c(1, dim(mat)[1]), type = "n", axes = FALSE, xlab = xlab, ylab = ylab, xlim = c(0.7, dim(mat)[2]+0.2), ylim = c(0.7, dim(mat)[1]+0.2), bg = "transparent")
 
 		rasterImage(col, xleft = 0.5, ybottom = 0.5, xright = dim(mat)[2]+0.5, ytop = dim(mat)[1]+0.5, interpolate = FALSE, bg = "transparent")
-		x.coord <- matrix(segment.region(0.5, dim(mat)[2]+0.5, dim(mat)[2], "center"), nrow = dim(mat)[1], ncol = dim(mat)[2], byrow = TRUE)
-		y.coord <- matrix(segment.region(0.5, dim(mat)[1]+0.5, dim(mat)[1], "center"), nrow = dim(mat)[1], ncol = dim(mat)[2])
+		x.coord <- matrix(segment_region(0.5, dim(mat)[2]+0.5, dim(mat)[2], "center"), nrow = dim(mat)[1], ncol = dim(mat)[2], byrow = TRUE)
+		y.coord <- matrix(segment_region(0.5, dim(mat)[1]+0.5, dim(mat)[1], "center"), nrow = dim(mat)[1], ncol = dim(mat)[2])
 		
 		if(show.text){
 		text(x.coord, rev(y.coord), labels = signif(as.vector(mat), sig.digs), cex = cex)
@@ -228,7 +229,8 @@ sig.digs = 3, use.pheatmap.colors = FALSE, na.col = "lightgray", gridlines = FAL
 			par(xpd = TRUE)
 			# text(x.coord[1,], (min(y.coord)-(max(y.coord)) - col.text.shift), labels = col.names, srt = col.text.rotation, adj = col.text.adj)
 			plot.range <- max(y.coord) - min(y.coord)
-			text((x.coord[1,]), (min(y.coord) - (plot.range*0.01) - col.text.shift), labels = col.names, srt = col.text.rotation, adj = col.text.adj, cex = col.text.cex)
+			col.text.y <- min(y.coord) - (plot.range*(col.text.shift/100))
+			text((x.coord[1,]), col.text.y, labels = col.names, srt = col.text.rotation, adj = col.text.adj, cex = col.text.cex)
 			}
 
 		if(!is.null(row.names)){
@@ -237,7 +239,8 @@ sig.digs = 3, use.pheatmap.colors = FALSE, na.col = "lightgray", gridlines = FAL
 				}
 			par(xpd = TRUE)
 			plot.range <- (max(x.coord) - min(x.coord))
-			text((min(x.coord) - (plot.range*0.1) - row.text.shift), y.coord[,1], labels = rev(row.names), adj = row.text.adj, cex = row.text.cex, srt = row.text.rotation)
+			row.text.x <- min(x.coord) - (plot.range*(row.text.shift/100))
+			text(row.text.x, y.coord[,1], labels = rev(row.names), adj = row.text.adj, cex = row.text.cex, srt = row.text.rotation)
 			}
 
 

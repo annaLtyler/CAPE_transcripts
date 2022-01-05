@@ -16,16 +16,16 @@ cape_setup_expression.Rmd. That workflow creates different data sets
 using gene expression in place of, or in addition to, true genotypes.
 
 ```{r setup}
-set.seed(2398347)
 library("here")
 ```
 
 ```{r set_params}
-#geno.type = "transcripts"
-geno.type = "modules"
+geno.type = "transcripts"
+#geno.type = "modules"
 #exp.name = "multi_tissue_test"
 exp.name = "CCA"
 ex.path <- here("Results", "CAPE", paste(geno.type, exp.name, sep = "_"))
+if(!file.exists(ex.path)){dir.create(ex.path)}
 
 #args <- commandArgs(trailingOnly=T)
 #delete.old.results <- as.logical(args[1])
@@ -45,24 +45,12 @@ load_libraries(needed.packages)
 
 
 ```{r load_data}
-data.obj <- readRDS(here("Data", paste0("cape_data_", geno.type, ".RDS")))
-geno.obj <- readRDS(here("Data", paste0("cape_geno_", geno.type, ".RDS")))
+data.obj <- readRDS(here("Data", paste0("cape_data_", exp.name, "_", geno.type, ".RDS")))
+geno.obj <- readRDS(here("Data", paste0("cape_geno_", exp.name, "_", geno.type, ".RDS")))
 geno.names <- dimnames(geno.obj)
 names(geno.names) <- c("mouse", "allele", "locus")
 data.obj$geno_names <- geno.names
 #tail(data.obj$geno_names[[3]], 15)
-```
-
-
-Subsample the cross for testing if requested
-
-```{r num}
-cross <- data.obj
-geno <- geno.obj
-
-num.pheno <- apply(cross$pheno, 2, as.numeric)
-dimnames(num.pheno) <- dimnames(cross$pheno)
-cross$pheno <- num.pheno
 ```
 
 
@@ -84,7 +72,7 @@ system(link.line)
 
 sink(file.path(ex.path, "progress.txt"))
 
-final.cross <- run_cape(pheno_obj = cross, geno_obj = geno, p_or_q = 0.05, 
+final.cross <- run_cape(pheno_obj = data.obj, geno_obj = geno.obj, p_or_q = 0.05, 
 verbose = TRUE, results_path = ex.path, 
 param_file = file.path(ex.path, "cape.parameters.yml"))
 

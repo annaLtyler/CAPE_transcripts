@@ -1,0 +1,253 @@
+mod.idx <- which(names(mem) == gsub("ME", "", mod))
+mod.genes <- mem[[mod.idx]]
+length(mod.genes)
+gene.idx <- match(mod.genes, gene.info[,1])
+gene.table <- gene.info[gene.idx,]
+gene.table
+table(gene.table[,"chr"])
+barplot(table(gene.table[,"chr"]))
+gene.lod.idx <- which(lod.table[,1] %in% mod.genes)
+gene.lod.table <- lod.table[gene.lod.idx,]
+dim(gene.lod.table)
+plot(adipose.mod.qtl, map = map, lodcol = mod.locale)
+head(gene.lod.table)
+lod.chr <- strsplit(gene.lod.table[,"marker"], "_")
+lod.chr <- strsplit(gene.lod.table[,"marker.id"], "_")
+lod.chr
+lod.chr <- sapply(strsplit(gene.lod.table[,"marker.id"], "_"), function(x) x[1])
+lod.chr
+barplot(table(lod.chr))
+plot(adipose.mod.qtl, map = map, lodcol = mod.locale)
+barplot(table(lod.chr))
+head(gene.lod.table, 20)
+gene.id <- "ENSMUSG00000000948"
+gene.locale <- which(colnames(expr) == gene.id)
+gene.scan <- scan1(genoprobs, expr[,gene.locale], addcovar = dataset.DO.Cube.Adipose$covar.matrix, kinship = K)
+plot(gene.scan, map = map)
+chr = 7
+gene.coef <- scan1coef(genoprobs[,chr], expr[,gene.locale], addcovar = dataset.DO.Cube.Adipose$covar.matrix, kinship = K[[chr]])
+plot_coefCC(gene.coef, map = map)
+length(mod.genes)
+library(WGCNA)
+?blockwiseModules
+library(WGCNA)
+?blockwiseModules
+library(propagate)
+mat <- matrix(rnorm(100), 10, 10)
+test <- bigcor(mat)
+test
+pheatmap(test)
+library(pheatmap)
+pheatmap(test)
+class(test)
+pheatmap(test[[1]])
+test[[1]]
+test[[2]]
+pheatmap(as.matrix(test))
+as.matrix(test)
+dim(test)
+?propagate
+?blockwiseModules
+library(WGCNA)
+?blockwiseModules
+install.packages("tinytex")
+library(tinytex)
+q()
+library(WGCNA)
+citation(WGCNA)
+citation("WGCNA")
+library(qtl2)
+citation("qtl2")
+library(qtl2)
+?find_peaks
+test <- readRDS("~/Documents/Projects/Epigenetics/Epigenetics_Manuscript/Results/ChromHMM/9_states_C/Chromatin.State.Position.Far.Genes.RDS")
+str(test)
+length(test)
+length(test[[1]])
+str(test[[1]])
+if (!requireNamespace("BiocManager", quietly = TRUE))#
+    install.packages("BiocManager")#
+#
+BiocManager::install("simplifyEnrichment")
+library(simplifyEnrichment)
+BiocManager::install("ComplexHeatmap")
+BiocManager::install("simplifyEnrichment")
+?GO_similarity
+library(simplifyEnrichment)
+GO_similarity
+?GO_similarity
+?simplifyGO
+library(simplifyEnrichment)
+?GO_similarity
+?compare_clustering_methods
+?simplifyGOFromMultipleLists
+page(simplifyGOFromMultipleLists)
+library(RColorBrewer)
+brewer_pal_all()
+?brewer_pal
+??brewer_pal
+??brewer
+??show_pal
+??brewer_pal
+??all
+display.brewer.all()
+library(qtl2)
+?fit1
+?scan1blup
+library(RColorBrewer)
+display.brewer.all()
+library(simplifyGo)
+library(simplifyEnrichment)
+?simplify_GO
+?simplifyGO
+page(simplifyGO)
+?binary_cut
+library(simplifyEnrichment)
+page(simplifyGO)
+library(kohonen)
+?som
+plot.som
+?som.plot
+??som.plot
+??plot.som
+?som
+mod.mem <- readRDS("~/Dropbox (JAX)/Jax Summer 2021/Projects/Module_Mapping/Data/Adipose/Module_Membership.RDS")
+str(mod.mem)
+test <- unlist(mod.mem)
+str(test)
+head(test)
+mod.names <- sapply(1:length(mod.mem), function(x) rep(names(mod.mem)[x], length(mod.mem[[x]])))
+head(mod.names)
+mod.names <- sapply(1:length(mod.mem), function(x) paste0("Mod", rep(names(mod.mem)[x], length(mod.mem[[x]])))
+)
+str(mod.names)
+mod.transcripts <- matrix(unlist(mod.mem), ncol = 1)
+head(mod.transcripts)
+mod.transcript.info <- cbind(mod.names, mod.transcripts)
+mod.names <- sapply(1:length(mod.mem), function(x) paste0("Mod", rep(names(mod.mem)[x], length(mod.mem[[x]]))))
+mod.transcript.info <- cbind(mod.names, mod.transcripts)
+length(mod.transcripts)
+length(mod.names)
+mod.transcript.info <- cbind(unlist(mod.names), mod.transcripts)
+head(mod.transcript.info)
+qtl.transcripts <- sample(unlist(mod.mem), 100)
+qtl.transcripts
+eqtl.transcripts <- sample(unlist(mod.mem), 100)
+eqtl.mod <- match(eqtl.transcripts, mod.transcript.info[,2])
+eqtl.mod
+eqtl.mod <- mod.transcript.info[eqtl.mod.idx,1]
+eqtl.mod.idx <- match(eqtl.transcripts, mod.transcript.info[,2])
+eqtl.mod <- mod.transcript.info[eqtl.mod.idx,1]
+eqtl.mod
+rnd.transcript.table <- cbind(eqtl.mod, eqtl.transcripts)
+rnd.transcript.table
+library(simplifyEnrichment)
+?GO_similarity
+a <- matrix(rnorm(100), 10, 10)
+a
+b <- matrix(rnorm(100), 10, 10)
+b
+plot(a, b)
+plot(as.vector(a), as.vector(b))
+plot(a, b, xlab = "Distance Between Transcripts", ylab = "Allele Correlation")
+source('~/Documents/R/shiny/Chromatin_State_and_eQTL_Viewer/code/useful_r_code/sliding.window.el.R', chdir = TRUE)
+gene.windows <- sliding.window.el(seq.int(-1, 2, length.out = 100), 10, 5)
+gene.windows
+sapply(gene.windows, length)
+sapply(gene.windows, function(x) max(x) - min(x))
+length(gene.windows)
+q()
+library(kohonen)
+?som
+cent <- list()
+cent$overlap <- rnorm(100)
+cent$no-overlap <- rnorm(100)
+cent$nooverlap <- rnorm(100)
+cent
+boxplot(cent)
+test <- readRDS("~/Desktop/eQTL_stats.RDS")
+str(test)
+library(pheatmap)
+islet.trait.cor <- test[[1]]$invivo_me_cor
+str(islet.trait.cor)
+pheatmap(islet.trait.cor)
+pheatmap(t(islet.trait.cor))
+pdf("~/Desktop/trait.cor.pdf", width = 10, height = 7)
+pheatmap(t(islet.trait.cor))
+dev.off()
+pdf("~/Desktop/trait.cor.pdf", width = 12, height = 5.5)
+pheatmap(t(islet.trait.cor))
+dev.off()
+mod <- c(72, 45, 9, 43, 58, 65, 46, 59, 64, 66, 63, 62, 67)
+mod.locale <- match(rownames(trait.islet.cor))
+mod.locale <- match(rownames(islet.trait.cor))
+mod.locale <- match(mod, rownames(islet.trait.cor))
+mod.locale
+rownames(islet.trait.cor)
+mod.names <- paste0("ME", mod)
+mod.locale <- match(mod.rownames(islet.trait.cor))
+mod.locale <- match(rownames(islet.trait.cor))
+mod.locale <- match(mod, rownames(islet.trait.cor))
+mod.locale
+mod
+mod.locale <- match(mod.names, rownames(islet.trait.cor))
+mod.locale
+mod.cor <- islet.trait.cor[modl.locale,]
+mod.cor <- islet.trait.cor[mod.locale,]
+setdiff(mod.locale, 1:nrow(islet.trait.cor))
+setdiff(1:nrow(islet.trait.cor), mod.locale)
+other.locale <- setdiff(1:nrow(islet.trait.cor), mod.locale)
+boxplot(as.vector(islet.trait.cor[mod.locale,]), as.vector(islet.trait.cor[other.locale,]))
+boxplot(abs(as.vector(islet.trait.cor[mod.locale,])), abs(as.vector(islet.trait.cor[other.locale,])))
+library(qtl2)
+?scan1
+source('~/Documents/git_repositories/useful_r_code/plot.hexbin.R')
+x <- rnorm(100)
+y <- rnorm(100)
+plot.hexbin(x,y)
+library(oposSOM)
+?opossom.run
+?barplot
+??pam
+library(cluster)
+?cluster
+??cluster
+?pam
+test <- readRDS("~/Documents/Projects/TRiAGE/MOFA/Results/embryo/Factor13_Chr13/Module1/non.decomp.mat.RData")
+str(test)
+10^0.8
+log10(0.8)
+log10(0.05)
+-log10(0.05)
+10^1.3
+library(opposSOM)
+library(oposSOM)
+?opossom.run
+?compact
+??compact
+f()
+?BiocManager
+??BiocManager
+?install.packages()
+?BiocManager::install
+library(RColorBrewer)
+display.brewer.all()
+library(umap)
+?umap
+library(oposSOM)
+?env
+?opossom.run
+library(qtl2)
+?find_peaks
+library(oposSOM)
+?opossom.run
+library(stringr)
+?string
+??stringr
+dev.new(height = 4, width = 8)
+library(qtl2)
+plot_coefCC
+?plot_coefCC
+setwd("~/Documents/Projects/Islets/CAPE_transcripts/")
+library(here)
+set_here()

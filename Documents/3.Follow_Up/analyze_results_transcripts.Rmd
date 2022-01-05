@@ -16,7 +16,7 @@ cape_run_transcripts.Rmd
 
 ```{r setup}
 plot.mod.net = FALSE
-exp.name <- "top_three_PC"
+exp.name <- "CCA"
 geno.type = "transcripts"
 exp.dir <- paste(geno.type, exp.name, sep = "_")
 ```
@@ -37,38 +37,94 @@ load_libraries(all.packages)
 The following heat map shows the results from the cape run for 
 the 100 transcripts with the top main effects. 
 
-The two things that jump out from this plot are that (1) most of the 
-interactions are negative, and (2) there are horizontal stripes in the 
-plot indicating that some transcripts "suppress" the effects of other
-transcripts. In other words, when some transcripts are expressed at high
-levels, the variation in levels of other transcripts have reduced phenotypic
-effects. 
-
-There are a few transcripts that are sources for multiple positive interactions.
-These transcripts tend to have mostly positive interactions. In other words,
-when these transcripts are expressed at high levels, the levels of other 
-transcripts become more important to the phenotype. 
 
 ```{r load_results, fig_height = 5, fig.width = 5}
 gene.info <- as.matrix(read.table(here("Data", "mouse_gene_info.txt"), sep = "\t", 
 header = TRUE, stringsAsFactors = FALSE))
 
-cross <- readRDS(here("Results", exp.dir, "cross.RData"))
+cross <- readRDS(here("Results", "CAPE", exp.dir, "cross.RData"))
 var.inf <- plot_variant_influences(cross, covar_width = 1, pheno_width = 1)
 #take out the allele names
 rownames(var.inf) <- gsub("_B", "", rownames(var.inf))
 colnames(var.inf) <- gsub("_B", "", colnames(var.inf))
 ```
 
-The following boxplot shows the influences of each transcript ordered
-by the mean of all its influences. The majority of transcripts have 
-negative effects on other transcripts. A few have positive effects.
+The following boxplot shows the distribution of the influences
+of each transcript ordered by the mean value.
 
-```{r just_int, fig.width = 10, fig.height = 4}
+```{r just_int, fig.width = 4, fig.height = 10}
 just.int <- var.inf[,1:nrow(var.inf)]
-mean.int <- apply(just.int, 1, function(x) mean(x, na.rm = TRUE))
+just.main <- var.inf[,(nrow(var.inf)+1):ncol(var.inf)]
+
+mean.int <- rowMeans(just.int, na.rm = TRUE)
 mean.order <- order(mean.int)
-boxplot(t(just.int[mean.order,]), las = 2);abline(h = 0)
+par(mar = c(4,8,4,2))
+boxplot(t(just.int[mean.order,]), las = 2, horizontal = TRUE)
+abline(v = 0)
+```
+
+## Motifs
+
+```{r motifs}
+cross <- get_network(cross, collapse_linked_markers = FALSE)
+motif.obj <- find.motifs(cross, collapsed.net = FALSE)
+motif.count <- count.motifs(motif.obj)
+
+motif.effects
+
+motif.enrich <- motif.enrichment(cross, collapsed.net = FALSE)
+```
+
+## Interactions by tissue
+
+```{r tissue_net}
+edge.list <- which(!is.na(just.int), arr.ind = TRUE)
+weights <- as.vector(just.int)[which(!is.na(as.vector(just.int)))]
+
+edge.list[,1] <- rownames(just.int)[as.numeric(edge.list[,1])]
+edge.list[,2] <- colnames(just.int)[as.numeric(edge.list[,2])]
+full.net <- graph_from_edgelist(edge.list, directed = TRUE)
+E(full.net)$weight <- weights
+V(full.net)$ET1 <- just.main[match(V(full.net)$name, rownames(var.inf)),1]
+V(full.net)$ET2 <- just.main[match(V(full.net)$name, rownames(var.inf)),2]
+V(full.net)$ET3 <- just.main[match(V(full.net)$name, rownames(var.inf)),3]
+V(full.net)$tissue <- sapply(strsplit(V(full.net)$name, "-"), function(x) x[2])
+
+cluster.layout.matrix <- matrix(c(1,1,1,2,2,1,2,2), ncol = 2, byrow = TRUE)*1000
+plot.modular.net(full.net, modules = V(full.net)$tissue, vertex.size = 10, 
+cluster.layout.matrix = cluster.layout.matrix)
+
+
+
+tissue.edges <- edge.list
+tissue.edges[,1] <- sapply(strsplit(tissue.edges[,1], "-"), function(x) x[2])
+tissue.edges[,2] <- sapply(strsplit(tissue.edges[,2], "-"), function(x) x[2])
+
+tissues <- sort(unique(tissue.edges[,1]))
+int.count <- int.mean <- matrix(0, nrow = length(tissues), ncol = length(tissues))
+rownames(int.count) <- rownames(int.mean) <- tissues
+colnames(int.count) <- colnames(int.mean) <- tissues
+for(i in 1:length(tissues)){
+  for(j in 1:length(tissues)){
+    source.tissue <- tissues[i]
+    target.tissue <- tissues[j]
+    int.locale <- intersect(which(tissue.edges[,1] == source.tissue), which(tissue.edges[,2] == target.tissue))
+    int.count[i,j] <- length(int.locale)
+    int.mean[i,j] <- mean(weights[int.locale])
+  }
+}
+
+pheatmap(int.count)
+pheatmap(int.mean)
+
+
+tissue.net <- graph_from_edgelist(tissue.edges, directed = TRUE)
+ecol <- colors.from.values(weights, use.pheatmap.colors = TRUE)
+pdf("net.pdf")
+plot(tissue.net, edge.color = ecol)
+dev.off()
+
+degree(tissue.net)
 ```
 
 ## Main Effects
@@ -108,6 +164,7 @@ with up and down regulation of each eigentrait. There is a lot of overlap
 because the same transcripts are represented in each eigentrait.
 
 ```{r trait_networks, results = "asis", fig.height = 6, fig.width = 7}
+
 up.down.trans <- vector(mode = "list", length = ncol(just.main))
 names(up.down.trans) <- colnames(just.main)
 for(i in 1:ncol(just.main)){
@@ -117,14 +174,16 @@ for(i in 1:ncol(just.main)){
 
   up.order <- order(just.main[up.locale,i], decreasing = TRUE)
   down.order <- order(just.main[down.locale,i], decreasing = FALSE)
-  up.transcripts <- rownames(just.main)[up.locale[up.order]]
-  down.transcripts <- rownames(just.main)[down.locale[down.order]]
+  up.transcripts <- sapply(strsplit(rownames(just.main)[up.locale[up.order]], "-"), function(x) x[1])
+  down.transcripts <- sapply(strsplit(rownames(just.main)[down.locale[down.order]], "-"), function(x) x[1])
   trans.list <- list("up" = just.main[up.locale,i], "down" = just.main[down.locale,i])
   up.down.trans[[i]] <- trans.list
   up.down.enrich <- lapply(list(up.transcripts, down.transcripts), 
   function(x) gost(x, organism = "mmusculus", ordered_query = TRUE))
   names(up.down.enrich) <- c("up", "down")
-  plot.enrichment.group(up.down.enrich, n.terms = 40, max.char = 100)
+  par(mfrow = c(1,2))
+  plot.enrichment.wordcloud(up.down.enrich[[1]], plot.label = "Up")
+  plot.enrichment.wordcloud(up.down.enrich[[2]], plot.label = "Down")
   up.id <- gene.info[match(up.transcripts, gene.info[,"external_gene_name"]), "ensembl_gene_id"]  
   up.id <- up.id[which(!is.na(up.id))]
 
@@ -132,6 +191,8 @@ for(i in 1:ncol(just.main)){
 }
 
 ```
+
+We looked at motifs in the cape network
 
 ## ET networks {.tabset .tabset-fade .tabset-pills}
 
@@ -506,71 +567,10 @@ we use ET1 do define module membership.
 net.verts <- V(et.nets[[et]])$name
 mod.assign <- all.net.mods[[et]]
 mod.transcripts <- lapply(sort(unique(mod.assign)), function(x) net.verts[which(mod.assign == x)])
-mod.enrich <- lapply(mod.transcripts, function(x) gost(x, organism = "mmusculus"))
+mod.gene.names <- lapply(mod.transcripts, function(x) sapply(strsplit(x, "-"), function(y) y[1]))
+mod.enrich <- lapply(mod.gene.names, function(x) gost(x, organism = "mmusculus"))
 names(mod.enrich) <- paste0("Mod", sort(unique(mod.assign)))
 plot.enrichment.group(mod.enrich, n.terms = 40, max.char = 100)
-```
-
-## Cell Type Specificity {.tabset .tabset-fade .tabset-pills}
-
-We were interested to see which of the genes might be cell-type specific,
-and whether cell-specific genes clustered in either module. To do this, 
-we downloaded cell-type specific gene lists from 
-[GSEA](https://www.gsea-msigdb.org/gsea/msigdb/genesets.jsp?collection=C8)
-
-We downloaded all text files listing pancreas cell types.
-
-The following plots show the network for ET1 with the vertices
-colored by cell type. Alpha and Beta cell-specific transcripts are scattered
-pretty randomly throughout the network.
-
-```{r cell_types, results = "asis"}
-cell.files <- list.files(here("Data"), pattern = "GeneSet")
-cell.types <- sapply(strsplit(cell.files, "_"), function(x) x[2])
-cell.genes <- lapply(cell.files, 
-function(x) read.table(here("Data", x), header = TRUE, stringsAsFactors = FALSE))
-ortho.file <- here("Data", "Cell.Type.Orthologs.RDS")
-if(!file.exists(ortho.file)){
-  cell.orthos <- lapply(cell.genes, function(x) gorth(x[,1]))
-  saveRDS(cell.orthos, ortho.file)
-}else{
-  cell.orthos <- readRDS(ortho.file)
-}
-
-vnames <- V(et.nets[[et]])$name
-gene.cell.type <- matrix(0, nrow = length(vnames), ncol = length(cell.types))
-rownames(gene.cell.type) <- vnames
-colnames(gene.cell.type) <- cell.types
-for(i in 1:length(vnames)){
-  type.locale <- grep(vnames[i], cell.orthos)
-  if(length(type.locale) > 0){
-    gene.cell.type[i,type.locale] <- 1
-  }
-}
-
-simp.net <- et.nets[[et]]
-vert.weights <- V(simp.net)$main.effect
-
-mod.df <- data.frame(cbind(as.factor(all.net.mods[[et]]), vert.weights))
-rownames(mod.df) <- vnames
-colnames(mod.df) <- c("Module", "Main_Effect")
-pheatmap(gene.cell.type[order(mod.df[,1]),], cluster_rows =FALSE, annotation_row = mod.df)
-
-edge.weights <- E(simp.net)$weight
-pos.neg <- E(simp.net)$pos.neg
-edge.col <- colors.from.values(edge.weights*pos.neg, split.at.vals = TRUE,
-split.point = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
-
-for(i in 1:length(cell.types)){
-  cat("### ", cell.types[i], "\n")
-  #quartz()
-  vertex.col <- gene.cell.type[,i]*3
-  
-  plot(simp.net, vertex.size = 5, vertex.color = vertex.col, 
-  layout = layout_with_kk, edge.color = edge.col, vertex.label.dist = 1,
-  vertex.label.cex = 0.5, edge.arrow.size = 0.3)
-  cat("\n\n")
-}
 ```
 
 ## Individual Vertex Placement
@@ -586,155 +586,9 @@ sex go to module 1 and are positive. That is true for all networks,
 although I do not show them below.
 
 ```{r, ind_verts, fig.width = 6, fig.height = 6}
-vert.name <- "sexM"
-#vert.name <- "Clptm1l"
+vert.name <- "Ins2-Islet"
 vert.results <- ind_weights(et.nets[[et]], all.net.mods[[et]], vert.name)
 plot_ind_vert(vert.name, vert.results) 
-```
-
-## Use regular genetic mapping to map CAPE expression modules
-
-Because the two modules are extremely highly correlated, 
-we will just look at the eigengene for the whole network.
-Mapping the modules separately gives almost identical results.
-
-The plot below shows the LOD plot for the network eigengene.
-There is one mQTL on chromosome 18 that has a LOD score greater
-than 6. Could this be a trans eQTL hotspot? Could a gene or
-genes encoded here be master regulators of our network?
-
-```{r mod_eigengenes}
-#the expression is stored as the 'genotype' matrix.
-expr <- readRDS(here("Results", exp.name, "cross_geno.RData"))
-net.eigengene <- matrix(NA, nrow = nrow(expr), ncol = 1)
-rownames(net.eigengene) <- rownames(expr)
-colnames(net.eigengene) <- "Network_Eigengene"
-
-net.verts <- V(et.nets[[et]])$name
-vert.locale <- match(net.verts, dimnames(expr)[[3]])
-vert.locale <- vert.locale[which(!is.na(vert.locale))]
-net.expr <- expr[,2,vert.locale]
-net.decomp <- plot.decomp(net.expr, plot.results = FALSE)
-net.eigengene[,1] <- net.decomp$u[,1]
-```
-
-
-```{r map_mods, fig.width = 10, fig.height = 4}
-all.var <- ls()
-data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
-if(!data.loaded){
-  islets <- load(here("Data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
-  kin <- readRDS(here("Data", "cross_kinship.RData"))
-  }
-covar <- dataset.clinical.phenotypes$covar
-
-mapping.file <- here("Results", exp.name, "Mod_Mapping.RData")
-if(!file.exists(mapping.file)){
-  mapping.results <- scan1(genoprobs, pheno = net.eigengene[,1], kin = kin, 
-  addcovar = covar[,"sexM"])
-  saveRDS(mapping.results, mapping.file)
-}else{
-  mapping.results <- readRDS(mapping.file)
-}
-
-plot(mapping.results, map = map)
-```
-
-To investigate this further, we performed an eQTL scan for 
-all the transcripts in the network and looked at the cis-trans plot.
-
-(transcripts on Chr 18?)
-
-```{r eqtl}
-peak.table <- find_peaks(mapping.results, map =  map, threshold = 6, drop = 1.3)
-
-for(i in 1:nrow(peak.table)){
-  peak.chr <- as.numeric(peak.table[i,"chr"])
-  chr.locale <- which(cross$chromosome == peak.chr)
-  chr.markers <- cross$geno_names[[3]][chr.locale]
-  chr.coord <- as.numeric(cross$marker_location[chr.locale])
-  peak.min <- peak.table[i,"ci_lo"]
-  peak.max <- peak.table[i,"ci_hi"]
-  chr.region <- intersect(which(chr.coord >= peak.min), which(chr.coord <= peak.max))
-  chr.trans <- chr.markers[chr.region]
-  expr.locale <- match(chr.trans, dimnames(expr)[[3]])
-  chr.locale <- which(names(genoprobs) == peak.chr)
-
-  mapping.file <- here("Results", exp.name, 
-  paste0("Peak.Transcript.Mapping.Chr", peak.chr, ".", signif(peak.min, 2), 
-  ".to.", signif(peak.max, 2)))
-
-  if(!file.exists(mapping.file)){
-    eqtl.results <- lapply(expr.locale[1:5], 
-    function(x) scan1coef(genoprobs[,chr.locale], pheno = expr[,2,x], kin = kin[[chr.locale]], 
-    addcovar = covar[,"sexM"], cores = 3))
-    #i = 2
-    #plot_coefCC(eqtl.results[[i]], map = map, main = chr.trans[i])
-    saveRDS(eqtl.results, mapping.file)
-  }else{
-    eqtl.results <- readRDS(mapping.file)
-  }
-
-}
-
-```
-
-## Haplotype coefficients {.tabset .tabset-fade .tabset-pills}
-
-The haplotype coefficients of many of the transcripts in the 
-network match the coefficients in the ET, but are not driving 
-the pattern. Coefficient patterns match across the whole chromosome,
-without there being cis eQTL. Does this mean the transcripts are
-downstream of another process that is driving the eigentrait and 
-the gene expression?
-
-```{r coef, eval = TRUE, results = "asis", fig.width = 10, fig.height = 4.5}
-transcript.chr  <- get_marker_chr(cross, rownames(var.inf))
-
-for(chr in 1:19){
-  cat("### Chr", chr, "\n")
-
-  chr.trans <- rownames(var.inf)[which(transcript.chr == chr)] 
-  chr.locale <- which(names(genoprobs) == chr)
-  trans.locale <- match(chr.trans, dimnames(expr)[[3]])
-  trans.pos <- as.numeric(get_marker_location(cross, chr.trans))
-
-  chr.map.file <- here("Results", exp.name, paste0("Chr.", chr, ".Mapping.RDS"))
-  if(!file.exists(chr.map.file)){
-    mapping.results <- vector(mode = "list", length = 3)
-    names(mapping.results) <- c("Eigentrait", "Net_Eigengene", "Transcripts")
-
-    #map the first eigentrait  
-    mapping.results[[1]] <- scan1coef(genoprobs[,chr.locale], pheno = cross$ET[,1],
-    kin = kin[[chr.locale]], addcovar = covar[,"sexM"])
-
-    #map network eigengene
-    mapping.results[[2]] <- scan1coef(genoprobs[,chr.locale], pheno = net.eigengene, 
-    kin = kin[[chr.locale]], addcovar = covar[,"sexM"])
-
-    #Map the local transcripts
-    mapping.results[[3]] <- lapply(trans.locale, 
-    function(x) scan1coef(genoprobs[,chr.locale], pheno = expr[,2,x], 
-    kin = kin[[chr.locale]], addcovar = covar[,"sexM"]))
-  
-    saveRDS(mapping.results, chr.map.file)
-  }else{
-    mapping.results <- readRDS(chr.map.file)
-  }
-  
-  #quartz(width = 10, height = 4.5)
-  par(mar = c(4,4,2,2))
-  plot_coefCC(mapping.results$Eigentrait, map = map, main = "ET 1")
-  plot_coefCC(mapping.results$Net_Eigengene, map = map, main = "Net Eigengene")
-  trans.results <- mapping.results$Transcripts
-  for(tr in 1:length(trans.results)){
-    plot_coefCC(trans.results[[tr]], map = map, main = chr.trans[tr])
-    abline(v = trans.pos[tr])
-  }
-
-  cat("\n\n")
-}
-
 ```
 
 
@@ -761,8 +615,8 @@ setEvidenceLevel(evidences = "all", organism=org.Mm.egORGANISM, gomap=org.Mm.egG
 #"name_1006", "definition_1006", "go_linkage_type", "namespace_1003", "goslim_goa_accession", 
 #"goslim_goa_description"), values = V(et.nets[[1]])$name, mart = mus, verbose = TRUE)
 
-go.table <- read.table(here("Results", exp.name, "mart_export.txt"), sep = "\t", 
-stringsAsFactors = FALSE, header = TRUE)
+go.table <- read.table(here("Results", "CAPE", paste(geno.type, exp.name, sep = "_"), "mart_export.txt"), 
+  sep = "\t", stringsAsFactors = FALSE, header = TRUE)
 
 #for each domain (CC, BP, and MF), collect
 #the GO terms for each gene
@@ -774,7 +628,8 @@ by.gene <- vector(mode = "list", length = length(domain.tables))
 names(by.gene) <- domains
 for(i in 1:length(by.gene)){
   domain.table <- domain.tables[[i]]
-  gene.by.domain <- lapply(V(et.nets[[1]])$name, function(y) domain.table[which(domain.table[,"Gene.name"] == y),])
+  et.net.names <- sapply(strsplit(V(et.nets[[1]])$name, "-"), function(x) x[1])
+  gene.by.domain <- lapply(et.net.names, function(y) domain.table[which(domain.table[,"Gene.name"] == y),])
   names(gene.by.domain) <- V(et.nets[[1]])$name
   by.gene[[i]] <- gene.by.domain
 }

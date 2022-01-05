@@ -11,8 +11,8 @@ output:
 ---
 
 ```{r set_type}
-geno.type <- "transcripts"
-#geno.type <- "modules"
+library(here)
+results.dir <- here("Results", "CCA_Clusters", "all_traits")
 include.real.genotypes = FALSE #whether to include true genotypes or just expression
 ```
 
@@ -30,27 +30,31 @@ We also write real genotype data to a file for genetic mapping
 of transcript modules later.
 
 ```{r load_code}
-library("here")
 all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
 for(i in 1:length(all.fun)){source(all.fun[i])}
 ```
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
-all.packages <- c("pheatmap", "qtl2", "gProfileR", "cape")
+all.packages <- c("pheatmap", "qtl2", "gProfileR", "cape", "abind")
 load_libraries(all.packages)
 ```
 
+Read in pre-filtered and pre-adjusted transcript data from 
+adjust_transcripts_traits.Rmd
 
 ```{r read_data}
-all.var <- ls()
-data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
-if(!data.loaded){
-  islets <- load(here("data", "Attie_DO378_eQTL_viewer_v6.Rdata"))
-  }
+tissue.adj.expr <- readRDS(file.path(results.dir, "Adjusted_Expression.RDS"))
+pheno.file <- file.path(results.dir, "Adjusted_Phenotypes.RDS")
+cca.pheno <- readRDS(pheno.file)
+tissue.names <- names(tissue.adj.expr)
+
+tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+data.set.names <- lapply(1:length(tissue.names), 
+function(x) paste0("dataset.DO.Cube.", tissue.names[x]))
+gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, function(x) get(x)$annot.mrna))))
 ```
 
-
-The data set called Attie\_DO378\_eQTL\_viewer\_v6.Rdata contains the following
+The data set called dataset.DO.CUBE.multitissue.RData contains the following
 elements:
 
 1. ensembl.version: the version of ensembl used
@@ -64,52 +68,101 @@ both bp and cM
 8. dataset.islet.rnaseq: rna seq data set inclusing annotations and lod peaks
 9. dataset.islet.hotspots: annotations of QTL/eQTL hotspots 
 
-Calculate the kinship matrix now before we add any new "genotypes." We will 
-use the LOCO kinship matrix to map transcript modules.
 
-```{r kin}
-kin.file <- here("Data", "cross_kinship.RData")
-if(!file.exists(kin.file)){
-  kin <- calc_kinship(genoprobs, type = "loco")
-  saveRDS(kin, kin.file)
+Get the transcripts we will used from results.dir. These were generated
+by cluster_transcripts_CCA.Rmd.
+
+```{r get_transcripts}
+transcript.files <- list.files(results.dir, pattern = "Transcripts.Associated")
+cca.transcripts <- lapply(transcript.files, 
+  function(x) as.matrix(read.csv(file.path(results.dir, x), stringsAsFactors = FALSE)))
+names(cca.transcripts) <- gsub(".csv", "", gsub("Transcripts.Associated.", "", transcript.files))
+#plotVenn(lapply(cca.transcripts, function(x) x[,"symbol"]))
+#length(unique(unlist(lapply(cca.transcripts, function(x) x[,"symbol"]))))
+```
+
+Create a matrix of all the selected transcripts.
+
+```{r transcript_matrix}
+selected.transcripts <- selected.transcript.info <- vector(mode = "list", length = length(cca.transcripts))
+names(selected.transcripts) <- names(selected.transcript.info)  <- names(cca.transcripts)
+ 
+for(i in 1:length(cca.transcripts)){
+  tissue.transcripts <- cca.transcripts[[i]]
+  tissue.data.set <- get(paste0("dataset.DO.Cube.", names(cca.transcripts)[i]))
+  tissue.expr <- tissue.data.set$data$rz
+  transcript.idx <- match(tissue.transcripts[,1], colnames(tissue.expr))
+  not.na <- which(!is.na(transcript.idx))
+  transcript.idx <- transcript.idx[not.na]
+  tissue.transcripts <- tissue.transcripts[not.na,]
+
+  #adjust for DO wave, but not sex. We will use that as an interactive covariate
+  covar.mat <- tissue.data.set$covar.matrix
+  generation.idx <- grep("Generation", colnames(covar.mat))
+  adj.expr <- adjust(tissue.expr[,transcript.idx], covar.mat[,generation.idx])
+  expr.names <- paste0(tissue.transcripts[,2], "-", names(cca.transcripts)[i])
+  colnames(adj.expr) <- expr.names
+  selected.transcripts[[i]] <- adj.expr
+  selected.transcript.info[[i]]  <- cbind(tissue.transcripts, expr.names)
+}
+
+#align individuals across tissues.
+common.ind <- Reduce("intersect", lapply(selected.transcripts, rownames))
+common.idx <- lapply(selected.transcripts, function(x) match(common.ind, rownames(x)))
+common.transcripts <- lapply(1:length(selected.transcripts), 
+  function(x) selected.transcripts[[x]][common.idx[[x]],])
+
+expr.geno <- Reduce("cbind", common.transcripts)
+all.transcript.info <- Reduce("rbind", selected.transcript.info)
+```
+
+The following plots show the first few pcs of the trait matrix and the
+expression matrix.
+
+```{r, decomp_cor}
+trans.decomp <- plot.decomp(expr.geno, pc = 4, main = "Transcript Decomposition")
+pheno.decomp <- plot.decomp(cca.pheno, pc = 4, main = "Trait Decomposition")
+common.ind <- intersect(rownames(expr.geno)[trans.decomp$rows.used], rownames(cca.pheno)[pheno.decomp$rows.used])
+```
+
+The following plot shows that the first PC of the trait matrix
+correlates with the first two PCs of the transcript matrix.
+PCs further down the list do not correlate with each other.
+
+```{r pc_cor}
+
+par(mfrow = c(4,4), mar = c(3,3,3,3))
+for(trait.pc in 1:4){
+  for(trans.pc in 1:4){
+    plot.with.model(trans.decomp$u[match(common.ind, names(trans.decomp$rows.used)),trans.pc], 
+    pheno.decomp$u[match(common.ind, names(pheno.decomp$rows.used)),trait.pc],
+    main = paste0("Trait PC1 vs. Transcript PC", pc), xlab = "Trait PC1", 
+    ylab = paste0("Transcript PC", pc))
+  }
 }
 ```
 
-Extract clinical traits, expression traits, and covariates.
+The following plot shows that the value of trait PC1 (color) in the mice depends
+on transcript PCs 1 (x axis) and 2 (y axis). This means that there are two major
+axes along expression space that are determining the majority of the variation
+in phenotype space.
 
-```{r pheno}
-pheno <- as.matrix(dataset.clinical.phenotypes$pheno[,12:(ncol(dataset.clinical.phenotypes$pheno)-1)])
-num.pheno <- apply(pheno, 2, as.numeric)
-dimnames(num.pheno) <- dimnames(pheno)
-covar <- dataset.clinical.phenotypes$covar
-gene.table <- dataset.islet.rnaseq$annots
-if(geno.type == "modules"){
-  expr <- as.matrix(dataset.islet.modules$pheno[,2:ncol(dataset.islet.modules$pheno)])
-}
-if(geno.type == "transcripts"){
-  expr <- dataset.islet.rnaseq$expr
-}
+The only quadrant that is consistently low on the trait scale is the quadrant 
+in which transcript PC1 is high, and transcript PC2 is low.
+
+```{r trait_transcript}
+trait.col <- colors.from.values(pheno.decomp$u[match(common.ind, names(pheno.decomp$rows.used)),1],
+  use.pheatmap.colors = TRUE)
+
+plot(trans.decomp$u[match(common.ind, names(trans.decomp$rows.used)),1],
+  trans.decomp$u[match(common.ind, names(trans.decomp$rows.used)),2], 
+  col = trait.col, pch = 16, xlab = "Transcript PC1", ylab = "Transcript PC2")
+abline(h = 0, v = 0)
 ```
 
+```{r test}
 
-## Adjust clinical phenotypes and expression for DO wave  {.tabset .tabset-fade .tabset-pills}
 
-Adjust all traits for DO wave. Keep sex as an interactive covariate.
-
-### Before Adjusting
-
-```{r pheno_cor}
-pheatmap(cor(num.pheno, use = "pairwise.complete.obs"), 
-main = "Phenotype Correlations Before Adjusting for DO Wave")
-```
-
-### After Adjusting
-
-```{r adj_pheno_cor}
-adj.pheno <- adjust(num.pheno, covar[,2:ncol(covar)])
-adj.expr <- adjust(expr, covar[,2:ncol(covar)])
-pheatmap(cor(adj.pheno, use = "pairwise.complete.obs"), 
-main = "Phenotype Correlations After Adjusting for DO Wave")
 ```
 
 ## Rename special chromosomes
@@ -121,29 +174,24 @@ looking at modules, we will assign each module to its own pseudo-chromosome.
 
 
 ```{r rename_chromosomes}
-if(geno.type == "transcripts"){
-  common.genes <- intersect(colnames(expr), gene.table[,"symbol"])
-  gene.locale <- match(include.genes, gene.table[,"symbol"])
-  gene.ids <- gene.table[gene.locale,"gene_id"]
-  gene.chr <- gene.table[gene.locale,"chr"]
+gene.idx <- match(colnames(expr.geno), all.transcript.info[,"expr.names"])
+gene.chr <- all.transcript.info[gene.idx,"chr"]
 
-  #replace sex and mitochondrial chromosomes with numbers, so
-  #we don't delete them in cape.
-  gene.chr[which(gene.chr == "X")] <- 20
-  gene.chr[which(gene.chr == "Y")] <- 21
-  gene.chr[which(gene.chr == "MT")] <- 22
-  gene.pos <- gene.table[gene.locale,"middle"]
-  gene.info <- cbind(gene.ids, include.genes, as.numeric(gene.chr), as.numeric(gene.pos))
-  colnames(gene.info) <- c("gene_id", "symbol", "chr", "middle")
-  ordered.info <- sort.by.then.by(gene.info, sort.cols = c(3,4), col.type = c("n", "n"))
+#replace sex and mitochondrial chromosomes with numbers, so
+#we don't delete them in cape.
+gene.chr[which(gene.chr == "X")] <- 20
+gene.chr[which(gene.chr == "Y")] <- 21
+gene.chr[which(gene.chr == "MT")] <- 22
+gene.pos <- all.transcript.info[gene.idx,"middle"]
+gene.info <- cbind(all.transcript.info[gene.idx, 1], all.transcript.info[gene.idx,"expr.names"], 
+  as.numeric(gene.chr), as.numeric(gene.pos))
+colnames(gene.info) <- c("gene_id", "symbol", "chr", "middle")
+ordered.info <- sort.by.then.by(gene.info, sort.cols = c(3,4), col.type = c("n", "n"))
 
-  id.locale <- match(ordered.info[,"gene_id"], colnames(adj.expr))
-  expr.geno <- adj.expr[,id.locale]
-  colnames(expr.geno) <- ordered.info[,"symbol"]
-}else{
-  expr.geno <- expr
-}
+id.locale <- match(ordered.info[,"symbol"], colnames(expr.geno))
+expr.geno <- expr.geno[,id.locale]
 ```
+
 
 ## Build CAPE objects
 
@@ -182,19 +230,21 @@ add_to_geno <- function(geno.obj, matX){
 #with expression before we make the cape object.
 #Then we don't need to do build large objects and 
 #subset them later
-common.ind <- intersect(rownames(expr.geno), rownames(adj.pheno))
-ind.locale <- match(common.ind, rownames(adj.pheno))
-sub.obj <- dataset.clinical.phenotypes
-sub.obj$pheno <- adj.pheno[ind.locale,]
+common.ind <- intersect(rownames(expr.geno), rownames(cca.pheno))
+ind.locale <- match(common.ind, rownames(cca.pheno))
+sub.obj <- list()
+sub.obj$pheno <- cca.pheno[ind.locale,]
 ```
 
 ```{r cross_obj}
-cape.obj <- qtl2_to_cape(cross = sub.obj, genoprobs, map, covar[,1,drop=FALSE])
+covar.ind.locale <- match(common.ind, rownames(covar.mat))
+cape.obj <- qtl2_to_cape(cross = sub.obj, genoprobs, map, covar.mat[covar.ind.locale,1,drop=FALSE])
 data.obj <- cape.obj$data_obj
 geno.obj <- cape.obj$geno_obj
 
 #replace data.obj$pheno with the numeric phenotype matrix and covariates
-data.obj$pheno <- cbind(adj.pheno[ind.locale,], covar[ind.locale,1,drop=FALSE])
+pheno.ind.locale <- match(common.ind, rownames(cca.pheno))
+data.obj$pheno <- cbind(cca.pheno[pheno.ind.locale,], covar.mat[covar.ind.locale,1,drop=FALSE])
 
 #scale expression data and add to the genotype object
 new.geno.obj <- add_to_geno(geno.obj, expr.geno)
@@ -203,18 +253,11 @@ new.geno.obj <- add_to_geno(geno.obj, expr.geno)
 data.obj$geno_names <- dimnames(new.geno.obj)
 names(data.obj$geno_names) <- c("mouse", "allele", "locus")
 
-if(geno.type == "transcripts"){
-  data.obj$chromosome <- c(data.obj$chromosome, ordered.info[,"chr"])
-  data.obj$marker_location <- c(data.obj$marker_location, ordered.info[,"middle"])
-  data.obj$marker_num <- 1:length(data.obj$chromosome)
-  #tail(data.obj$geno_names[[3]], 43)
-  #tail(dimnames(new.geno.obj)[[3]], 43)
-}else{
-  #add pseudo-chromosome data
-  data.obj$chromosome <- c(data.obj$chromosome, 1:ncol(adj.expr))
-  data.obj$marker_location <- c(data.obj$marker_location, rep(1, ncol(adj.expr)))
-  data.obj$marker_num <- 1:length(data.obj$chromosome)
-}
+data.obj$chromosome <- c(data.obj$chromosome, ordered.info[,"chr"])
+data.obj$marker_location <- c(data.obj$marker_location, ordered.info[,"middle"])
+data.obj$marker_num <- 1:length(data.obj$chromosome)
+#tail(data.obj$geno_names[[3]], 43)
+#tail(dimnames(new.geno.obj)[[3]], 43)
 
 #if we only want to include expression values, take out the actual genotypes
 if(!include.real.genotypes){
@@ -230,9 +273,9 @@ if(!include.real.genotypes){
   data.obj$geno_names[[2]] <- data.obj$geno_names[[2]][1:2]
 }
 
-saveRDS(data.obj, here("Data", paste0("cape_data_", geno.type, ".RDS")))
-saveRDS(new.geno.obj, here("Data", paste0("cape_geno_", geno.type, ".RDS")))
+saveRDS(data.obj, here("Data", paste0("cape_data_cca_transcripts.RDS")))
+saveRDS(new.geno.obj, here("Data", paste0("cape_geno_cca_transcripts.RDS")))
 ```
 
-Now run 2.cape_run_expression.Rmd.
+Now run 2.cape_run_transcripts.Rmd.
 Use the same data set name as set here.

@@ -2,7 +2,8 @@ multilod.plot <- function(scan1.results, map, lod.thresh = 0,
 color.scheme = c("blue", "green", "purple", "red", "orange", "brown", "yellow", "gray"),
 border.col = "darkgray", border.lwd = 3, row.names = NULL, row.name.shift = 0,
 row.text.cex = 1, color.bar.cex = 1, color.bar.axis.lin = -2, color.fun = c("linear", "exponential"),
-steepness = 1, mar = c(2, 6, 2, 0), chr.label.y = -0.5, chr.label.cex = 1){
+steepness = 1, mar = c(2, 6, 2, 0), chr.label.y = -0.5, chr.label.cex = 1, global.color.scale = FALSE,
+global.min = 6, global.max = ceiling(max(scan1.results)), use.pheatmap.colors = FALSE){
 
     val.mat <- as.matrix(scan1.results)
     low.lod <- which(val.mat < lod.thresh)
@@ -15,9 +16,11 @@ steepness = 1, mar = c(2, 6, 2, 0), chr.label.y = -0.5, chr.label.cex = 1){
 
     layout(matrix(c(1,2), ncol = 2), widths = c(1, 0.1))
     par(mar = mar)
-    imageWithText(t(val.mat), show.text = FALSE, col.names = NULL,
+    imageWithText(mat = t(val.mat), show.text = FALSE, col.names = NULL,
     col.scale = col.scale, color.fun = "exponential", exp.steepness = steepness,
-    row.text.shift = row.name.shift, row.names = row.names, row.text.cex = row.text.cex)
+    row.text.shift = row.name.shift, row.names = row.names, 
+    row.text.cex = row.text.cex, global.color.scale = global.color.scale, 
+    global.min = global.min, global.max = global.max, use.pheatmap.colors = use.pheatmap.colors)
     
     #demarcate the chromosomes on the plot
     markers <- rownames(val.mat)
@@ -35,7 +38,9 @@ steepness = 1, mar = c(2, 6, 2, 0), chr.label.y = -0.5, chr.label.cex = 1){
 
     par(mar = c(2,2,2,2))
     imageWithTextColorbar(val.mat, col.scale = col.scale, cex = color.bar.cex,
-    axis.line = color.bar.axis.lin, color.fun = "exponential", exp.steepness = steepness)
+    axis.line = color.bar.axis.lin, color.fun = "exponential", exp.steepness = steepness,
+    global.color.scale = TRUE, global.min = global.min, global.max = global.max, 
+    use.pheatmap.colors = use.pheatmap.colors)
 
     invisible(val.mat)
 }

@@ -6,7 +6,7 @@
 segment.region <- function(region.min, region.max, num.points, alignment = c("center", "ends")){
 	
 	if(num.points < 2){
-		stop("num.points must be at least 2")
+		return(mean(c(region.min, region.max)))
 		}
 	
 	if(length(grep("c", alignment)) > 0){

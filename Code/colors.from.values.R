@@ -78,7 +78,7 @@ use.pheatmap.colors = FALSE, na.col = "lightgray"){
 			dir.list[[1]] <- 1:max.col
 			dir.list[[2]] <- max.col:1
 			}
-			
+		
 			
 		if(grad.dir == "ends"){
 			if(length(dir.list) != 2){stop("I can only color the ends if there are exactly two classes")}

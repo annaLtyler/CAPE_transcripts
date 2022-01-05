@@ -16,7 +16,7 @@ pval.thresh = 0.05){
 	}
 
 	#threshold on the specified p value and check again for results
-	sig.enrich <- lapply(enrichment.list, function(x) x$result[which(x$result[,"p_value"] <= p_val_thresh),])
+	sig.enrich <- lapply(enrichment.list, function(x) x$result[which(x$result[,"p_value"] <= pval.thresh),])
 
 	list.len <- sapply(sig.enrich, length)
 	has.results <- which(list.len != 0)
@@ -32,6 +32,7 @@ pval.thresh = 0.05){
 		term.mat <- plot.enrichment.vis(enrich.list[[1]], num.terms = n.terms, 
 		order.by = sort.by, 
 		plot.label = plot.label, max.term.size = max.term.size)
+		return()
 		}else{
 
 		if(!is.null(max.term.size)){

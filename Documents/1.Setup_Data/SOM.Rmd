@@ -14,16 +14,16 @@ The purpose of this workflow is examine the use of self-organizing maps
 to analyze transcriptome data for DO mice.
 
 ```{r get_args}
-args <- commandArgs(trailingOnly=T)
-tissue.name = args[1]
+args <- commandArgs(trailingOnly = T)
+tissue.name <- args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(tissue.name)){
-  tissue.name = "Adipose"
-  delete_previous = FALSE
+  tissue.name <- "Islet"
+  delete_previous <- FALSE
 }
-  is.interactive = FALSE
-  #is.interactive = TRUE
+  is.interactive <- FALSE
+  #is.interactive <- TRUE
 ```
 
 ## SOM Results for `r tissue.name`
@@ -32,6 +32,7 @@ if(is.na(tissue.name)){
 library("here")
 all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
 for(j in 1:length(all.fun)){source(all.fun[j])}
+
 ```
 
 
@@ -59,7 +60,7 @@ high.trans <- which(mean.expr > 10)
 expr <- expr.data$data$rz[,high.trans]
 covar <- expr.data$covar.matrix
 
-pheno <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), 
+pheno <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"),
   stringsAsFactors = FALSE))
 num.pheno <- apply(pheno[,11:(ncol(pheno)-1)], 2, as.numeric)
 rownames(num.pheno) <- pheno[,1]
@@ -117,7 +118,6 @@ rownames(mean.pheno) <- names(pheno.ind)
 colnames(mean.pheno) <- colnames(adj.pheno)
 
 if(is.interactive){quartz(width = 8, height = 8)}
-if(is.interactive){quartz(width = 8, height = 8)}
 layout.mat <- get.layout.mat(9)
 layout(layout.mat)
 par(mar = c(4,2,2,2))
@@ -134,6 +134,7 @@ for(i in 1:ncol(adj.pheno)){
 The following heatmap shows the mean phenotype across groups and phenotypes.
 
 ```{r mean_pheno}
+if(is.interactive){quartz()}
 pheatmap(t(mean.pheno), scale = "row")
 ```
 
@@ -149,6 +150,7 @@ n.meta <- max(metagene.assig)
 meta.genes <- lapply(1:n.meta, function(x) names(metagene.assig)[which(metagene.assig == x)])
 n.genes <- sapply(meta.genes, length)
 
+if(is.interactive){quartz()}
 hist(n.genes, breaks = 100, main = "Number of Genes per Metagene",
 xlab = "Number of Genes")
 ```
@@ -156,16 +158,33 @@ xlab = "Number of Genes")
 The following boxplot show the absolute value of the correlations
 between phenotypes and metagenes.
 
-```{r spot_cor}
-pheno.metagene.cor <- vector(mode = "list", length = ncol(adj.pheno))
-names(pheno.metagene.cor) <- colnames(adj.pheno)
+```{r plot_portrait_fun}
+plot_portrait <- function(portraitV, global.min = NULL, global.max = NULL){
+  if(is.interactive){quartz()}
+  portraitV[which(is.na(portraitV))] <- 0
+  map.dim <- sqrt(length(portraitV))
+  map.mat <- rotate.mat(rotate.mat(rotate.mat(matrix(portraitV, nrow = map.dim, ncol = map.dim, byrow = FALSE))))
+  if(!is.null(global.min)){
+    imageWithText(map.mat, show.text = FALSE, use.pheatmap.colors = TRUE, 
+      global.color.scale = TRUE, global.min = global.min, global.max = global.max)  
+  }else{
+    imageWithText(map.mat, show.text = FALSE, use.pheatmap.colors = TRUE)
+  }
+}
+```
 
+```{r spot_cor}
+kmeta <- env$spot.list.kmeans$spots
 metagenes <- env$metadata
 map.dim <- sqrt(nrow(metagenes))
+
+pheno.metagene.cor <- vector(mode = "list", length = ncol(adj.pheno))
+names(pheno.metagene.cor) <- colnames(adj.pheno)
 
 common.ind <- intersect(colnames(metagenes), rownames(adj.pheno))
 metagene.locale <- match(common.ind, colnames(metagenes))
 pheno.locale <- match(common.ind, rownames(adj.pheno))
+expr.locale <- match(common.ind, rownames(adj.expr))
 #head(cbind(colnames(metagenes)[metagene.locale], rownames(adj.pheno)[pheno.locale]))
 
 for(m in 1:ncol(adj.pheno)){
@@ -175,6 +194,7 @@ for(m in 1:ncol(adj.pheno)){
   #pheatmap(pheno.metagene.cor[[m]], cluster_rows = FALSE, cluster_cols = FALSE,main = colnames(adj.pheno)[m])
 }
 
+if(is.interactive){quartz()}
 boxplot(lapply(pheno.metagene.cor, abs), las = 2)
 ```
 
@@ -207,6 +227,7 @@ The following histogram shows the distribution of correlations between
 all metagenes and all traits for `r tissue.name`.
 
 ```{r cor_dist}
+if(is.interactive){quartz()}
 hist(unlist(pheno.metagene.cor), main = "Trait-Metagene Correlations",
 xlab = "Pearson Correlation", breaks = 100)
 ```
@@ -269,6 +290,7 @@ for(m in 1:ncol(adj.pheno)){
 all.top.cor <- vector(mode = "list", length = ncol(adj.pheno))
 names(all.top.cor) <- colnames(adj.pheno)
 for(ph in 1:ncol(gsz.cor.mat)){
+  if(is.interactive){quartz()}
   cat("###", colnames(adj.pheno)[ph], "\n")
   sorted.cor <- sort(gsz.cor.mat[,ph])
   top.cor <- c(head(sorted.cor, 10), tail(sorted.cor, 10))
@@ -353,22 +375,29 @@ rownames(k.gene.mat) <- rownames(adj.pheno)
 common.ind <- intersect(rownames(adj.pheno), colnames(metagenes))
 pheno.locale <- match(common.ind, rownames(adj.pheno))
 metagene.locale <- match(common.ind, colnames(metagenes))
+expr.locale <- match(common.ind, rownames(adj.expr))
 
 for(k in 1:length(u_k)){
-  k.locale <- which(kmap == u_k[k])
-  k.genes <- metagenes[k.locale,]
-  #take the first principal component of the cluster
-  #pheatmap(cor(t(k.genes)))
-  #plot.decomp(t(k.genes))
-  k.gene <- plot.decomp(t(k.genes), plot.results = FALSE)$u[,1]
+  #k.locale <- which(kmap == u_k[k])
+  #k.genes <- metagenes[k.locale,]
+  #k.gene <- plot.decomp(t(k.genes), plot.results = FALSE)$u[,1]
+
+  k.genes <- kmeta[[k]]$genes
+  k.gene <- plot.decomp(adj.expr[,k.genes], plot.results = FALSE)$u[,1]
+
   k.gene.mat[,k] <- k.gene
-  k.cor <- apply(adj.pheno[pheno.locale,], 2, function(x) cor(x, k.gene[metagene.locale], 
-  use = "pairwise.complete.obs"))
+  #k.cor <- apply(adj.pheno[pheno.locale,], 2, function(x) cor(x, k.gene[metagene.locale], use = "pairwise.complete.obs"))
+  k.cor <- apply(adj.pheno[pheno.locale,], 2, function(x) cor(x, k.gene[expr.locale], use = "pairwise.complete.obs"))
   k.gene.cor[k,] <- k.cor
 }
 
-pheatmap(k.gene.cor)
+pheatmap(k.gene.cor, display_numbers = TRUE)
 ```
+
+The following code runs genetic mapping on metagenes. I tried 
+mapping the metagenes directly and got very strange mapping.
+So instead I am mapping the first principle compoenent of the 
+expression matrix defined by the metagene clusters.
 
 ```{r kgene_scan, fig.width = 12, fig.height = 6}
 metagene.scan.file <- here("Results", "SOM", paste0("Metagene.Scan.", tissue.name, ".RDS"))
@@ -435,18 +464,26 @@ for(i in 1:ncol(k.gene.scan)){
 
   par(mar = c(0,2,2,2))
   #plot(k.gene.scan, map = map, lodcol = i)
+  #quartz()
   plot(rel.marker.pos, k.gene.scan[,i], col = chr.col, type = "h", 
     axes = FALSE, ylab = "LOD Score")
   axis(2);abline(h = 6)
 
   cluster.genes <- kmeta[[i]]$genes
+  #mod.eig <- plot.decomp(adj.expr[,cluster.genes], plot.results = FALSE)$u[,1,drop=FALSE]
+  #rownames(mod.eig) <- rownames(adj.pheno)
+  #eig.scan <- scan1(genoprobs, mod.eig)
+  #plot(rel.marker.pos, eig.scan[,1], col = chr.col, type = "h", 
+  #  axes = FALSE, ylab = "LOD Score")
+  #axis(2);abline(h = 6)
+ 
   eqtl.table <- get_eqtl_table(cluster.genes)
   transcript.pos.table <- get_transcript_table(cluster.genes)
   lod.col <- colors.from.values(sqrt(as.numeric(eqtl.table[,3])), 
   col.scale = "blue", light.dark = "d")
   par(mar = c(2,2,0,2))
   plot.cistrans.table(eqtl.table, transcript.pos.table, map = map,
-    add = FALSE, cex = 0.5, col = lod.col)  
+    add = FALSE, cex = 0.5, col = lod.col, label.cex = 0.7)  
   
   mtext(side = 3, outer = TRUE, text = paste("Metagene", colnames(k.gene.scan)[i]),
   line = -2.5)
@@ -475,8 +512,8 @@ if(!file.exists(metagene.peak.scan.file)){
       chr.locale <- which(names(map) == peak.chr)
       lod.scan <- scan1(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
       metagene.peak.lod.scans[[i]] <- lod.scan
-      #coef.scan <- scan1coef(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
-      coef.scan <- scan1blup(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
+      coef.scan <- scan1coef(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
+      #coef.scan <- scan1blup(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
       metagene.peak.allele.scans[[i]] <- coef.scan
     }
   }
@@ -496,7 +533,8 @@ for(i in 1:length(metagene.peak.lod.scans)){
     cat("###", peak.table[i,"lodcolumn"], "Chr", peak.chr, "\n")
     par(mfrow = c(2,1), mar = c(2,2,2,2))
     plot(metagene.peak.lod.scans[[i]], map = map);abline(v = peak.pos)
-    plot_coefCC(metagene.peak.allele.scans[[i]], map = map);abline(v = peak.pos)
+    plot_coefCC(metagene.peak.allele.scans[[i]], map = map)
+    abline(v = peak.pos)
     cat("\n\n")
   }
 }
@@ -513,7 +551,28 @@ par(mar = c(4, 18, 2, 2))
 barplot(sort(log.p[which(log.p > p.thresh)]), horiz = TRUE, las = 2, xlab = "-log10(p)",
 main = paste("Metagene", cluster.name))
 
-cl.names <- lapply(kmeta, function(x) tail(sort(-log10(x$Fisher.p)), 1)
+cl.names <- lapply(kmeta, function(x) tail(sort(-log10(x$Fisher.p)), 1))
 
-names(tail(sort(log.p), 1))
+barplot(unlist(cl.names), las = 2, horiz = TRUE)
+```
+
+## Cluster Enrichments {.tabset .tabset-fade .tabset-pills}
+
+The following plots show the locations and top associated biological
+processes of each metagene.
+
+```{r cluster_enrichments, results = "asis", fig.width = 10, fig.height = 6}
+layout.matrix <- matrix(c(1,2,0,2), byrow = TRUE, ncol = 2)
+for(k in 1:length(kmeta)){
+  cat("### Cluster", names(kmeta)[k], "\n")
+  if(is.interactive){quartz(width = 10, height = 6)}
+  layout(layout.matrix, widths = c(0.7, 1), heights = c(1,0.5))
+  par(mar = c(0,2,2,0))
+  plot_portrait(kmeta[[k]]$mask)
+  enrich <- sort(-log10(kmeta[[k]]$Fisher.p))
+  top.enrich <- tail(enrich, 20)
+  par(mar = c(4, 18, 4, 4))
+  barplot(top.enrich, horiz = TRUE, las = 2, main = paste("Metagene", names(kmeta)[k]))
+  cat("\n\n")
+}
 ```

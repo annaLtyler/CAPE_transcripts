@@ -29,9 +29,9 @@ plot.results = TRUE, add = FALSE, plot.type = "p"){
 	new.title <- paste0(main, "\n", rlab, " = ", r2, ", p = ", signif(p, 2))
 	if(!add){
 		plot(x,y, xlim = xlim, ylim = ylim, col = col, pch = pch, main = new.title, 
-		xlab = xlab, ylab = ylab, type = plot.type)
+		xlab = xlab, ylab = ylab, type = plot.type, cex = cex)
 	}else{
-		points(x,y, col = col, pch = pch)
+		points(x,y, col = col, pch = pch, cex = cex)
 	}
 	abline(model, col = "#a6bddb", lwd = 3)
 	}

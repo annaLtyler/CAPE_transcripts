@@ -28,7 +28,8 @@ if(is.na(delete_previous)){
 testing = FALSE
 is.interactive = FALSE
 #is.interactive = TRUE
-geno.type <- "modules"
+#geno.type <- "modules"
+geno.type <- "transcripts"
 include.real.genotypes = FALSE #whether to include true genotypes or just expression
 ```
 
