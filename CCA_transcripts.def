@@ -7,8 +7,14 @@ maintainer="atyler"
 %post
 export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
 && apt-get install -y libglpk-dev \
+git-core\
+libcurl4-openssl-dev \
+libglpk-dev \
 libgmp-dev \
-libxml2-dev
+libssl-dev \
+libxml2-dev \
+pandoc \
+pandoc-citeproc
 
 R --slave -e 'install.packages("gProfileR",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("here",repos="https://cran.rstudio.com/")'
