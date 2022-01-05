@@ -7,7 +7,7 @@ maintainer="atyler"
 %post
 export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
 && apt-get install -y libglpk-dev \
-git-core\
+git-core \
 libcurl4-openssl-dev \
 libglpk-dev \
 libgmp-dev \
