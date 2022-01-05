@@ -32,8 +32,8 @@ R --slave -e 'install.packages("easyPubmed",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("knitr",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("kableExtra",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("ape",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("Cairo",repos="https://cran.rstudio.com/")'
-
+R --slave -e 'install.packages("wordcloud",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("wordcloud2",repos="https://cran.rstudio.com/")'
 
 R --slave -e 'install.packages("BiocManager",repos="https://cran.rstudio.com/")'
 R --slave -e 'BiocManager::install("ComplexHeatmap")'
