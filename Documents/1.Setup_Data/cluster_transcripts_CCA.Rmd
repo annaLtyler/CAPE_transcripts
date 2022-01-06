@@ -1666,7 +1666,7 @@ a given threshold. We then plot the allele effects of the two to see
 if they match.
 
 ```{r allele_plots}
-lodthresh = 5.5
+lodthresh = 5
 peak.dist <- 10 #maximum distance in MB for overlapping QTL
 shared.peaks <- vector(mode = "list", length = length(tissue.names))
 names(shared.peaks) <- tissue.names
