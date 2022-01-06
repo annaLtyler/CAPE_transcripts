@@ -51,7 +51,8 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
 "RColorBrewer", "igraph", "corpcor", "easyPubMed", "knitr", "kableExtra",
 "ape", "wordcloud", "wordcloud2")
-#library("simplifyEnrichment")
+run.simplify.enrichment = FALSE
+#library("simplifyEnrichment");run.simplify.enrichment = TRUE
 load_libraries(all.packages, personal.library = TRUE)
 data(CCcolors)
 ```
@@ -800,10 +801,16 @@ all.boot.cancor <- sapply(all.cancor, function(x) x[2,])
 
 tissue.cols <- c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3")
 pt.col <- sapply(1:ncol(all.cca.cancor), function(x) rep(tissue.cols[x], nrow(all.cca.cancor)))
+if(is.interactive){quartz(width = 7, height = 5)}
+par(mar = c(4,4,4,8))
 plot(unlist(all.cca.cancor), unlist(all.boot.cancor), col = unlist(pt.col), pch = 16,
 xlab = "CCA Canonical Correlation", ylab = "Bootstrapped Canonical Correlation")
-legend("topleft", legend = colnames(all.cca.cancor), pch = 16, col = pt.col[1,])
 abline(0,1)
+par(xpd = NA)
+legend(max(unlist(all.cca.cancor)*1.05), max(unlist(all.boot.cancor)), 
+legend = colnames(all.cca.cancor), pch = 16, col = pt.col[1,])
+par(xpd = TRUE)
+
 cat("\n\n")
 ```
 
@@ -970,7 +977,7 @@ an ordered query in gprofiler.
 
 ```{r enrichment_fun}
 
-get_transcript_list <- function(tissue.mats, tissue.results, percentile = 50){
+get_transcript_list <- function(tissue.mats, tissue.results){
     if(length(tissue.results) == 1){
         return(NA)
     }
@@ -984,17 +991,9 @@ get_transcript_list <- function(tissue.mats, tissue.results, percentile = 50){
     for(tr in has.vals){
         trait.up.genes <- colnames(tissue.mats$X)[trait.up.transcripts[[tr]]]
         trait.up.vals <- tissue.results$u[trait.up.transcripts[[tr]],tr]
-        top.perc <- get.percentile(trait.up.vals, percentile)
-        top.genes <- which(trait.up.vals >= top.perc)
-        trait.up.vals <- trait.up.vals[top.genes]
-        names(trait.up.vals) <- trait.up.genes[top.genes]
-
         trait.down.genes <- colnames(tissue.mats$X)[trait.down.transcripts[[tr]]]
         trait.down.vals <- tissue.results$u[trait.down.transcripts[[tr]],tr]
-        bot.perc <- get.percentile(abs(trait.down.vals), percentile)
-        bot.genes <- which(trait.down.vals <= bot.perc*-1)
-        trait.down.vals <- trait.down.vals[bot.genes]
-        names(trait.down.vals) <- trait.down.genes[bot.genes]
+
         trait.gene.groups <- list(sort(trait.up.vals, decreasing = TRUE), 
         sort(trait.down.vals, decreasing = FALSE))
         names(trait.gene.groups) <- paste0("Transcript", tr, c("_up", "_down"))
@@ -1063,7 +1062,7 @@ for(i in 1:length(tissue.names)){
     #get lists of non-zero transcripts
     #and sort by magnitude of loading
     tissue.gene.list <- get_transcript_list(tissue.mats = matched.mats[[i]], 
-    tissue.results = boot.CCA.results[[i]], percentile = 0)
+    tissue.results = boot.CCA.results[[i]])
     assoc.transcripts <- unique(names(Reduce("c", tissue.gene.list)))
     assoc.transcript.table <- gene.table[match(assoc.transcripts, gene.table[,1]),]
     write.table(assoc.transcript.table, 
@@ -1286,155 +1285,156 @@ for(i in 1:length(tissue.names)){
 Attempting to simplify GO term enrichments using the R package 
 simplifyEnrichment.
 
-```{r simpEnrich, message = FALSE, error = FALSE, warning = FALSE, eval = FALSE}
+```{r simpEnrich, message = FALSE, error = FALSE, warning = FALSE}
 #I'm turning this off so I can run on sumner for now. For some 
 #reason I can get simplifyEnrichment to install.
+if(run.simplify.enrichment){
+    go.domains <- c("BP")
+    cluster.col <- brewer.pal(12, "Paired")
+    #go.domains = c("BP", "MF", "CC")
+    #make an object to hold enrichment summaries
+    go.summaries <- go.groupings <- vector(mode = "list", length = length(tissue.names))
+    names(go.summaries) <- names(go.groupings) <- tissue.names
+    for(i in 1:length(tissue.names)){
 
-go.domains <- c("BP")
-cluster.col <- brewer.pal(12, "Paired")
-#go.domains = c("BP", "MF", "CC")
-#make an object to hold enrichment summaries
-go.summaries <- go.groupings <- vector(mode = "list", length = length(tissue.names))
-names(go.summaries) <- names(go.groupings) <- tissue.names
-for(i in 1:length(tissue.names)){
-
-    all.trans.enrich <- tissue.enrich[[i]]$Enrichments
-    #threshold by specified p value
-    
-    thresh.enrich <- lapply(all.trans.enrich, function(x) x$result[which(x$result[,"p_value"] <= p_val_thresh),]) 
-    all.enrich.terms <- lapply(thresh.enrich, function(x) x[grep("GO:BP", x[,"source"]),"term_id"])
-    u_terms <- Reduce("union", all.enrich.terms)    
-
-    if(length(u_terms) > 0){
-        pdf(file.path(results.dir, paste0("Enrichment_Simplified_", tissue.names[i], ".pdf")), width = 11, height = 7)
-        #mf.mat = GO_similarity(u_terms, ont = "MF", db = "org.Mm.eg.db")
-        #cc.mat = GO_similarity(u_terms, ont = "CC", db = "org.Mm.eg.db")
-        bp.mat = GO_similarity(u_terms, ont = "BP", db = "org.Mm.eg.db")
-        #mf.df = simplifyGO(mf.mat)
-        #cc.df <- simplifyGO(cc.mat)
-        bp.df <- simplifyGO(bp.mat)
-        dev.off()
-
-        #keep the assignments for each GO term
-        go.groupings[[i]] <- bp.df
-
-        #look through the composite transcripts and make a matrix
-        #to specify the cluster membership of each transcript
-        c.table <- table(bp.df[,"cluster"])
-        big.c <- c.table[which(c.table >= 5)]
-        mem.mat <- matrix(0, nrow = length(big.c), ncol = length(all.trans.enrich))
-        colnames(mem.mat) <- names(all.trans.enrich)
-        cl.names <- rep(NA, length(big.c))
-        if(length(big.c) > 0){
-            for(cl in 1:length(big.c)){
-                cl.locale <- which(bp.df[,"cluster"] == names(big.c)[cl])
-                cl.terms <- bp.df[cl.locale,]
-
-                #name the cluster
-                sorted.cl <- sort(table(unlist(strsplit(cl.terms[,"term"], " "))), decreasing = TRUE)
-                cl.names[cl] <- paste(names(head(sorted.cl, 10)), collapse = "_")
+        all.trans.enrich <- tissue.enrich[[i]]$Enrichments
+        #threshold by specified p value
         
-                #calculate the 
-                cl.idx <- lapply(all.trans.enrich, function(x) which(x$result[,"term_id"] %in% cl.terms[,1]))
-                cl.nlp <- lapply(1:length(cl.idx), 
-                    function(x) if(length(cl.idx[[x]]) > 0){-log10(all.trans.enrich[[x]]$result[cl.idx[[x]],"p_value"])}else{0})
-                names(cl.nlp) <- names(cl.idx)
-                mean.nlp <- sapply(cl.nlp, mean)
-                cl.p.locale <- match(names(mean.nlp), colnames(mem.mat))
-                mem.mat[cl,cl.p.locale] <- mean.nlp
-            }
-            rownames(mem.mat) <- cl.names
-            pdf(file.path(results.dir, paste0("Enrichment_Simplified_", 
-            tissue.names[i], "_Transcript_Clusters.pdf")), width = 20, height = 7)
-            pheatmap(mem.mat, cluster_rows = FALSE, cluster_cols = FALSE)
+        thresh.enrich <- lapply(all.trans.enrich, function(x) x$result[which(x$result[,"p_value"] <= p_val_thresh),]) 
+        all.enrich.terms <- lapply(thresh.enrich, function(x) x[grep("GO:BP", x[,"source"]),"term_id"])
+        u_terms <- Reduce("union", all.enrich.terms)    
+
+        if(length(u_terms) > 0){
+            pdf(file.path(results.dir, paste0("Enrichment_Simplified_", tissue.names[i], ".pdf")), width = 11, height = 7)
+            #mf.mat = GO_similarity(u_terms, ont = "MF", db = "org.Mm.eg.db")
+            #cc.mat = GO_similarity(u_terms, ont = "CC", db = "org.Mm.eg.db")
+            bp.mat = GO_similarity(u_terms, ont = "BP", db = "org.Mm.eg.db")
+            #mf.df = simplifyGO(mf.mat)
+            #cc.df <- simplifyGO(cc.mat)
+            bp.df <- simplifyGO(bp.mat)
             dev.off()
-            go.summaries[[i]] <- mem.mat
-        }
 
-        #make a matrix of p values for each transcript and each
-        #GO term. Sort by cluster and plot.
-        term.mat <- matrix(0, nrow = nrow(bp.mat), ncol = length(all.trans.enrich))
-        colnames(term.mat) <- names(all.trans.enrich)
-        rownames(term.mat) <- colnames(bp.mat)
-        for(tr in 1:length(all.trans.enrich)){
-            trans.go <- all.trans.enrich[[tr]]$result[,"term_id"]
-            if(length(trans.go) > 0){
-                trans.p <- all.trans.enrich[[tr]]$result[,"p_value"]
-                common.terms <- intersect(colnames(bp.mat), trans.go)
-                common.table.locale <- match(common.terms, trans.go)
-                common.mat.locale <- match(common.terms, rownames(bp.mat))
-                term.mat[common.mat.locale,tr] <- -log10(trans.p[common.table.locale])
+            #keep the assignments for each GO term
+            go.groupings[[i]] <- bp.df
+
+            #look through the composite transcripts and make a matrix
+            #to specify the cluster membership of each transcript
+            c.table <- table(bp.df[,"cluster"])
+            big.c <- c.table[which(c.table >= 5)]
+            mem.mat <- matrix(0, nrow = length(big.c), ncol = length(all.trans.enrich))
+            colnames(mem.mat) <- names(all.trans.enrich)
+            cl.names <- rep(NA, length(big.c))
+            if(length(big.c) > 0){
+                for(cl in 1:length(big.c)){
+                    cl.locale <- which(bp.df[,"cluster"] == names(big.c)[cl])
+                    cl.terms <- bp.df[cl.locale,]
+
+                    #name the cluster
+                    sorted.cl <- sort(table(unlist(strsplit(cl.terms[,"term"], " "))), decreasing = TRUE)
+                    cl.names[cl] <- paste(names(head(sorted.cl, 10)), collapse = "_")
+            
+                    #calculate the 
+                    cl.idx <- lapply(all.trans.enrich, function(x) which(x$result[,"term_id"] %in% cl.terms[,1]))
+                    cl.nlp <- lapply(1:length(cl.idx), 
+                        function(x) if(length(cl.idx[[x]]) > 0){-log10(all.trans.enrich[[x]]$result[cl.idx[[x]],"p_value"])}else{0})
+                    names(cl.nlp) <- names(cl.idx)
+                    mean.nlp <- sapply(cl.nlp, mean)
+                    cl.p.locale <- match(names(mean.nlp), colnames(mem.mat))
+                    mem.mat[cl,cl.p.locale] <- mean.nlp
+                }
+                rownames(mem.mat) <- cl.names
+                pdf(file.path(results.dir, paste0("Enrichment_Simplified_", 
+                tissue.names[i], "_Transcript_Clusters.pdf")), width = 20, height = 7)
+                pheatmap(mem.mat, cluster_rows = FALSE, cluster_cols = FALSE)
+                dev.off()
+                go.summaries[[i]] <- mem.mat
             }
-        }
 
-        if(length(big.c) > 0){
-            #put the term matrix in order of big clusters
-            #put all the small clusters at the end
-            cl.list <- cl.df <- vector(mode = "list", length = length(big.c)+1)
-            for(cl in 1:length(big.c)){
-                cl.go <- bp.df[which(bp.df[,3] == names(big.c)[cl]),1]
+            #make a matrix of p values for each transcript and each
+            #GO term. Sort by cluster and plot.
+            term.mat <- matrix(0, nrow = nrow(bp.mat), ncol = length(all.trans.enrich))
+            colnames(term.mat) <- names(all.trans.enrich)
+            rownames(term.mat) <- colnames(bp.mat)
+            for(tr in 1:length(all.trans.enrich)){
+                trans.go <- all.trans.enrich[[tr]]$result[,"term_id"]
+                if(length(trans.go) > 0){
+                    trans.p <- all.trans.enrich[[tr]]$result[,"p_value"]
+                    common.terms <- intersect(colnames(bp.mat), trans.go)
+                    common.table.locale <- match(common.terms, trans.go)
+                    common.mat.locale <- match(common.terms, rownames(bp.mat))
+                    term.mat[common.mat.locale,tr] <- -log10(trans.p[common.table.locale])
+                }
+            }
+
+            if(length(big.c) > 0){
+                #put the term matrix in order of big clusters
+                #put all the small clusters at the end
+                cl.list <- cl.df <- vector(mode = "list", length = length(big.c)+1)
+                for(cl in 1:length(big.c)){
+                    cl.go <- bp.df[which(bp.df[,3] == names(big.c)[cl]),1]
+                    cl.list[[cl]] <- match(cl.go, rownames(term.mat))
+                    cl.df[[cl]] <- rep(cl, length(cl.go))
+                }
+                cl = cl + 1
+                misc.clust <- setdiff(1:nrow(term.mat), unlist(cl.list))
+                cl.go <- rownames(term.mat)[misc.clust]
                 cl.list[[cl]] <- match(cl.go, rownames(term.mat))
                 cl.df[[cl]] <- rep(cl, length(cl.go))
-            }
-            cl = cl + 1
-            misc.clust <- setdiff(1:nrow(term.mat), unlist(cl.list))
-            cl.go <- rownames(term.mat)[misc.clust]
-            cl.list[[cl]] <- match(cl.go, rownames(term.mat))
-            cl.df[[cl]] <- rep(cl, length(cl.go))
 
-            cl.order <- unlist(cl.list)
-            cluster <- data.frame(as.factor(unlist(cl.df)))
-            rownames(cluster) <- rownames(term.mat)[cl.order]
+                cl.order <- unlist(cl.list)
+                cluster <- data.frame(as.factor(unlist(cl.df)))
+                rownames(cluster) <- rownames(term.mat)[cl.order]
 
-            pdf(file.path(results.dir, paste0("Enrichment_Simplified_", 
-            tissue.names[i], "_Transcript_Membership.pdf")), width = 7, height = 7)    
-            par(mar = c(6, 20, 2, 2))
-            imageWithText(term.mat[cl.order,], use.pheatmap.colors = TRUE, show.text = FALSE,
-            row.names = NULL, col.text.cex = 0.5)
-            #draw boxes around clusters
-            top.y <- nrow(term.mat)
-            min.x <- 0
-            max.x <- ncol(term.mat)+1
-            key.width <- (max.x - min.x)/20
-            for(cl in 1:length(cl.list)){
-                bottom.y <- top.y - length(cl.list[[cl]])
-                draw.rectangle(min.x, max.x, top.y, bottom.y, border.col = "white", fill = NA)
-                draw.rectangle(min.x-key.width, min.x, top.y, bottom.y, 
-                border.col = "white", fill = cluster.col[(cl%%length(cluster.col)+1)])
-                if(cl < length(cl.list)){cl.label = cl.names[cl]}else{cl.label = "Other"}
-                text(x = min.x - (1.5*key.width), y = mean(c(top.y, bottom.y)), 
-                labels = cl.label, cex = 0.5, adj = 1)
-                top.y <- bottom.y
-            }
-            dev.off()
-
-            plot.network = FALSE
-            if(plot.network){
                 pdf(file.path(results.dir, paste0("Enrichment_Simplified_", 
-                tissue.names[i], "_Network.pdf")), width = 10, height = 10)    
-                in.big.cl <- bp.df[which(bp.df[,3] %in% names(big.c)),]
-                big.go <- in.big.cl[,1]
-                go.adj <- bp.mat[match(big.go, rownames(bp.mat)), match(big.go, colnames(bp.mat))]
-                diag(go.adj) <- 0
-                #hist(go.adj^4, breaks = 100)
-                go.adj[which(go.adj^1 < 0.05)] <- 0
-                go.net <- graph_from_adjacency_matrix(go.adj, weighted = TRUE, mode = "undirected")
-                V(go.net)$name = in.big.cl[,2]
-                go.deg <- degree(go.net)
-                to.remove <- which(go.deg == 0)
-                to.keep <- setdiff(1:length(go.deg), to.remove)
-                if(length(to.remove) > 0){
-                    go.net <- delete_vertices(go.net, to.remove)
+                tissue.names[i], "_Transcript_Membership.pdf")), width = 7, height = 7)    
+                par(mar = c(6, 20, 2, 2))
+                imageWithText(term.mat[cl.order,], use.pheatmap.colors = TRUE, show.text = FALSE,
+                row.names = NULL, col.text.cex = 0.5)
+                #draw boxes around clusters
+                top.y <- nrow(term.mat)
+                min.x <- 0
+                max.x <- ncol(term.mat)+1
+                key.width <- (max.x - min.x)/20
+                for(cl in 1:length(cl.list)){
+                    bottom.y <- top.y - length(cl.list[[cl]])
+                    draw.rectangle(min.x, max.x, top.y, bottom.y, border.col = "white", fill = NA)
+                    draw.rectangle(min.x-key.width, min.x, top.y, bottom.y, 
+                    border.col = "white", fill = cluster.col[(cl%%length(cluster.col)+1)])
+                    if(cl < length(cl.list)){cl.label = cl.names[cl]}else{cl.label = "Other"}
+                    text(x = min.x - (1.5*key.width), y = mean(c(top.y, bottom.y)), 
+                    labels = cl.label, cex = 0.5, adj = 1)
+                    top.y <- bottom.y
                 }
-                e.col <- colors.from.values(E(go.net)$weight, use.pheatmap.colors = TRUE)
-
-                mods <- mod.col <- in.big.cl[to.keep,3]
-                u_mods <- unique(mods)
-                for(m in 1:length(u_mods)){mod.col[which(mods == u_mods[m])] <- cluster.col[m+1]}
-                plot(go.net, layout = layout_nicely, vertex.color = mod.col, 
-                vertex.size = 5, vertex.label = NA, edge.width = E(go.net)$weight,
-                edge.color = e.col)
                 dev.off()
+
+                plot.network = FALSE
+                if(plot.network){
+                    pdf(file.path(results.dir, paste0("Enrichment_Simplified_", 
+                    tissue.names[i], "_Network.pdf")), width = 10, height = 10)    
+                    in.big.cl <- bp.df[which(bp.df[,3] %in% names(big.c)),]
+                    big.go <- in.big.cl[,1]
+                    go.adj <- bp.mat[match(big.go, rownames(bp.mat)), match(big.go, colnames(bp.mat))]
+                    diag(go.adj) <- 0
+                    #hist(go.adj^4, breaks = 100)
+                    go.adj[which(go.adj^1 < 0.05)] <- 0
+                    go.net <- graph_from_adjacency_matrix(go.adj, weighted = TRUE, mode = "undirected")
+                    V(go.net)$name = in.big.cl[,2]
+                    go.deg <- degree(go.net)
+                    to.remove <- which(go.deg == 0)
+                    to.keep <- setdiff(1:length(go.deg), to.remove)
+                    if(length(to.remove) > 0){
+                        go.net <- delete_vertices(go.net, to.remove)
+                    }
+                    e.col <- colors.from.values(E(go.net)$weight, use.pheatmap.colors = TRUE)
+
+                    mods <- mod.col <- in.big.cl[to.keep,3]
+                    u_mods <- unique(mods)
+                    for(m in 1:length(u_mods)){mod.col[which(mods == u_mods[m])] <- cluster.col[m+1]}
+                    plot(go.net, layout = layout_nicely, vertex.color = mod.col, 
+                    vertex.size = 5, vertex.label = NA, edge.width = E(go.net)$weight,
+                    edge.color = e.col)
+                    dev.off()
+                }
             }
         }
     }
@@ -1634,24 +1634,28 @@ colnames(all.qtl.transcripts) <- all.transcript.qtl.names
 colnames(all.qtl.traits) <- all.trait.qtl.names
 rownames(all.qtl.transcripts) <- rownames(all.qtl.traits) <- rownames(qtl.results[[1]][[1]])
 
-pdf(file.path(results.dir, "all_qtl.transcripts.pdf"), width = 12, height = 5)
-    multilod.plot(all.qtl.transcripts, map, lod.thresh = 0, chr.label.y = 0, 
-        chr.label.cex = 1, row.names = colnames(all.qtl.transcripts),
-        mar = c(2, 12, 2, 0), global.color.scale = TRUE, global.min = 4, 
-        global.max = max(all.qtl.transcripts))
-dev.off()
+#find the trait-transcript pairs where both in the pair were mapped
+common.pairs <- intersect(gsub("Trait", "", colnames(all.qtl.traits)), gsub("Transcript", "", colnames(all.qtl.transcripts)))
+common.trait.idx <- match(common.pairs, gsub("Trait", "", colnames(all.qtl.traits)))
+common.transcript.idx <- match(common.pairs, gsub("Transcript", "", colnames(all.qtl.transcripts)))
 
-#remove anything with a number greater than 3 - some higher islet traits
-#have non-zero loadings, but we don't have paired transcripts for these.
-low.ct <- sort(unlist(sapply(1:2, function(x) grep(x, colnames(all.qtl.traits)))))
+
+pdf(file.path(results.dir, "all_qtl.transcripts.pdf"), width = 12, height = 5)
+    multilod.plot(all.qtl.transcripts[,common.transcript.idx], map, lod.thresh = 0, chr.label.y = 0, 
+        chr.label.cex = 1, row.names = colnames(all.qtl.transcripts)[common.transcript.idx],
+        mar = c(2, 12, 2, 0), global.color.scale = TRUE, global.min = 4, 
+        global.max = max(c(unlist(all.qtl.traits), unlist(all.qtl.transcripts))))
+dev.off()
 
 
 pdf(file.path(results.dir, "all_qtl.traits.pdf"), width = 12, height = 5)
-    multilod.plot(all.qtl.traits[,low.ct], map, lod.thresh = 0, chr.label.y = 0, 
-        chr.label.cex = 1, row.names = colnames(all.qtl.traits)[low.ct],
+    multilod.plot(all.qtl.traits[,common.trait.idx], map, lod.thresh = 0, chr.label.y = 0, 
+        chr.label.cex = 1, row.names = colnames(all.qtl.traits)[common.trait.idx],
         mar = c(2, 12, 2, 0),global.color.scale = TRUE, global.min = 4, 
-        global.max = max(all.qtl.traits))
+        global.max = max(c(unlist(all.qtl.traits), unlist(all.qtl.transcripts))))
 dev.off()
+
+#imageWithTextColorbar(all.qtl.traits, global.color.scale = TRUE, global.min = 4, global.max = max(c(unlist(all.qtl.traits), unlist(all.qtl.transcripts))))
 ```
 
 ## Allele Coefficients for Matched QTL {.tabset .tabset-fade .tabset-pills}
@@ -1838,15 +1842,20 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
         #2 and 3 - plot enrichment wordclouds
         par(mar = c(2, 2, 2, 2))
         if(length(tissue.enrich.summary[[2]]) > 0){
+            up.down.colors <- colors.from.values(c(-1, 0, 1), col.scale = c("blue", "brown"), 
+                split.at.vals = TRUE, split.points = 0, grad.dir = "ends")
+            #barplot(1:length(up.down.colors), col = up.down.colors)
             ct.up.locale <- which(names(tissue.enrich.summary[[2]]) == paste0("Transcript", ct, "_up"))
             ct.down.locale <- which(names(tissue.enrich.summary[[2]]) == paste0("Transcript", ct, "_down"))
             plot.enrichment.wordcloud(tissue.enrich.summary[[2]][[ct.up.locale]], 
-                plot.label = names(tissue.enrich.summary[[2]])[ct.up.locale], just.wordcloud = TRUE)
+                plot.label = names(tissue.enrich.summary[[2]])[ct.up.locale], 
+                just.wordcloud = TRUE, colors = up.down.colors[3])
             plot.enrichment.wordcloud(tissue.enrich.summary[[2]][[ct.down.locale]], 
-                plot.label = names(tissue.enrich.summary[[2]])[ct.down.locale], just.wordcloud = TRUE)
+                plot.label = names(tissue.enrich.summary[[2]])[ct.down.locale], 
+                just.wordcloud = TRUE, colors = up.down.colors[1])
         }
 
-        #4 - plot expression correlation
+        #4 - plot expression decomposition
         gene.locale <- grep(paste0("Transcript", ct, "_"), names(tissue.gene.list))
         gene.ids <- tissue.gene.list[gene.locale]
         gene.names <- lapply(gene.ids, 
@@ -1855,23 +1864,56 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
         gene.idx <- lapply(gene.ids, function(x) match(names(x), colnames(tissue.expr)))
         gene.expr <- tissue.expr[,unlist(gene.idx),drop=FALSE]
         colnames(gene.expr) <- unlist(gene.names)
-        expr.cor <- cor(gene.expr)
-        if(ncol(gene.expr) > 1){
+        
+        if(ncol(gene.expr) <= 5){
+            plot.text(paste("Up:", paste(gene.names[[1]], collapse = ", "), 
+                "\nDown", paste(gene.names[[2]], collapse = ", ")))
+        }
+        if(ncol(gene.expr) > 5 && ncol(gene.expr) <= 50){
+            expr.cor <- cor(gene.expr)
             col.order <- hclust(dist(expr.cor))$order
             par(mar = c(4, 2, 2, 0))
             imageWithText(expr.cor[col.order,col.order], split.at.vals = TRUE, 
             col.scale = c("blue", "red"), show.text = FALSE, grad.dir = "ends",
             col.text.shift = 1, row.text.shift = 1, row.text.cex = 0.6, col.text.cex = 0.6)
             par(xpd = FALSE)
-        }else{
-        plot.text(unlist(gene.names))
         }
-        #plot.decomp(t(gene.expr))
+        #plot the decomposition of the gene expression matrix. 
+        #color based on loadings, and label the genes with the five
+        #largest magnitudes in both directions.
+        if(ncol(gene.expr) > 50){
+            ct.loadings <- transcript.loadings[unlist(gene.idx),ct]
+            expr.col <- colors.from.values(ct.loadings, split.at.vals = TRUE,
+                split.points = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
+
+            ct.decomp <- plot.decomp(t(gene.expr), cols = expr.col)
+
+            #some of the genes cluster with genes that have the opposite loading sign
+            #I'm not sure why this is, but the code below shows genes clustered by 
+            #gene expression and clustered by loadings, and there's definitely a 
+            #difference, so the plotting code is correct, there's just a contrast
+            #between the gene expression correlation and the loadings.
+            #cor.mat <- cor(gene.expr)
+            #cor.order <- hclust(dist(cor.mat))$order
+            #ordered.cor <- cor.mat[cor.order, cor.order]
+            #ordered.cor <- cor.mat[order(ct.loadings), order(ct.loadings)]
+            #pheatmap(ordered.cor, cluster_rows = FALSE, cluster_cols = FALSE)
+
+            top.high <- which(ct.loadings >= sort(ct.loadings, decreasing = TRUE)[5]) 
+            top.low <- which(ct.loadings <= sort(ct.loadings, decreasing = FALSE)[5]) 
+            text(x = ct.decomp$u[top.high,1], y = ct.decomp$u[top.high,2], 
+                labels = colnames(gene.expr)[top.high], pos = 4, offset = 0.1)
+            text(x = ct.decomp$u[top.low,1], y = ct.decomp$u[top.low,2], 
+                labels = colnames(gene.expr)[top.low], pos = 4, offset = 0.1)
+
+        }
     
         #5-6 transcript and trait mapping
         par(mar = c(4,4,2,4))
-        plot(tissue.qtl[[1]], map = map, lodcol = ct, main = "Composite Transcript QTL")
-        plot(tissue.qtl[[2]], map = map, lodcol = ct, main = "Composite Trait QTL")
+        plot(tissue.qtl[[2]], map = map, lodcol = colnames(latent_trait_trans[[1]])[ct], 
+            main = "Composite Trait QTL")
+        plot(tissue.qtl[[1]], map = map, lodcol = colnames(latent_trait_trans[[2]])[ct], 
+            main = "Composite Transcript QTL")
 
         #7 plot latent transcript-latent trait correlation
         plot.with.model(latent_trait_trans[[2]][,ct], latent_trait_trans[[1]][,ct],
@@ -1887,13 +1929,12 @@ for(i in 1:length(tissue.names)){
     pdf(file.path(results.dir, paste0("All.together.", tissue.names[i], ".pdf")), width = 12, height = 7)
     cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
     tissue.gene.list <- get_transcript_list(tissue.mats = matched.mats[[i]], 
-        tissue.results = boot.CCA.results[[i]], percentile = 0)
+        tissue.results = boot.CCA.results[[i]])
     plot.all.together(tissue.mats = matched.mats[[i]], 
         tissue.results = boot.CCA.results[[i]], 
         tissue.enrich.summary = tissue.enrich[[i]],
         tissue.qtl = qtl.results[[i]], tissue.gene.list = tissue.gene.list, 
-        tissue.expr = tissue.adj.expr[[i]],
-        separate.windows = is.interactive)
+        tissue.expr = tissue.adj.expr[[i]], separate.windows = is.interactive)
     dev.off()
 }
 ```
@@ -1923,138 +1964,6 @@ pheatmap(t(loading.mat), annotation_row = tissue.col, cluster_rows = FALSE)
 #pheatmap(cor(t(loading.mat[has.vals,])))
 ```
 
-
-## Transcript Loading Profiles {.tabset .tabset-fade .tabset-pills}
-
-The following plots show the original CCA loadings for each trait
-plotted with the bootstrapped loadings.
-
-```{r trans_loadings, results = "asis", fig.height = 7, fig.width = 9}
-for(i in 1:length(tissue.names)){
-    cat("###", tissue.names[i], "\n")
-    if(is.interactive){quartz(width = 9, height = 7)}
-    has.vals <- which(colSums(boot.CCA.results[[i]]$u) != 0)
-    layout(get.layout.mat(length(has.vals)))
-    #par(mfrow = c(4,5), mar = c(2,2,2,2))
-    for(j in has.vals){
-        trans.loadings <- boot.CCA.results[[i]]$u[,j]
-        orig.loadings <- tissue.CCA.results[[i]]$u[,j]
-        length(which(trans.loadings != 0))
-        length(which(orig.loadings != 0))
-        length(intersect(which(trans.loadings != 0), which(orig.loadings != 0)))
-        non.zero <- which(trans.loadings != 0)
-        trans.order <- order(trans.loadings[non.zero])
-        if(j != 3){main.text = paste0("CT", j)}else{main.text = ""}
-        plot(orig.loadings[non.zero[trans.order]], pch = 16, cex = 0.5, main = main.text,
-            ylab = "Loadings")
-        points(trans.loadings[non.zero[trans.order]], pch = 16, cex = 0.5, col = "red")
-    }
-    mtext(side = 3, text = tissue.names[i], line= -1.5, outer = TRUE)
-    cat("\n\n")
-}
-```
-
-## Compare Bootstrapping by CT
-
-The following plots compare the bootstrapped CT pairs to the original CT
-pairs.
-
-```{r}
-max.cor <- max(c(max(all.cca.cancor), max(all.boot.cancor)))
-for(i in 1:length(tissue.names)){
-    tissue.cca.cancor <- all.cca.cancor[,i]
-    tissue.boot.cancor <- all.boot.cancor[,i]
-    has.vals <- which(tissue.boot.cancor != 0)
-    layout(get.layout.mat(length(has.vals)*2))
-    #layout.matrix <- get.layout.mat(ncol(matched.mats[[i]]$Z)*2, "upright")
-    #layout(layout.matrix, widths = rep(c(0.8, 0.5), 3))
-    #par(mar = c(2,2,2,2))
-    for(j in has.vals){
-        trans.loadings <- boot.CCA.results[[i]]$u[,j]
-        orig.loadings <- tissue.CCA.results[[i]]$u[,j]
-        length(which(trans.loadings != 0))
-        length(which(orig.loadings != 0))
-        length(intersect(which(trans.loadings != 0), which(orig.loadings != 0)))
-        non.zero <- which(trans.loadings != 0)
-        trans.order <- order(trans.loadings[non.zero])
-        plot(orig.loadings[non.zero[trans.order]], pch = 16, cex = 0.5, 
-        main = paste0("CT", j, " Loadings"),
-        ylab = "Transcript Loadings", col = tissue.cols[1])
-        points(trans.loadings[non.zero[trans.order]], pch = 16, cex = 0.5, 
-        col = tissue.cols[2])
-
-        #neg.boot.idx <- which(trans.loadings[non.zero[trans.order]] < 0)
-        #pos.boot.idx <- which(trans.loadings[non.zero[trans.order]] > 0)
-        #neg.boot <- trans.loadings[non.zero[trans.order]][neg.boot.idx]
-        #pos.boot <- trans.loadings[non.zero[trans.order]][pos.boot.idx]
-        
-        #neg.elbow <- get_elbow(1:length(neg.boot), neg.boot, TRUE)
-        #genes.below.elbow <- colnames(matched.mats[[i]]$X)[non.zero[trans.order][neg.boot.idx][1:neg.elbow]]
-
-        #pos.elbow <- get_elbow(1:length(pos.boot), pos.boot, TRUE)
-        #genes.above.elbow <- colnames(matched.mats[[i]]$X)[non.zero[trans.order][pos.boot.idx][pos.elbow:length(pos.boot)]]
-
-        #pos.elbow.genes <- gene.table[match(genes.above.elbow, gene.table[,1]),"symbol"]
-        #neg.elbow.genes <- gene.table[match(genes.below.elbow, gene.table[,1]),"symbol"]
-
-        #pos.enrich <- gost(pos.elbow.genes, organism = "mmusculus")
-        #plot.enrichment(pos.enrich)
-        
-        #neg.enrich <- gost(neg.elbow.genes, organism = "mmusculus")
-        #plot.enrichment(neg.enrich)
-
-        barplot(c(all.cca.cancor[j,i], all.boot.cancor[j,i]), 
-        ylab = "Canonical Correlation", names = c("Orig", "Boot"),
-        col = tissue.cols[1:2], ylim = c(0, max.cor), main = paste0("CT", j, " Cancor"))
-    }
-}
-```
-
-## Comparison of canonical correlation across tissues
-
-The following plot shows that we have not reduced the canonical correlation
-by using this harsh penalty on transcripts.
-
-```{r}
-ylim <- get_plot_bounds(0, max(c(max(all.cca.cancor), max(all.boot.cancor))), 
-    scale.factor = 10, return.even = TRUE)
-#quartz(width = 7, height = 3)
-par(mar = c(3,3,2,10))
-a <- barplot(rbind(all.cca.cancor[1,], all.boot.cancor[1,]), beside = TRUE, 
-    col = tissue.cols[1:2], ylim = ylim, ylab = "Canonical Correlation", cex.names = 1.5,
-    names = c("Adipose", "Islet", "Liver", "Muscle"))
-plot.dim <- par("usr")
-par(xpd = NA)
-legend(max(plot.dim), 0.3, legend = c("Original", "Bootstrapped"), fill = tissue.cols[1:2])
-par(xpd = TRUE)
-```
-
-```{r finding_individuals, eval = FALSE}
-tissue.idx = 3
-ct.name <- "Transcript18"
-ct.idx <- grep(ct.name, names(transcript.ids[[tissue.idx]]))
-length(ct.idx)
-transcript.ids[[tissue.idx]][ct.idx]
-
-
-```
-
-## All together transcript loadings
-
-```{r transcripts_per_trait, fig.width = 7, fig.height = 5}
-all.transcript.loadings <- lapply(boot.CCA.results, function(x) x$u)
-all.pos.trans <- lapply(all.transcript.loadings, 
-    function(y) apply(y, 2, function(x) length(which(x > 0))))
-all.neg.trans <- lapply(all.transcript.loadings, 
-    function(y) apply(y, 2, function(x) length(which(x < 0))))
-
-#pdf("~/Desktop/transcripts_per_trait.pdf", width = 7, height = 5)
-plot.grouped.boxes(list("Positive Loadings" = all.pos.trans, 
-"Negative Loadings" = all.neg.trans), plot.type = "box",
-legend.x = 6, legend.y = 5000)
-#dev.off()
-```
-
 ## All together canonical correlations
 
 The following figure shows the distribution of canonical correlations
@@ -2075,6 +1984,7 @@ boxplot(sig.cor, names = tissue.names, main = "Significant Canonical Correlation
 
 ```{r check_eqtl, eval = FALSE}
 gene.name = "Lep"
+gene.name = "Fkbp11"
 gene.id <- unique(gene.table[which(gene.table[,"symbol"] == gene.name), "gene.id"])
 gene.chr <- unique(gene.table[which(gene.table[,"symbol"] == gene.name), "chr"])
 gene.pos <- unique(gene.table[which(gene.table[,"symbol"] == gene.name), "start"])
@@ -2084,6 +1994,7 @@ gene.eqtl <- lapply(1:length(gene.locale),
     matched.mats[[x]]$X[,gene.locale[[x]]])}else{NA})
 for(i in 1:length(gene.eqtl)){
     if(length(gene.eqtl[[i]]) > 1){
+        if(is.interactive){quartz(width = 11, height = 7)}
         par(mfrow = c(2,1))
         plot(gene.eqtl[[i]], map = map, main = paste0(tissue.names[i], ": ", gene.name))
         chr.locale <- which(names(map) == gene.chr)
@@ -2093,6 +2004,10 @@ for(i in 1:length(gene.eqtl)){
     }
 }
 ```
+
+Fkbp has a cis eQTL on Chr 15 in adipose tissue and skeletal muscle, but not 
+in the other two tissues. The tissue where it shows up as correlated with traits
+is in islet, where it co-maps with the paired traits to Chr 13. 
 
 ## Mediation
 

@@ -12,7 +12,7 @@
 plot.enrichment.wordcloud <- function(enrichment, num.terms = 10, plot.label = "", 
     max.term.size = NULL, max.p.val = 0.05, order.by = c("default", "p_value"), 
     decreasing = FALSE, plot.results = TRUE, vertex.label.cex = 1, vertex.label.dist = 1, 
-    max.vertex.cex = 30, max.edge.lwd = 5, just.wordcloud = FALSE){
+    max.vertex.cex = 30, max.edge.lwd = 5, colors = "black", just.wordcloud = FALSE){
     
     if(is.null(enrichment)){
         plot.text("No Enrichment")
@@ -113,7 +113,7 @@ plot.enrichment.wordcloud <- function(enrichment, num.terms = 10, plot.label = "
         }
 
         par(mar = c(2,2,2,2))
-        wordcloud(names(word.count), scaled.p/max(scaled.p))
+        wordcloud(names(word.count), scaled.p/max(scaled.p), colors = colors)
 
         if(!just.wordcloud){
             mtext(plot.label, side = 3, outer = TRUE, line = -1.5)

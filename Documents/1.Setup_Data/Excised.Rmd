@@ -946,3 +946,124 @@ for(i in 1:length(tissue.names)){
 }
 
 ```
+
+## Transcript Loading Profiles {.tabset .tabset-fade .tabset-pills}
+
+The following plots show the original CCA loadings for each trait
+plotted with the bootstrapped loadings.
+
+```{r trans_loadings, results = "asis", fig.height = 7, fig.width = 9}
+for(i in 1:length(tissue.names)){
+    cat("###", tissue.names[i], "\n")
+    if(is.interactive){quartz(width = 9, height = 7)}
+    has.vals <- which(colSums(boot.CCA.results[[i]]$u) != 0)
+    layout(get.layout.mat(length(has.vals)))
+    #par(mfrow = c(4,5), mar = c(2,2,2,2))
+    for(j in has.vals){
+        trans.loadings <- boot.CCA.results[[i]]$u[,j]
+        orig.loadings <- tissue.CCA.results[[i]]$u[,j]
+        length(which(trans.loadings != 0))
+        length(which(orig.loadings != 0))
+        length(intersect(which(trans.loadings != 0), which(orig.loadings != 0)))
+        non.zero <- which(trans.loadings != 0)
+        trans.order <- order(trans.loadings[non.zero])
+        if(j != 3){main.text = paste0("CT", j)}else{main.text = ""}
+        plot(orig.loadings[non.zero[trans.order]], pch = 16, cex = 0.5, main = main.text,
+            ylab = "Loadings")
+        points(trans.loadings[non.zero[trans.order]], pch = 16, cex = 0.5, col = "red")
+    }
+    mtext(side = 3, text = tissue.names[i], line= -1.5, outer = TRUE)
+    cat("\n\n")
+}
+```
+
+## Compare Bootstrapping by CT
+
+The following plots compare the bootstrapped CT pairs to the original CT
+pairs.
+
+```{r}
+max.cor <- max(c(max(all.cca.cancor), max(all.boot.cancor)))
+for(i in 1:length(tissue.names)){
+    tissue.cca.cancor <- all.cca.cancor[,i]
+    tissue.boot.cancor <- all.boot.cancor[,i]
+    has.vals <- which(tissue.boot.cancor != 0)
+    layout(get.layout.mat(length(has.vals)*2))
+    #layout.matrix <- get.layout.mat(ncol(matched.mats[[i]]$Z)*2, "upright")
+    #layout(layout.matrix, widths = rep(c(0.8, 0.5), 3))
+    #par(mar = c(2,2,2,2))
+    for(j in has.vals){
+        trans.loadings <- boot.CCA.results[[i]]$u[,j]
+        orig.loadings <- tissue.CCA.results[[i]]$u[,j]
+        length(which(trans.loadings != 0))
+        length(which(orig.loadings != 0))
+        length(intersect(which(trans.loadings != 0), which(orig.loadings != 0)))
+        non.zero <- which(trans.loadings != 0)
+        trans.order <- order(trans.loadings[non.zero])
+        plot(orig.loadings[non.zero[trans.order]], pch = 16, cex = 0.5, 
+        main = paste0("CT", j, " Loadings"),
+        ylab = "Transcript Loadings", col = tissue.cols[1])
+        points(trans.loadings[non.zero[trans.order]], pch = 16, cex = 0.5, 
+        col = tissue.cols[2])
+
+        #neg.boot.idx <- which(trans.loadings[non.zero[trans.order]] < 0)
+        #pos.boot.idx <- which(trans.loadings[non.zero[trans.order]] > 0)
+        #neg.boot <- trans.loadings[non.zero[trans.order]][neg.boot.idx]
+        #pos.boot <- trans.loadings[non.zero[trans.order]][pos.boot.idx]
+        
+        #neg.elbow <- get_elbow(1:length(neg.boot), neg.boot, TRUE)
+        #genes.below.elbow <- colnames(matched.mats[[i]]$X)[non.zero[trans.order][neg.boot.idx][1:neg.elbow]]
+
+        #pos.elbow <- get_elbow(1:length(pos.boot), pos.boot, TRUE)
+        #genes.above.elbow <- colnames(matched.mats[[i]]$X)[non.zero[trans.order][pos.boot.idx][pos.elbow:length(pos.boot)]]
+
+        #pos.elbow.genes <- gene.table[match(genes.above.elbow, gene.table[,1]),"symbol"]
+        #neg.elbow.genes <- gene.table[match(genes.below.elbow, gene.table[,1]),"symbol"]
+
+        #pos.enrich <- gost(pos.elbow.genes, organism = "mmusculus")
+        #plot.enrichment(pos.enrich)
+        
+        #neg.enrich <- gost(neg.elbow.genes, organism = "mmusculus")
+        #plot.enrichment(neg.enrich)
+
+        barplot(c(all.cca.cancor[j,i], all.boot.cancor[j,i]), 
+        ylab = "Canonical Correlation", names = c("Orig", "Boot"),
+        col = tissue.cols[1:2], ylim = c(0, max.cor), main = paste0("CT", j, " Cancor"))
+    }
+}
+```
+
+## Comparison of canonical correlation across tissues
+
+The following plot shows that we have not reduced the canonical correlation
+by using this harsh penalty on transcripts.
+
+```{r}
+ylim <- get_plot_bounds(0, max(c(max(all.cca.cancor), max(all.boot.cancor))), 
+    scale.factor = 10, return.even = TRUE)
+#quartz(width = 7, height = 3)
+par(mar = c(3,3,2,10))
+a <- barplot(rbind(all.cca.cancor[1,], all.boot.cancor[1,]), beside = TRUE, 
+    col = tissue.cols[1:2], ylim = ylim, ylab = "Canonical Correlation", cex.names = 1.5,
+    names = c("Adipose", "Islet", "Liver", "Muscle"))
+plot.dim <- par("usr")
+par(xpd = NA)
+legend(max(plot.dim), 0.3, legend = c("Original", "Bootstrapped"), fill = tissue.cols[1:2])
+par(xpd = TRUE)
+```
+
+## All together transcript loadings
+
+```{r transcripts_per_trait, fig.width = 7, fig.height = 5}
+all.transcript.loadings <- lapply(boot.CCA.results, function(x) x$u)
+all.pos.trans <- lapply(all.transcript.loadings, 
+    function(y) apply(y, 2, function(x) length(which(x > 0))))
+all.neg.trans <- lapply(all.transcript.loadings, 
+    function(y) apply(y, 2, function(x) length(which(x < 0))))
+
+#pdf("~/Desktop/transcripts_per_trait.pdf", width = 7, height = 5)
+plot.grouped.boxes(list("Positive Loadings" = all.pos.trans, 
+"Negative Loadings" = all.neg.trans), plot.type = "box",
+legend.x = 6, legend.y = 5000)
+#dev.off()
+```
