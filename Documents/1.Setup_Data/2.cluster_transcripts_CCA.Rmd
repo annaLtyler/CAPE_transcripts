@@ -705,6 +705,7 @@ get_agg_loadings <- function(tissue.boot.results, tissue.results, trait.or.trans
 ```
 
 ```{r aggregate_bootstrapped_loadings}
+delete_previous = TRUE
 aggregate.results <- file.path(results.dir, "Aggregate.Results.RDS")
 if(!file.exists(aggregate.results) || delete_previous){
     #create a new CCA results object with the bootstrapped loadings
