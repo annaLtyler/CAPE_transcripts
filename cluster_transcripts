@@ -14,4 +14,4 @@ cd $SLURM_SUBMIT_DIR
 
 module load singularity
 
-singularity exec ../../Containers/CCA_transcripts.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "cluster_transcripts_CCA.Rmd"))' --args "$pheno_type" "$delete_previous"
+singularity exec ../../Containers/CCA_transcripts.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "2.cluster_transcripts_CCA.html"))' --args "$pheno_type" "$delete_previous"
