@@ -99,7 +99,7 @@ function(x) rep(names(tissue.adj.expr)[x], ncol(matched.expr[[x]]))))
 all.expr <- Reduce("cbind", matched.expr)
 
 expr.decomp.file <- file.path(results.dir, "all.expr.decomp.RDS")
-if(!file.exists(expr.decomp.file)){
+if(!file.exists(expr.decomp.file) || delete_previous){
     expr.decomp <- plot.decomp(all.expr, plot.results = FALSE, pc = n.expr.pc)
     saveRDS(expr.decomp, expr.decomp.file)
 }else{
@@ -391,6 +391,7 @@ matched.mats <- lapply(1:length(tissue.adj.expr),
     function(x) get.xz(tissue.adj.expr[[x]], cca.pheno))
 file.text <- "trait"
 names(matched.mats) <- tissue.names
+#saveRDS(matched.mats, file.path(results.dir, "Trait.Expression.Matched.RDS"))
 ```
 
 
@@ -482,7 +483,6 @@ For each set of transcripts, we performed sparse CCA over a series of penalties
 to identify the penalty combinations that simultaneously yielded a significant
 correlation and maximized the canonical correlation coefficient.
 
-
 ```{r penalty_opt, fig.width = 8, fig.height = 8, results = "asis"}
 perm.components = FALSE
 tissue.trait.penalty <- vector(mode = "list", length = length(matched.mats))
@@ -509,9 +509,12 @@ for(i in 1:length(matched.mats)){
 
     perm.results <- get_perm_grid(tissue.perm)
     par(mfrow = c(2,2))
-    imageWithText(perm.results$Z, col.scale = "red", main = "Z statistics", col.text.shift = 1)
-    imageWithText(perm.results$Cor, col.scale = "blue", main = "Correlation", col.text.shift = 1)
-    imageWithText(-log10(perm.results$p+1e-6), col.scale = "purple", main = "-log10(p)")
+    imageWithText(perm.results$Z, col.scale = "red", main = "Z statistics", col.text.shift = 0.07,
+    row.text.shift = 0.07)
+    imageWithText(perm.results$Cor, col.scale = "blue", main = "Correlation", col.text.shift = 0.07,
+    row.text.shift = 0.07)
+    imageWithText(-log10(perm.results$p+1e-6), col.scale = "purple", main = "-log10(p)", 
+    col.text.shift = 0.07, row.text.shift = 0.07)
     plot(abs(perm.results$Cor), -log10(perm.results$p+1e-6),
     xlab = "Correlation",ylab = "-log10(p)")
 
@@ -702,13 +705,19 @@ get_agg_loadings <- function(tissue.boot.results, tissue.results, trait.or.trans
 ```
 
 ```{r aggregate_bootstrapped_loadings}
-#create a new CCA results object with the bootstrapped loadings
-boot.CCA.results <- tissue.CCA.results
-for(i in 1:length(tissue.names)){
-    boot.CCA.results[[i]]$u <- get_agg_loadings(tissue.boot.results = tissue.transcript.boots[[i]], 
-        tissue.results = tissue.CCA.results[[i]], trait.or.trans = "trans", fdr = 0.01)
-    boot.CCA.results[[i]]$v <- get_agg_loadings(tissue.boot.results = tissue.trait.boots[[i]], 
-        tissue.results = tissue.CCA.results[[i]], trait.or.trans = "trait", fdr = 0.01)
+aggregate.results <- file.path(results.dir, "Aggregate.Results.RDS")
+if(!file.exists(aggregate.results) || delete_previous){
+    #create a new CCA results object with the bootstrapped loadings
+    boot.CCA.results <- tissue.CCA.results
+    for(i in 1:length(tissue.names)){
+        boot.CCA.results[[i]]$u <- get_agg_loadings(tissue.boot.results = tissue.transcript.boots[[i]], 
+            tissue.results = tissue.CCA.results[[i]], trait.or.trans = "trans", fdr = 1e-6)
+        boot.CCA.results[[i]]$v <- get_agg_loadings(tissue.boot.results = tissue.trait.boots[[i]], 
+            tissue.results = tissue.CCA.results[[i]], trait.or.trans = "trait", fdr = 1e-6)
+    }
+    saveRDS(boot.CCA.results, aggregate.results)
+}else{
+    boot.CCA.results <- readRDS(aggregate.results)
 }
 ```
 
@@ -926,8 +935,8 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
         trait.by.transcript <- trait.loadings[,has.trait] %*% t(effect.mat)
         #take out traits without contributions from transcripts
         has.transcript <- which(colSums(t(trait.by.transcript)) > 0)
-        if(length(has.transcript) > 0){
-            trait.transcript.cor <- cor(t(trait.by.transcript[has.transcript,]))
+        if(length(has.transcript) > 1){
+            trait.transcript.cor <- cor(t(trait.by.transcript[has.transcript,,drop=FALSE]))
             diag(trait.transcript.cor) <- 0
             #pheatmap(trait.transcript.cor)
             trait_graph <- graph_from_adjacency_matrix(trait.transcript.cor, 
@@ -991,8 +1000,11 @@ get_transcript_list <- function(tissue.mats, tissue.results){
     for(tr in has.vals){
         trait.up.genes <- colnames(tissue.mats$X)[trait.up.transcripts[[tr]]]
         trait.up.vals <- tissue.results$u[trait.up.transcripts[[tr]],tr]
+        names(trait.up.vals) <- trait.up.genes
+
         trait.down.genes <- colnames(tissue.mats$X)[trait.down.transcripts[[tr]]]
         trait.down.vals <- tissue.results$u[trait.down.transcripts[[tr]],tr]
+        names(trait.down.vals) <- trait.down.genes
 
         trait.gene.groups <- list(sort(trait.up.vals, decreasing = TRUE), 
         sort(trait.down.vals, decreasing = FALSE))
@@ -1436,8 +1448,8 @@ if(run.simplify.enrichment){
                     dev.off()
                 }
             }
-        }
-    }
+        } #end case for having enrichment
+    } #end looping through tissues
 }
 ```
 
@@ -1583,7 +1595,7 @@ for(i in 1:length(map)){
 for(i in 1:length(tissue.names)){
     cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
     if(length(qtl.results[[i]][[1]]) > 0){
-        if(is.interactive){quartz(width = 10, height = 5)}
+        #if(is.interactive){quartz(width = 10, height = 5)}
         
         trait.trans.qtl <- lapply(qtl.results[[i]], t)
         for(j in 1:nrow(trait.trans.qtl[[1]])){
@@ -1639,21 +1651,25 @@ common.pairs <- intersect(gsub("Trait", "", colnames(all.qtl.traits)), gsub("Tra
 common.trait.idx <- match(common.pairs, gsub("Trait", "", colnames(all.qtl.traits)))
 common.transcript.idx <- match(common.pairs, gsub("Transcript", "", colnames(all.qtl.transcripts)))
 
-
-pdf(file.path(results.dir, "all_qtl.transcripts.pdf"), width = 12, height = 5)
+transcript.lod.file <- file.path(results.dir, "all_qtl.transcripts.pdf")
+if(!file.exists(transcript.lod.file) || delete_previous){
+    pdf(transcript.lod.file, width = 12, height = 5)
     multilod.plot(all.qtl.transcripts[,common.transcript.idx], map, lod.thresh = 0, chr.label.y = 0, 
         chr.label.cex = 1, row.names = colnames(all.qtl.transcripts)[common.transcript.idx],
         mar = c(2, 12, 2, 0), global.color.scale = TRUE, global.min = 4, 
         global.max = max(c(unlist(all.qtl.traits), unlist(all.qtl.transcripts))))
-dev.off()
+    dev.off()
+}
 
-
-pdf(file.path(results.dir, "all_qtl.traits.pdf"), width = 12, height = 5)
+trait.lod.file <- file.path(results.dir, "all_qtl.traits.pdf")
+if(!file.exists(trait.lod.file) || delete_previous){
+    pdf(trait.lod.file, width = 12, height = 5)
     multilod.plot(all.qtl.traits[,common.trait.idx], map, lod.thresh = 0, chr.label.y = 0, 
         chr.label.cex = 1, row.names = colnames(all.qtl.traits)[common.trait.idx],
         mar = c(2, 12, 2, 0),global.color.scale = TRUE, global.min = 4, 
         global.max = max(c(unlist(all.qtl.traits), unlist(all.qtl.transcripts))))
-dev.off()
+    dev.off()
+}
 
 #imageWithTextColorbar(all.qtl.traits, global.color.scale = TRUE, global.min = 4, global.max = max(c(unlist(all.qtl.traits), unlist(all.qtl.transcripts))))
 ```
@@ -1666,7 +1682,7 @@ a given threshold. We then plot the allele effects of the two to see
 if they match.
 
 ```{r allele_plots}
-lodthresh = 5
+lodthresh = 5.5
 peak.dist <- 10 #maximum distance in MB for overlapping QTL
 shared.peaks <- vector(mode = "list", length = length(tissue.names))
 names(shared.peaks) <- tissue.names
@@ -1738,15 +1754,17 @@ for(i in 1:length(shared.peaks)){
                 paste0("Individual.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
                 ".Chr.", shared.peaks[[i]][tr,3], ".RDS"))
 
-            if(!file.exists(individual.scan.file)){
+            if(!file.exists(individual.scan.file) || delete_previous){
                 
                 #map the transcript
                 transcript.lod <- scan1(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
+                #find_peaks(transcript.lod, map = map, threshold = 5, prob = 0.95)
                 #transcript.coef <- scan1coef(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
                 transcript.coef <- scan1blup(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
             
                 #map the trait too
                 trait.lod <- scan1(genoprobs[,chr], ctrait[,trait,drop=FALSE])
+                #find_peaks(trait.lod, map = map, threshold = 5, prob = 0.95)
                 #trait.coef <- scan1coef(genoprobs[,chr], ctrait[,trait,drop=FALSE])
                 trait.coef <- scan1blup(genoprobs[,chr], ctrait[,trait,drop=FALSE])
                 
@@ -1837,7 +1855,7 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
         loading.order <- order(trait.loadings[have.contributions,ct])
         barplot(t(trait.loadings[have.contributions[loading.order],ct,drop=FALSE]), 
         las = 2, main = paste("CT", ct, "Trait Contributions"), horiz = TRUE, 
-        col = "gray")
+        col = "gray", cex.names = 0.7)
 
         #2 and 3 - plot enrichment wordclouds
         par(mar = c(2, 2, 2, 2))
@@ -1886,7 +1904,8 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
             expr.col <- colors.from.values(ct.loadings, split.at.vals = TRUE,
                 split.points = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
 
-            ct.decomp <- plot.decomp(t(gene.expr), cols = expr.col)
+            par(mar = c(4,4,4,1))
+            ct.decomp <- plot.decomp(t(gene.expr), cols = expr.col, main = "Transcript PCs")
 
             #some of the genes cluster with genes that have the opposite loading sign
             #I'm not sure why this is, but the code below shows genes clustered by 
@@ -1917,7 +1936,8 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
 
         #7 plot latent transcript-latent trait correlation
         plot.with.model(latent_trait_trans[[2]][,ct], latent_trait_trans[[1]][,ct],
-        xlab = paste("Latent Transcript", ct), ylab = paste("Latent Trait", ct))
+        xlab = paste("Latent Transcript", ct), ylab = paste("Latent Trait", ct),
+        report = "cor.test")
         cat("\n\n")
     }
 }
@@ -2005,23 +2025,28 @@ for(i in 1:length(gene.eqtl)){
 }
 ```
 
-Fkbp has a cis eQTL on Chr 15 in adipose tissue and skeletal muscle, but not 
-in the other two tissues. The tissue where it shows up as correlated with traits
-is in islet, where it co-maps with the paired traits to Chr 13. 
+## Some notes:
 
-## Mediation
+The composite transcripts are diverse in their makeup.
+Some have just a single transcript, some have a few.
+Some have many all with similarly high loadings. Others
+have many transcripts, but only a few have large loadings.
 
-We can 
+Fkbp11 (chr 15) is the dominant gene in *islet* tissue. It appears in 
+every composite transcript, sometimes all by itself.
+Fkbp11 has a cis eQTL on Chr 15 in adipose tissue and skeletal muscle, 
+but not in the other two tissues. In islet, it co-maps with the paired 
+traits to Chr 13. 
 
-## Conclusion
+Leptin (chr 6) is the dominant gene in *skeletal muscle*, opposing Cfd, 
+and appearing with Slc5a7 (chr 17). There is only one trait-transcript 
+pair that co-maps in skeletal muscle, but the allele effects don't match 
+at all. 
 
-What does this get us? 
+Igfbp2 (chr 1, 72 Mbp) is the dominant gene in *liver*, opposing Mogat1 
+(chr 1, 78 Mbp). The transcripts in the liver are mapping to Chr 11
+around 100 Mb. (But the traits map to 83 Mb).
+The transcripts also map to Chrs 4 and 1. 
 
-Transcriptional processes that are highly correlated with physiological traits
-
-Clustering of functional enrichments helps interpret the enrichments.
-    For example...
-
-Limited number of transcripts associated with each composite trait
-
-
+Dominant genes in *adipose tissue* are Aldh2 (chr 5), Fam13a (Chr 6),
+Itgax (Chr 7), Cfd (Chr 10), Slc43a1 (Chr 2) and Ubd (Chr 17).

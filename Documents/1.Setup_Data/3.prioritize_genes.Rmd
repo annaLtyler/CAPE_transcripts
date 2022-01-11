@@ -1,0 +1,94 @@
+---
+title: "Prioritize Genes in QTL Identified by CCA"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+The purpose of this workflow is to use the results from 2.cluster_transcripts_CCA.Rmd
+and to run TRiAGE to identify plausible candidates in identified QTL.
+This workflow runs TRiAGE using the input tissue and CT pair. 
+
+The network used is the same as the specified tissue. The training genes
+are selected from the transcripts with non-zero loadings for the CT
+pair. 
+
+
+```{r get_args}
+exp.name <- "all_traits"
+#delete_previous <- TRUE
+delete_previous <- FALSE
+
+tissue.name = "Adipose"
+network.name = "adipose tissue"
+CT = 1
+```
+
+
+```{r load_code}
+is.interactive = FALSE
+#is.interactive = TRUE
+library("here")
+
+data.dir <- here("Results", "CCA_Clusters", exp.name)
+results.dir <- here("Results", "Prioritization", exp.name)
+if(!file.exists(results.dir)){dir.create(results.dir)}
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
+"e1071", "parallel", "doParallel", "gprofiler2", "clusterProfiler", "DT",
+"plotly", "qtl2") 
+load_libraries(needed.libraries, personal.library = TRUE)
+```
+
+Read in bootstrapped results.
+
+```{r boot_results}
+matched.mats <- readRDS(file.path(data.dir, "Trait.Expression.Matched.RDS"))
+boot.CCA.results <- readRDS(file.path(data.dir, "Aggregate.Results.RDS"))
+tissue.locale <- which(names(boot.CCA.results) == tissue.name)
+transcript.loadings <- boot.CCA.results[[tissue.locale]]$u[,CT]
+names(transcript.loadings) <- colnames(matched.mats[[tissue.locale]]$X)
+non.zero <- transcript.loadings[which(transcript.loadings != 0)]
+
+pt.col <- rep("black", length = length(non.zero))
+if(length(non.zero) > 500)
+    score.lim <- sort(abs(non.zero), decreasing = TRUE)[500]
+    pt.col[which(abs(non.zero) > score.lim)] <- "red"
+}
+pt.order <- order(non.zero)
+plot(non.zero[pt.order], col = pt.col[pt.order], ylab = "Loading", pch = 16)
+legend("topleft", col = c("red", "black"), legend = c("selected", "not selected"), pch = 16)
+abline(h = 0)
+```
+
+
+```{r download_net, eval = TRUE, echo = FALSE}
+#Download the network if it hasn't been previously downloaded. 
+#full list available at:  http://fntm.princeton.edu
+tissue.type = gsub(" ", "_", network.name)
+net.file <- here("Data", paste0(network.name, "_top.RData"))
+if(!file.exists(net.file)){
+    download.tissue.net(tissue.type, organism = "mouse", top.edges.only = TRUE, 
+    project.dir = here("Data"))
+    }
+```
+
+```{r read_net, echo = FALSE}
+#Read in the downloaded network.
+all.var <- ls()
+net.loaded <- as.logical(length(which(all.var == "tissue.net")))
+if(!net.loaded){
+    tissue.net <- readRDS(net.file)
+}
+```
