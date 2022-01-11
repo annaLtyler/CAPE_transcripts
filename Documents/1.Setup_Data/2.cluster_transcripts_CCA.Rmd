@@ -705,7 +705,6 @@ get_agg_loadings <- function(tissue.boot.results, tissue.results, trait.or.trans
 ```
 
 ```{r aggregate_bootstrapped_loadings}
-delete_previous = TRUE
 aggregate.results <- file.path(results.dir, "Aggregate.Results.RDS")
 if(!file.exists(aggregate.results) || delete_previous){
     #create a new CCA results object with the bootstrapped loadings
@@ -1511,6 +1510,7 @@ We used qtl2 to map each of the composite traits and
 each of the composite transcripts.
 
 ```{r map_transcripts, results = "asis", fig.height = 7, fig.width = 7}
+delete_previous <- TRUE
 qtl.results <- vector(mode = "list", length = length(tissue.names))
 names(qtl.results) <- tissue.names
 
@@ -1521,7 +1521,8 @@ for(i in 1:length(tissue.names)){
         trait.trans <- get_latent_var(tissue.mats = matched.mats[[i]], 
         tissue.results = boot.CCA.results[[i]])
 
-        has.vals <- which(colSums(trait.trans$Composite_Transcripts) != 0)
+        has.vals <- intersect(which(colSums(trait.trans$Composite_Transcripts) != 0),
+            which(colSums(trait.trans$Composite_Traits) != 0))
 
         pheno.trans.cor <- sapply(has.vals, 
         function(x) apply(matched.mats[[i]]$Z, 2, 
@@ -1548,11 +1549,10 @@ for(i in 1:length(tissue.names)){
 
         qtl.file <- file.path(results.dir, paste0("QTL.", tissue.names[i], ".", file.text, ".RDS"))
         if(!file.exists(qtl.file) || delete_previous){
-            has.vals <- which(colSums(trait.trans$Composite_Transcripts) != 0)
-            tissue.ctranscript.qtl <- scan1(genoprobs, trait.trans$Composite_Transcripts[,has.vals,drop=FALSE], kinship = K)
-            has.vals <- which(colSums(trait.trans$Composite_Traits) != 0)
-            tissue.ctrait.qtl <- scan1(genoprobs, trait.trans$Composite_Traits[,has.vals,drop=FALSE], 
-                kinship = K)
+            tissue.ctranscript.qtl <- scan1(genoprobs, 
+                trait.trans$Composite_Transcripts[,has.vals,drop=FALSE], kinship = K)
+            tissue.ctrait.qtl <- scan1(genoprobs, 
+                trait.trans$Composite_Traits[,has.vals,drop=FALSE], kinship = K)
             tissue.qtl <- list("CTranscript_QTL" = tissue.ctranscript.qtl, 
             "CTrait_QTL" = tissue.ctrait.qtl)
             qtl.results[[i]] <- tissue.qtl
