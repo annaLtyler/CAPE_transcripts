@@ -1,0 +1,217 @@
+---
+title: "Mediation"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+The purpose of this workflow is to explore mediation of large QTL by 
+groups transcripts. The purpose it to explore multigenicity of QTL.
+
+
+```{r load_code}
+exp.name = "all_traits"
+is.interactive = FALSE
+#is.interactive = TRUE
+library("here")
+
+results.dir <- here("Results", "Mediation")
+if(!file.exists(results.dir)){dir.create(results.dir)}
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
+"RColorBrewer", "igraph", "corpcor", "easyPubMed", "knitr", "kableExtra",
+"ape", "wordcloud", "wordcloud2")
+run.simplify.enrichment = FALSE
+#library("simplifyEnrichment");run.simplify.enrichment = TRUE
+load_libraries(all.packages, personal.library = TRUE)
+data(CCcolors)
+```
+
+Read in pre-filtered and pre-adjusted transcript data from 
+adjust_transcripts_traits.Rmd
+
+```{r read_data}
+tissue.adj.expr <- readRDS(here("Results", "CCA_clusters", exp.name, "Adjusted_Expression.RDS"))
+pheno.file <- here("Results", "CCA_Clusters", exp.name, "Adjusted_Phenotypes.RDS")
+cca.pheno <- readRDS(pheno.file)
+tissue.names <- names(tissue.adj.expr)
+
+tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+data.set.names <- lapply(1:length(tissue.names), 
+function(x) paste0("dataset.DO.Cube.", tissue.names[x]))
+gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, function(x) get(x)$annot.mrna))))
+
+eqtl <- lapply(data.set.names, function(x) get(x)$lod.peaks$additive)
+```
+
+Scan insulin tAUC and find the QTL region. This has a big QTL.
+
+```{r scan_insAUC}
+trait.name <- "Ins_tAUC"
+ins.auc.scan <- scan1(genoprobs, cca.pheno[,trait.name], kinship = K)
+plot(ins.auc.scan, map = map)
+ins.auc.peak <- find_peaks(ins.auc.scan, map = map, prob = 0.95, threshold = 10)
+qtl.chr <- as.numeric(ins.auc.peak[1,"chr"])
+qtl.min <- ins.auc.peak[1,"ci_lo"]
+qtl.max <- ins.auc.peak[1,"ci_hi"]
+peak.marker <- which.max(ins.auc.scan[,1])
+orig.lod <- ins.auc.scan[peak.marker,1]
+```
+
+Find all the transcripts that map to this location. We are only looking
+at transcripts with a LOD score of at least 6.
+
+```{r get_transcripts}
+overlapping.eqtl <- vector(mode = "list", length = length(tissue.names))
+names(overlapping.eqtl) <- tissue.names
+for(i in 1:length(eqtl)){
+    marker.pos <- eqtl[[i]][["marker.id"]]
+    split.eqtl.pos <- strsplit(marker.pos, "_")
+    eqtl.chr <- sapply(split.eqtl.pos, function(x) x[1])
+    eqtl.pos <- as.numeric(sapply(split.eqtl.pos, function(x) x[2]))
+    chr.locale <- which(eqtl.chr == qtl.chr)
+    overlaps.qtl <- Reduce("intersect", list(which(eqtl.chr == qtl.chr), which(eqtl.pos >= qtl.min*1e6), which(eqtl.pos <= qtl.max*1e6)))
+    overlapping.eqtl[[i]] <- as.matrix(eqtl[[i]][overlaps.qtl,])
+}
+
+```
+
+The following plot shows the overlap in transcripts that map to this region
+across tissues. There's not much overlap.
+
+```{r eqtl_overlap}
+eqtl.id <- lapply(overlapping.eqtl, function(x) x[,1])
+plotVenn(eqtl.id)
+```
+
+The following plot shows the enrichments for these transcripts.
+There is a little bit of overlap in the enrichments.
+
+```{r transcript_enrich}
+enrichments <- lapply(overlapping.eqtl, function(x) gost(x[,1], organism = "mmusculus", 
+    sources = c("GO", "KEGG", "REACTOME")))
+plot.enrichment.group(enrichments)
+```
+
+Mediate on all unique transcripts individually. Look at the LOD drops across 
+these mediations.
+
+```{r mediate}
+all.transcripts <- unique(unlist(eqtl.id))
+transcript.table <- gconvert(all.transcripts, "mmusculus")
+transcript.names <- transcript.table[match(all.transcripts, transcript.table[,"input"]),"name"]
+
+mediation.file <- file.path(results.dir, "Mediated.LOD.RDS")
+if(!file.exists(mediation.file)){
+    mediated.lod <- vector(mode = "list", length = length(overlapping.eqtl))
+    names(mediated.lod) <- tissue.names
+    for(i in 1:length(tissue.names)){
+        cat("\n", tissue.names[i], "\n")
+        tissue.expr <- tissue.adj.expr[[i]]
+        common.ind <- Reduce("intersect", list(rownames(cca.pheno), rownames(tissue.expr), rownames(genoprobs[[1]])))
+        ind.pheno.locale <- match(common.ind, rownames(cca.pheno))
+        ind.expr.locale <- match(common.ind, rownames(tissue.expr))
+        ind.geno.locale <- match(common.ind, rownames(genoprobs[[1]]))
+        
+        med.lod <- rep(NA, length(all.transcripts))
+        names(med.lod) <- all.transcripts
+        for(j in 1:length(all.transcripts)){
+            report.progress(j, length(all.transcripts))
+            transcript.locale <- which(colnames(tissue.expr) == all.transcripts[j])
+            if(length(transcript.locale) > 0){
+                transcript.expr <- tissue.expr[ind.expr.locale,transcript.locale,drop=FALSE]
+                adj.trait <- adjust(cca.pheno[ind.pheno.locale,trait.name,drop=FALSE], transcript.expr)
+                adj.trait.scan <- scan1(genoprobs[,qtl.chr], adj.trait, kinship = K[[qtl.chr]])
+                #plot(adj.trait.scan, map = map)
+                med.lod[j] <- adj.trait.scan[names(peak.marker),1]
+            }
+        }
+        mediated.lod[[i]] <- med.lod
+    }
+saveRDS(mediated.lod, mediation.file)
+}else{
+    mediated.lod <- readRDS(mediation.file)
+}
+
+```
+
+The plots below show the magnitude of the LOD drops across transcripts.
+The mediation is really variable. Wfdc21 is the best overall mediator,
+and mediates in three tissues (all but islet)
+
+```{r lod_drop}
+lod.drops <- lapply(1:length(mediated.lod), function(x) orig.lod - mediated.lod[[x]])
+names(lod.drops) <- tissue.names
+
+lod.drop.mat <- matrix(NA, nrow = length(lod.drops), ncol = length(all.transcripts))
+rownames(lod.drop.mat) <- tissue.names
+colnames(lod.drop.mat) <- all.transcripts
+for(i in 1:length(lod.drops)){
+    lod.drop.mat[i,names(lod.drops[[i]])] <- lod.drops[[i]]
+}
+colnames(lod.drop.mat) <- transcript.names
+
+col.order <- order(colSums(lod.drop.mat, na.rm = TRUE))
+pdf(file.path(results.dir, "lod.drop.pdf"), height = 25, width = 3.5)
+pheatmap(t(lod.drop.mat[,col.order]), cluster_rows = FALSE, cluster_cols = FALSE, 
+display_numbers = TRUE)
+dev.off()
+```
+
+
+```{r expr_cluster}
+pc.med <- vector(mode = "list", length = length(tissue.names))
+names(pc.med) <- tissue.names
+for(i in 1:length(tissue.names)){
+    sorted.drops <- sort(lod.drops[[i]], decreasing = TRUE)
+    top.med <- names(sorted.drops)[which(sorted.drops > 0)]
+    eqtl.expr <- tissue.adj.expr[[i]][,top.med]
+    expr.decomp <- plot.decomp(eqtl.expr)
+    med.lod <- rep(NA, ncol(expr.decomp$u))
+    for(j in 1:ncol(expr.decomp$u)){
+        pc.ind.locale <- match(common.ind, names(expr.decomp$rows.used))
+        adj.trait <- adjust(cca.pheno[ind.pheno.locale,trait.name,drop=FALSE], expr.decomp$u[pc.ind.locale,j,drop=FALSE])
+        #plot(cca.pheno[ind.pheno.locale,trait.name,drop=FALSE], expr.decomp$u[pc.ind.locale,j])
+        adj.trait.scan <- scan1(genoprobs[,qtl.chr], adj.trait, kinship = K[[qtl.chr]])
+        #plot(adj.trait.scan, map = map)
+        med.lod[j] <- adj.trait.scan[names(peak.marker),1]
+    }
+    pc.med[[i]] <- med.lod
+}
+```
+
+
+```{r pc_lod_drop}
+pc.lod.drop <- sapply(pc.med, function(x) orig.lod - x)
+rownames(pc.lod.drop) <- paste0("PC", 1:nrow(pc.lod.drop))
+pheatmap(pc.lod.drop, cluster_rows = FALSE, cluster_cols = FALSE, display_numbers = TRUE)
+```
+
+
+Individual transcripts are better mediators than groups of transcripts.
+
+Wfdc21 in the liver is a very good mediator. It is a moderate mediator
+in adipose tissue and skeletal muscle. It is not expressed in islet.
+Not much is known about it. It acts upstream of lipopolysaccharide response,
+response to TNF, and white fat cell differentiation. It is not in the T2D 
+knowledge portal
+
+I've seen this gene before. It was the only transcript in Liver CT 9 in 
+my original CCA. It was weakly correlated with with the latent trait made
+up of Ins_tAUC, HOMA_B, HOMA_IR, and food_ave. The allele effects of the
+transcript matched the allele effects of the composite trait (hence the 
+good mediation).
+
+Gm11427 is a very good mediator in adipose tissue, and a pretty good mediator 
+in liver. This is a predicted pseudogene, so it's not obvious how this 

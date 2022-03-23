@@ -1,253 +1,267 @@
-mod.idx <- which(names(mem) == gsub("ME", "", mod))
-mod.genes <- mem[[mod.idx]]
-length(mod.genes)
-gene.idx <- match(mod.genes, gene.info[,1])
-gene.table <- gene.info[gene.idx,]
-gene.table
-table(gene.table[,"chr"])
-barplot(table(gene.table[,"chr"]))
-gene.lod.idx <- which(lod.table[,1] %in% mod.genes)
-gene.lod.table <- lod.table[gene.lod.idx,]
-dim(gene.lod.table)
-plot(adipose.mod.qtl, map = map, lodcol = mod.locale)
-head(gene.lod.table)
-lod.chr <- strsplit(gene.lod.table[,"marker"], "_")
-lod.chr <- strsplit(gene.lod.table[,"marker.id"], "_")
-lod.chr
-lod.chr <- sapply(strsplit(gene.lod.table[,"marker.id"], "_"), function(x) x[1])
-lod.chr
-barplot(table(lod.chr))
-plot(adipose.mod.qtl, map = map, lodcol = mod.locale)
-barplot(table(lod.chr))
-head(gene.lod.table, 20)
-gene.id <- "ENSMUSG00000000948"
-gene.locale <- which(colnames(expr) == gene.id)
-gene.scan <- scan1(genoprobs, expr[,gene.locale], addcovar = dataset.DO.Cube.Adipose$covar.matrix, kinship = K)
-plot(gene.scan, map = map)
-chr = 7
-gene.coef <- scan1coef(genoprobs[,chr], expr[,gene.locale], addcovar = dataset.DO.Cube.Adipose$covar.matrix, kinship = K[[chr]])
-plot_coefCC(gene.coef, map = map)
-length(mod.genes)
-library(WGCNA)
-?blockwiseModules
-library(WGCNA)
-?blockwiseModules
-library(propagate)
-mat <- matrix(rnorm(100), 10, 10)
-test <- bigcor(mat)
-test
-pheatmap(test)
-library(pheatmap)
-pheatmap(test)
-class(test)
-pheatmap(test[[1]])
-test[[1]]
-test[[2]]
-pheatmap(as.matrix(test))
-as.matrix(test)
-dim(test)
-?propagate
-?blockwiseModules
-library(WGCNA)
-?blockwiseModules
-install.packages("tinytex")
-library(tinytex)
-q()
-library(WGCNA)
-citation(WGCNA)
-citation("WGCNA")
+get_r(18)*15
+get_r(87)*15
+get_r(11)*15
+get_r(14)*15
+get_r(7)*15
+get_r(25)*15
+get_r(65)*15
+?image
+?text
+?asix
+?axis
+test <- NULL
+ls()
+library(emma)
+??emma
+??kinship
+?cutree
+?plot.dendrogram
+??plot.phylo
+??phylo
+?scale
+x
+x <- c(rnorm(100,1,0.1))
+hist(x)
 library(qtl2)
-citation("qtl2")
-library(qtl2)
-?find_peaks
-test <- readRDS("~/Documents/Projects/Epigenetics/Epigenetics_Manuscript/Results/ChromHMM/9_states_C/Chromatin.State.Position.Far.Genes.RDS")
-str(test)
-length(test)
-length(test[[1]])
-str(test[[1]])
-if (!requireNamespace("BiocManager", quietly = TRUE))#
-    install.packages("BiocManager")#
-#
-BiocManager::install("simplifyEnrichment")
-library(simplifyEnrichment)
-BiocManager::install("ComplexHeatmap")
-BiocManager::install("simplifyEnrichment")
-?GO_similarity
-library(simplifyEnrichment)
-GO_similarity
-?GO_similarity
-?simplifyGO
-library(simplifyEnrichment)
-?GO_similarity
-?compare_clustering_methods
-?simplifyGOFromMultipleLists
-page(simplifyGOFromMultipleLists)
-library(RColorBrewer)
-brewer_pal_all()
-?brewer_pal
-??brewer_pal
-??brewer
-??show_pal
-??brewer_pal
-??all
-display.brewer.all()
-library(qtl2)
-?fit1
-?scan1blup
-library(RColorBrewer)
-display.brewer.all()
-library(simplifyGo)
-library(simplifyEnrichment)
-?simplify_GO
-?simplifyGO
-page(simplifyGO)
-?binary_cut
-library(simplifyEnrichment)
-page(simplifyGO)
-library(kohonen)
-?som
-plot.som
-?som.plot
-??som.plot
-??plot.som
-?som
-mod.mem <- readRDS("~/Dropbox (JAX)/Jax Summer 2021/Projects/Module_Mapping/Data/Adipose/Module_Membership.RDS")
-str(mod.mem)
-test <- unlist(mod.mem)
-str(test)
-head(test)
-mod.names <- sapply(1:length(mod.mem), function(x) rep(names(mod.mem)[x], length(mod.mem[[x]])))
-head(mod.names)
-mod.names <- sapply(1:length(mod.mem), function(x) paste0("Mod", rep(names(mod.mem)[x], length(mod.mem[[x]])))
-)
-str(mod.names)
-mod.transcripts <- matrix(unlist(mod.mem), ncol = 1)
-head(mod.transcripts)
-mod.transcript.info <- cbind(mod.names, mod.transcripts)
-mod.names <- sapply(1:length(mod.mem), function(x) paste0("Mod", rep(names(mod.mem)[x], length(mod.mem[[x]]))))
-mod.transcript.info <- cbind(mod.names, mod.transcripts)
-length(mod.transcripts)
-length(mod.names)
-mod.transcript.info <- cbind(unlist(mod.names), mod.transcripts)
-head(mod.transcript.info)
-qtl.transcripts <- sample(unlist(mod.mem), 100)
-qtl.transcripts
-eqtl.transcripts <- sample(unlist(mod.mem), 100)
-eqtl.mod <- match(eqtl.transcripts, mod.transcript.info[,2])
-eqtl.mod
-eqtl.mod <- mod.transcript.info[eqtl.mod.idx,1]
-eqtl.mod.idx <- match(eqtl.transcripts, mod.transcript.info[,2])
-eqtl.mod <- mod.transcript.info[eqtl.mod.idx,1]
-eqtl.mod
-rnd.transcript.table <- cbind(eqtl.mod, eqtl.transcripts)
-rnd.transcript.table
-library(simplifyEnrichment)
-?GO_similarity
-a <- matrix(rnorm(100), 10, 10)
-a
-b <- matrix(rnorm(100), 10, 10)
-b
-plot(a, b)
-plot(as.vector(a), as.vector(b))
-plot(a, b, xlab = "Distance Between Transcripts", ylab = "Allele Correlation")
-source('~/Documents/R/shiny/Chromatin_State_and_eQTL_Viewer/code/useful_r_code/sliding.window.el.R', chdir = TRUE)
-gene.windows <- sliding.window.el(seq.int(-1, 2, length.out = 100), 10, 5)
-gene.windows
-sapply(gene.windows, length)
-sapply(gene.windows, function(x) max(x) - min(x))
-length(gene.windows)
-q()
-library(kohonen)
-?som
-cent <- list()
-cent$overlap <- rnorm(100)
-cent$no-overlap <- rnorm(100)
-cent$nooverlap <- rnorm(100)
-cent
-boxplot(cent)
-test <- readRDS("~/Desktop/eQTL_stats.RDS")
-str(test)
-library(pheatmap)
-islet.trait.cor <- test[[1]]$invivo_me_cor
-str(islet.trait.cor)
-pheatmap(islet.trait.cor)
-pheatmap(t(islet.trait.cor))
-pdf("~/Desktop/trait.cor.pdf", width = 10, height = 7)
-pheatmap(t(islet.trait.cor))
-dev.off()
-pdf("~/Desktop/trait.cor.pdf", width = 12, height = 5.5)
-pheatmap(t(islet.trait.cor))
-dev.off()
-mod <- c(72, 45, 9, 43, 58, 65, 46, 59, 64, 66, 63, 62, 67)
-mod.locale <- match(rownames(trait.islet.cor))
-mod.locale <- match(rownames(islet.trait.cor))
-mod.locale <- match(mod, rownames(islet.trait.cor))
-mod.locale
-rownames(islet.trait.cor)
-mod.names <- paste0("ME", mod)
-mod.locale <- match(mod.rownames(islet.trait.cor))
-mod.locale <- match(rownames(islet.trait.cor))
-mod.locale <- match(mod, rownames(islet.trait.cor))
-mod.locale
-mod
-mod.locale <- match(mod.names, rownames(islet.trait.cor))
-mod.locale
-mod.cor <- islet.trait.cor[modl.locale,]
-mod.cor <- islet.trait.cor[mod.locale,]
-setdiff(mod.locale, 1:nrow(islet.trait.cor))
-setdiff(1:nrow(islet.trait.cor), mod.locale)
-other.locale <- setdiff(1:nrow(islet.trait.cor), mod.locale)
-boxplot(as.vector(islet.trait.cor[mod.locale,]), as.vector(islet.trait.cor[other.locale,]))
-boxplot(abs(as.vector(islet.trait.cor[mod.locale,])), abs(as.vector(islet.trait.cor[other.locale,])))
+?calc_kinship
+?scan1
+libary(qtl2)
 library(qtl2)
 ?scan1
-source('~/Documents/git_repositories/useful_r_code/plot.hexbin.R')
-x <- rnorm(100)
-y <- rnorm(100)
-plot.hexbin(x,y)
-library(oposSOM)
-?opossom.run
-?barplot
-??pam
-library(cluster)
-?cluster
-??cluster
-?pam
-test <- readRDS("~/Documents/Projects/TRiAGE/MOFA/Results/embryo/Factor13_Chr13/Module1/non.decomp.mat.RData")
+?colorRamp
+load('~/Documents/Projects/Cube_Hackathon_P1/Data/dataset.DO.CUBE.multissue.RData')
+ls()
+library(qtl2)
+str(dataset.DO.Cube.Adipose)
+names(dataset.DO.Cube.Adipose)
+names(dataset.DO.Cube.Adipose$data)
+expr <- dataset.DO.Cube.Adipose$data$norm
+str(expr)
+test <- scan1(genoprobs, expr[,1,drop=FALSE], kinship = K)
+plot(test, map = map)
 str(test)
-10^0.8
-log10(0.8)
-log10(0.05)
--log10(0.05)
-10^1.3
-library(opposSOM)
-library(oposSOM)
-?opossom.run
-?compact
-??compact
-f()
-?BiocManager
-??BiocManager
-?install.packages()
-?BiocManager::install
-library(RColorBrewer)
-display.brewer.all()
-library(umap)
-?umap
-library(oposSOM)
-?env
-?opossom.run
+plot(test[,1])
+peaks <- find_peaks(test, map = map, threshold = 6, prob = 0.95)
+peaks
+peaks <- find_peaks(test, map = map, threshold = 5, prob = 0.95)
+peaks
+source('~/Documents/git_repositories/useful_r_code/adjust.R', chdir = TRUE)
+new.trait <- adjust(expr[,1,drop=FALSE], expr[,2,drop=FALSE])
+new.scan <- scan1(genoprobs, new.trait, kinship = K)
+plot(new.scan, map = map)
+??runmean
+??str_to_lower
+?eval
+effects <- read.csv("~/Documents/Projects/Yeast/Results/pathway_ordering/Variant_Influences.csv")
+head(effects)
+effects <- as.matrix(read.csv("~/Documents/Projects/Yeast/Results/pathway_ordering/Variant_Influences.csv", stringsAsFactors = FALSE))
+head(effects)
+main.idx <- which(is.na(effects[,"Target"]))
+int.idx <- which(!is.na(effects[,"Target"]))
+group.effects <- list(as.numeric(effects[main.idx,"Effect"]), as.numeric(effects[int.idx,"Effect"]))
+boxplot(group.effects)
+effects[main.idx,"Effect"])
+effects[main.idx,"Effect"]
+main.idx
+effects[,"Target"]
+main.idx <- which(is.na(effects[,"Position"]))
+int.idx <- which(!is.na(effects[,"Position"]))
+group.effects <- list(as.numeric(effects[main.idx,"Effect"]), as.numeric(effects[int.idx,"Effect"]))
+boxplot(group.effects)
+main.idx
+effects[,"Position"]
+colnames(effects)
+main.idx <- which(is.na(effects[,3]))
+main.idx <
+main.idx
+effects[,3]
+effects <- as.matrix(read.csv("~/Documents/Projects/Yeast/Results/pathway_ordering/Variant_Influences.csv", stringsAsFactors = FALSE))
+head(effects)
+main.idx <- which(is.na(effects[,"Position.1"]))
+main.idx
+int.idx <- which(!is.na(effects[,"Position.1"]))
+group.effects <- list(as.numeric(effects[main.idx,"Effect"]), as.numeric(effects[int.idx,"Effect"]))
+boxplot(group.effects)
+group.effects <- list(abs(as.numeric(effects[main.idx,"Effect"])), abs(as.numeric(effects[int.idx,"Effect"])))
+boxplot(group.effects)
+group.effects <- list(log10(abs(as.numeric(effects[main.idx,"Effect"]))), log10(abs(as.numeric(effects[int.idx,"Effect"]))))
+boxplot(group.effects)
+?boxplot
+test <- readRDS("~/Documents/Projects/Islets/CAPE_transcripts/Results/CCA_Clusters/all_traits/Bootstrapped.Transcript.Loadings.RDS")
+str(test)
+length(test)
+names(test)
+test <- readRDS("~/Documents/Projects/Islets/CAPE_transcripts/Results/CAPE/transcripts_CCA/cross_geno.RData")
+dim(test)
+choose(2, 228)
+choose(228, 2)
+test <- readRDS("~/Documents/Projects/Islets/CAPE_transcripts/Results/CAPE/transcripts_CCA/cross_pairscan.RData")
+str(test)
+names(test)
+str(test$pairscan_results)
+head(test$pairscan_results[[1]][[1]])
+et1.net <- test$pairscan_results[[1]][[1]]
+library(igraph)
+net <- graph_from_edgelist(et1.net[,1:2])
+E(net$weight) <- as.numeric(et1.net[,5])
+E(net)$weight <- as.numeric(et1.net[,5])
+plot(net)
+plot(net, layout = layout_nicely)
+plot(net, layout = layout_on_grid)
+plot(net, layout = layout_on_circle)
+plot(net, layout = layout_in_circle)
+E(net)$weight <- as.numeric(et1.net[,5])/as.numeric(test$pairscan_results[[1]][[2]][,5])
+?boxplot
+?t.test
+library(rgl)
+??3d
+??plot3d
+library(wordcloud)
+?wordcloud
+library(qtl2)
+?plot.qtl2
+??plot.qtl2
 library(qtl2)
 ?find_peaks
-library(oposSOM)
-?opossom.run
-library(stringr)
-?string
-??stringr
-dev.new(height = 4, width = 8)
+test <- readRDS("~/Documents/Projects/Islets/CAPE_transcripts/Results/CCA_Clusters/all_traits/Bootstrapped.Transcript.Loadings.RDS")
+str(test)
+length(test)
+names(test)
+str(test[[1]])
+str(test[[1]][[1]])
+ct <- test[[1]][[1]]
+length(which(ct != 0))
 library(qtl2)
-plot_coefCC
-?plot_coefCC
-setwd("~/Documents/Projects/Islets/CAPE_transcripts/")
+?find_peaks
+test <-readRDS('~/Documents/Projects/TB/DO_prioritization/Results/Without_Decomposition/lung_network_cw_igg/Full_List/Module.Membership.RData')
+str(test)
+test
+test <-readRDS('~/Documents/Projects/TB/DO_prioritization/Results/Without_Decomposition/lung_network_cw_igg/Full_List/Gene.List.FGN.RData')
+str(Test)
+str(test)
+test <- readRDS("~/Documents/Projects/TB/DO_prioritization/Results/Without_Decomposition/lung_network_cw_igg/pos_gene_enrichment.RDS")
+str(test)
+names(test)
+str(test[[1]])
+names(test[[1]])
+(test[[1]]$query)
+names(test[[2]])
+str(test[[2]])
+test <- readRDS("~/Documents/Projects/TB/DO_prioritization/Results/Without_Decomposition/lung_network_lung_tnf/pos_gene_enrichment.RDS")
+test <- readRDS("~/Documents/Projects/TB/DO_prioritization/Results/Without_Decomposition/lung_network_lung_s100a8/pos_gene_enrichment.RDS")
+?read.delim
+?legend
+?read.table
+library(readxl)
+test <- read_excel("~/Documents/Projects/Epigenetics/Epigenetics_Manuscript/Data/peakome/H3K4me1_129C1_e5.broad_peaks.xls")
+test <- read_table("~/Documents/Projects/Epigenetics/Epigenetics_Manuscript/Data/peakome/H3K4me1_129C1_peaks.xls")
+test <- read.table("~/Documents/Projects/Epigenetics/Epigenetics_Manuscript/Data/peakome/H3K4me1_129C1_peaks.xls")
+str(test)
+head(test)
+?strsplit
+9940954-9942543
+?boxplot
+?barplot
+install.packages("plspm")
+library(devtools)
+install_github("gastonstat/plspm")
+library(plspm)
+data(russett)
+head(russett)
+AGRIN = c(0, 0, 0)#
+INDEV = c(0, 0, 0)#
+POLINS = c(1, 1, 0)#
+rus_path = rbind(AGRIN, INDEV, POLINS)
+colnames(rus_path) = rownames(rus_path)
+rus_path
+rus_blocks = list(1:3, 4:5, 6:11)
+rus_blocks
+rus_modes = rep("A", 3)
+rus_pls = plspm(russett, rus_path, rus_blocks, modes = rus_modes)
+rus_pls
+summary(rus_pls)
+rus_pls$path_coefs
+rus_pls$inner_model
+plot(rus_pls)
+plot(rus_pls, what = "loadings", arr.width = 0.1)
+library(ggplot2)#
+library(reshape)
+xloads = melt(rus_pls$crossloadings, id.vars = c("name", "block"),
+ggplot(data = xloads,#
+       aes(x = name, y = value, fill = block)) +#
+geom_hline(yintercept = 0, color = "gray75") +#
+geom_hline(yintercept = c(-0.5, 0.5), color = "gray70", linetype = 2) + geom_bar(stat = 'identity', position = 'dodge') +#
+facet_wrap(block ~ LV) +#
+theme(axis.text.x = element_text(angle = 90),#
+line = element_blank()) + ggtitle("Crossloadings")
+xloads = melt(rus_pls$crossloadings, id.vars = c("name", "block"),
+variable_name = "LV")
+ggplot(data = xloads,#
+       aes(x = name, y = value, fill = block)) +#
+geom_hline(yintercept = 0, color = "gray75") +#
+geom_hline(yintercept = c(-0.5, 0.5), color = "gray70", linetype = 2) + geom_bar(stat = 'identity', position = 'dodge') +#
+facet_wrap(block ~ LV) +#
+theme(axis.text.x = element_text(angle = 90),#
+line = element_blank()) + ggtitle("Crossloadings")
+?gsub
+library(wordcloud)
+?wordcloud
+library(wordcloud2)
+?wordcloud2
+wordcloud2(demoFreq)
+demoFreq
+library(RColorBrewer)
+??brewer_pal
+?tm::removeWords
+stopwords("english")
+tm::stopwords("english")
+?wordcloud
+library(wordcloud)
+?tm_map.SimpleCorpus
+example(wordcloud)
+test <- readRDS("~/Documents/Projects/Islets/CAPE_transcripts/Results/CCA_Clusters/all_traits/QTL.Adipose.trait.RDS)
+test <- readRDS("~/Documents/Projects/Islets/CAPE_transcripts/Results/CCA_Clusters/all_traits/QTL.Adipose.trait.RDS")
+str(test)
+library(qtl2)
+find_peaks(test[[1]], lodcol = 13)
+?find_peaks
+find_peaks(test[[1]][,13])
+load('~/Documents/Projects/Islets/CAPE_transcripts/Data/dataset.DO.CUBE.multissue.RData')
+find_peaks(test[[1]][,13], map = map)
+find_peaks(test[[1]][,13,drop=FALSE], map = map)
+names(test)
+find_peaks(test[[12]][,13,drop=FALSE], map = map)
+find_peaks(test[[2]][,13,drop=FALSE], map = map)
+find_peaks(test[[2]][,"Composite_Trait13",drop=FALSE], map = map)
+find_peaks(test[[2]][,"Composite_Trait13",drop=FALSE], map = map, prob = 0.95)
+setwd("~/Documents/Projects/Islets/CAPE_transcripts")
 library(here)
-set_here()
+qtl.scan <- readRDS(here("Results", "CCA_clusters", exp.name, paste("QTL.", tissue.name, ".trait.RDS")))
+exp.name = "all_traits"
+qtl.scan <- readRDS(here("Results", "CCA_clusters", exp.name, paste("QTL.", tissue.name, ".trait.RDS")))
+tissue.name = "Adipose"
+qtl.scan <- readRDS(here("Results", "CCA_clusters", exp.name, paste("QTL.", tissue.name, ".trait.RDS")))
+qtl.scan <- readRDS(here("Results", "CCA_clusters", exp.name, paste0("QTL.", tissue.name, ".trait.RDS")))
+CT = 13; qtl.chr = 11; qtl.start = 40e6; qtl.end = 50e6
+names(qtl.scan)
+colnames(qtl.scan[[2]])
+paste0("Composite_Trait", CT)
+peak.table <- find_peaks(qtl.scan$CTrait_QTL[,paste0("Composite_Trait", CT)])
+peak.table <- find_peaks(qtl.scan$CTrait_QTL[,paste0("Composite_Trait", CT)], map = map, prob = 0.95)
+peak.table <- find_peaks(qtl.scan$CTrait_QTL[,paste0("Composite_Trait", CT),drop=FALSE], #
+    map = map, prob = 0.95)
+peak.table
+chr.locale <- which(peak.table[,"chr"] == qtl.chr)
+chr.locale
+chr.peak <- peak.table[chr.locale,]
+chr.peak
+peak.table[chr.peak,"ci_lo"]
+class(peak.table)
+chr.peak
+chr.peak[,"ci_lo"]
+qtl.start <- floor(chr.peak[,"ci_lo"])*1e6
+qtl.start
+qtl.end <- floor(chr.peak[,"ci_hi"])*1e6
+qtl.end
+qtl.end <- ceiling(chr.peak[,"ci_hi"])*1e6
+qtl.end

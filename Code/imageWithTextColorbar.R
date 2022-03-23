@@ -13,7 +13,7 @@ col.scale = c("green", "purple", "orange", "blue", "gray"), light.dark = "f",
 class.mat = NULL, grad.dir = c("high", "low", "middle", "ends"), 
 color.fun = c("linear", "exponential"), exp.steepness = 1, color.spread = 50,
 global.color.scale = FALSE, global.min = NULL, global.max = NULL,
-axis.line = -3, use.pheatmap.colors = FALSE, ax.min = NULL, ax.max = NULL, 
+axis.line = 0, use.pheatmap.colors = FALSE, ax.min = NULL, ax.max = NULL, 
 n.ax.ticks = NULL, hadj = NA, padj = NA, bounding.box = TRUE){
 
 	
@@ -194,7 +194,7 @@ n.ax.ticks = NULL, hadj = NA, padj = NA, bounding.box = TRUE){
 		if(use.pheatmap.colors){
 			pal <- colorRampPalette(rev(RColorBrewer::brewer.pal(n = 7, name = "RdYlBu")))(100)
 			bks <- segment.region(mat.min, mat.max, 
-			length(pal), alignment = "ends")
+				length(pal), alignment = "ends")
 			col.key <- cbind(bks[1:length(pal)], pal)
 			num.cols <- nrow(col.key)
 			}else{	

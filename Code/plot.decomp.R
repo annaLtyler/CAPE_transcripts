@@ -9,7 +9,13 @@
 
 plot.decomp <- function(mat, pc = 2, mean.center = TRUE, 
 scale.col = FALSE, cols = rep("black", nrow(mat)), color.by = NULL, 
-pch = NULL, cex = 1, main = NULL, plot.results = TRUE){
+pch = NULL, cex = 1, main = NULL, label.points = FALSE, label.cex = 1, 
+xlim = NULL, plot.results = TRUE){
+
+	if(label.points && pc > 2){
+		warning("Cannot label points with pc > 2")
+		pc <- 2
+		}
 
 	na.rows <- which(apply(mat, 1, function(x) all(!is.na(x))))
 	if(length(na.rows) < nrow(mat)){
@@ -34,7 +40,8 @@ pch = NULL, cex = 1, main = NULL, plot.results = TRUE){
 	var.text <- signif(var.exp[1:ncol(pc.mat)]*100, 2)	
 	colnames(pc.mat) <- paste0("PC", 1:ncol(pc.mat), " (", var.text, "%)")
 	decomp$rows.used <- na.rows
-	
+	decomp$var.exp <- var.exp
+
 	if(plot.results){
 		if(is.null(pch)){pch = 16}
 
@@ -58,9 +65,20 @@ pch = NULL, cex = 1, main = NULL, plot.results = TRUE){
 				}
 			}
 			if(pc == 2){
-				plot(pc.mat[,1], pc.mat[,2], xlab = colnames(pc.mat)[1], 
-				ylab = colnames(pc.mat)[2], 
-				main = plot.label[i], col = cols, pch = pch, cex = cex)
+				if(label.points){
+					if(is.null(xlim)){
+						xlim = c(min(pc.mat[,1]), max(pc.mat[,1])*1.05)
+					}
+					plot(pc.mat[,1], pc.mat[,2], xlab = colnames(pc.mat)[1], 
+					ylab = colnames(pc.mat)[2], 
+					main = plot.label[i], col = cols, pch = pch, cex = cex,
+					xlim = xlim)
+					text(pc.mat[,1], pc.mat[,2], rownames(mat), pos = 4, cex = label.cex)
+				}else{
+					plot(pc.mat[,1], pc.mat[,2], xlab = colnames(pc.mat)[1], 
+					ylab = colnames(pc.mat)[2], 
+					main = plot.label[i], col = cols, pch = pch, cex = cex)
+				}
 			}else{
 				pairs(pc.mat[,1:pc], col = cols, pch = pch, cex = cex,
 				main = plot.label[i])

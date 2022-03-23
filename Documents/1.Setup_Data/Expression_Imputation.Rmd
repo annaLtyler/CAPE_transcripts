@@ -1,0 +1,102 @@
+---
+title: "Expression Imputation"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+
+The purpose of this workflow is to test expression imputation methods.
+
+```{r set_param}
+exp.name <- "all_traits"
+```
+
+
+```{r load_code}
+is.interactive = FALSE
+#is.interactive = TRUE
+library("here")
+
+results.dir <- here("Results", "CCA_Clusters", exp.name)
+if(!file.exists(results.dir)){dir.create(results.dir)}
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
+"RColorBrewer", "igraph", "corpcor", "easyPubMed", "knitr", "kableExtra",
+"ape", "wordcloud", "wordcloud2")
+run.simplify.enrichment = FALSE
+#library("simplifyEnrichment");run.simplify.enrichment = TRUE
+load_libraries(all.packages, personal.library = TRUE)
+data(CCcolors)
+```
+
+Read in pre-filtered and pre-adjusted transcript data from 
+adjust_transcripts_traits.Rmd
+
+```{r read_data}
+tissue.adj.expr <- readRDS(file.path(results.dir, "Adjusted_Expression.RDS"))
+tissue.names <- names(tissue.adj.expr)
+
+pheno.file <- here("Results", "CCA_Clusters", exp.name, "Adjusted_Phenotypes.RDS")
+cca.pheno <- readRDS(pheno.file)
+
+tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+data.set.names <- lapply(1:length(tissue.names), 
+function(x) paste0("dataset.DO.Cube.", tissue.names[x]))
+gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, function(x) get(x)$annot.mrna))))
+
+eqtl <- lapply(data.set.names, function(x) get(x)$lod.peaks$additive)
+```
+
+
+Test heritability
+
+```{r herit}
+overall.k.file <- here("Data", "overall.kinship.RDS")
+if(!file.exists(overall.k.file)){
+    overall.k <- calc_kinship(genoprobs, "overall")
+    saveRDS(overall.k, overall.k.file)
+}else{
+    overall.k <- readRDS(overall.k.file)
+}
+chr.kin.file <- here("Data", "kinship.by.chr.RDS")
+if(!file.exists(chr.kin.file)){
+    chr.kinship <- calc_kinship(genoprobs, "chr")
+    saveRDS(chr.kinship, chr.kin.file)
+}else{
+    chr.kinship <- readRDS(chr.kin.file)
+}
+
+
+
+common.ind <- Reduce("intersect", list(rownames(test.gene), rownames(genoprobs[[1]]), rownames(cca.pheno)))
+ind.geno.locale <- match(common.ind, rownames(genoprobs[[1]]))
+ind.expr.locale <- match(common.ind, rownames(test.gene))
+ind.pheno.locale <- match(common.ind, rownames(cca.pheno))
+
+
+before.herit <- after.herit <- matrix(NA, nrow = 100, ncol = length(genoprobs))
+for(i in 1:nrow(before.herit)){
+    print(i)
+    before.herit[i,] <- sapply(chr.kinship, function(x) est_herit(tissue.adj.expr[[1]][,i], x))
+}
+
+pheno.adj.expr <- adjust(tissue.adj.expr[[1]], cca.pheno)
+for(i in 1:nrow(after.herit)){
+    print(i)
+    after.herit[i,] <- sapply(chr.kinship, function(x) est_herit(pheno.adj.expr[,i], x))
+}
+
+plot(before.herit, after.herit)
+abline(0,1)
+```

@@ -75,11 +75,14 @@ text.cex = 0.7, label.srt = 0, legend.x = NULL, legend.y = NULL, notch = FALSE){
 		par(xpd = FALSE)
 		} #end looping through group elements
 	axis(2)
+
+	par(xpd = NA)
 	if(is.null(legend.x) || is.null(legend.y)){
 		legend("topleft", fill = group.cols, legend = group.labels)
 	}else{
 		legend(legend.x, legend.y, fill = group.cols, legend = group.labels)
 	}
-	
+	par(xpd = TRUE)	
+
 	}
 

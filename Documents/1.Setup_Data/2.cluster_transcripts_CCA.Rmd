@@ -80,6 +80,7 @@ full transcript matrix.
 I was expecting separation by tissue, but they all overlap each other. 
 
 ```{r transcript_overlap}
+
 n.expr.pc = n.trait.pc = 5
 
 transcript.list <- lapply(tissue.adj.expr, colnames)
@@ -92,6 +93,16 @@ common.ind.idx <- lapply(tissue.adj.expr, function(x) match(common.ind, rownames
 
 matched.expr <- lapply(1:length(tissue.adj.expr), 
 function(x) tissue.adj.expr[[x]][common.ind.idx[[x]], common.transcript.idx[[x]]])
+
+all.var.expr <- vector(mode = "list", length = length(matched.expr))
+names(all.var.expr) <- names(matched.expr)
+for(i in 1:length(all.var.expr)){
+   all.var.expr[[i]] <- plot.decomp(matched.expr[[i]], plot.results = FALSE)
+}
+par(mfrow = c(2,2))
+for(i in 1:length(all.var.expr)){
+    barplot_with_num(round(all.var.expr[[i]]$var.exp[1:20], 2), main = tissue.names[i])
+}
 
 tissue.label <- unlist(lapply(1:length(matched.expr), 
 function(x) rep(names(tissue.adj.expr)[x], ncol(matched.expr[[x]]))))
@@ -458,25 +469,7 @@ get_best_penalty  <- function(tissue.grid.results){
     return(best.tissue.penalty)
 }
 
-get_perm_grid <- function(tissue.perm){
-    xpen <- tissue.perm$penaltyxs
-    zpen <- tissue.perm$penaltyzs
-    uxpen <- sort(unique(xpen))
-    uzpen <- sort(unique(zpen))
 
-    zmat <- cor.mat <- p.mat <- matrix(NA, nrow = length(uxpen), ncol = length(uzpen))
-    rownames(zmat) <- rownames(cor.mat) <- rownames(p.mat) <- uxpen
-    colnames(zmat) <- colnames(cor.mat) <- colnames(p.mat) <- uzpen
-    for(i in 1:length(xpen)){
-        row.idx <- which(uxpen == xpen[i])
-        col.idx <- which(uzpen == zpen[i])
-        zmat[row.idx, col.idx] <- tissue.perm$zstats[i]
-        cor.mat[row.idx, col.idx] <- tissue.perm$cors[i]
-        p.mat[row.idx, col.idx] <- tissue.perm$pvals[i]
-    }
-    result <- list("Cor" = cor.mat, "Z" = zmat, "p" = p.mat)
-    return(result)
-}
 ```
 
 For each set of transcripts, we performed sparse CCA over a series of penalties
@@ -529,6 +522,8 @@ for(i in 1:length(matched.mats)){
     }
     cat("\n\n")
 }
+
+#par(mar = c(2,2,2,2));imageWithTextColorbar(matrix(seq(0, 0.8, 0.01), nrow = 1), col.scale = "blue", axis.line = 0, cex = 1, global.color.scale = TRUE, global.min = 0, global.max = 0.8)
 ```
 
 
@@ -641,7 +636,7 @@ all_one_side <- function(estimate.mat){
 
 #this is an alternative function that looks for transcripts with
 #loading distributions significantly different from 0.
-sig_loadings <- function(estimate.mat, fdr = 0.05){ 
+sig_loadings <- function(estimate.mat, fdr = 0.05, plot.sample = FALSE){ 
     has.vals <- which(rowSums(estimate.mat) != 0)
     
     all.p <- apply(estimate.mat[has.vals,], 1, function(x) t.test(x, mu = 0)$p.value)
@@ -653,11 +648,13 @@ sig_loadings <- function(estimate.mat, fdr = 0.05){
         estimate.means[has.vals[sig.tests]] <- rowMeans(estimate.mat[has.vals[sig.tests],,drop=FALSE])
     }
 
-    #non.zero.sample <- sample(has.vals[sig.tests], 20)
-    #zero.sample  <- sample(setdiff(1:nrow(estimate.mat), has.vals[sig.tests]), 20)
-    #mean.order <- order(estimate.means[non.zero.sample])
-    #all.example.idx <- c(non.zero.sample[mean.order], zero.sample)
-    #boxplot(t(estimate.mat[all.example.idx,]), ylim = c(-0.2, 0.2), axes = FALSE);abline(h = 0);axis(2)
+    if(plot.sample){
+        non.zero.sample <- sample(has.vals[sig.tests], 20)
+        zero.sample  <- sample(setdiff(1:nrow(estimate.mat), has.vals[sig.tests]), 20)
+        mean.order <- order(estimate.means[non.zero.sample])
+        all.example.idx <- c(non.zero.sample[mean.order], zero.sample)
+        boxplot(t(estimate.mat[all.example.idx,]), ylim = c(-0.2, 0.2), axes = FALSE);abline(h = 0);axis(2)
+    }
 
     return(estimate.means)
 
@@ -772,7 +769,7 @@ The following boxplots show the distributions of transcript numbers
 across all CT pairs for all tissues. Adipose and Islet picked up
 transcripts while liver and skeletal muscle dropped some.
 
-```{r transcript_numbers_combined}
+```{r transcript_numbers_combined, results = "asis"}
 cat("### Combined Results\n")
 plot.grouped.boxes(lapply(tissue.pos.neg, t), type = "matrix")
 cat("\n\n")
@@ -785,7 +782,7 @@ and the bootstrap-aggregaged CCA. It's a mixed bag. Sometimes the correlation
 from the bootstrapping is better and sometimes it's worse. Can we assume
 that if the correlation is worse, the original CCA was overfitting?
 
-```{r cancor}
+```{r cancor, results = "asis"}
 all.cancor <- vector(mode = "list", length = length(tissue.names))
 names(all.cancor) <- tissue.names
 for(i in 1:length(tissue.names)){
@@ -816,7 +813,7 @@ plot(unlist(all.cca.cancor), unlist(all.boot.cancor), col = unlist(pt.col), pch 
 xlab = "CCA Canonical Correlation", ylab = "Bootstrapped Canonical Correlation")
 abline(0,1)
 par(xpd = NA)
-legend(max(unlist(all.cca.cancor)*1.05), max(unlist(all.boot.cancor)), 
+legend(max(unlist(all.cca.cancor)*1.05, na.rm = TRUE), max(unlist(all.boot.cancor), na.rm = TRUE), 
 legend = colnames(all.cca.cancor), pch = 16, col = pt.col[1,])
 par(xpd = TRUE)
 
@@ -1209,9 +1206,12 @@ search.name = c("partial", "full"), rect.width = 0.1, rect.height = 0.1, lwd = 0
 #Because the up and down transcript effects are separated, we multiply
 #the down-transcripts by -1 to reverse the trait effects. 
 
-plot_decorated_bip <- function(tissue.bip, tissue.mats, tissue.results, 
-cluster.assig, filename, fig.width = 20, fig.height = 20){
+plot_decorated_bip <- function(tissue.full.bip, tissue.mats, tissue.results, 
+filename, fig.width = 20, fig.height = 20){
     
+    tissue.bip <- tissue.full.bip$Network
+    term.proj <- tissue.full.bip$Projections[[1]]
+
     pdf(filename, width = fig.width, height = fig.height)
     on.exit(dev.off())
     if(is.null(tissue.bip)){
@@ -1230,13 +1230,42 @@ cluster.assig, filename, fig.width = 20, fig.height = 20){
     trait.order <- trait.clust$order
     pheatmap(t(exp.trait.mat[trait.order,seq(1,ncol(exp.trait.mat), 2)]), cex = 2)
 
-    go.cluster.color <- rep("lightgray", vcount(tissue.bip))
-    if(length(cluster.assig) > 0){
-        not.na <- which(!is.na(cluster.assig))
-        go.cluster.color[not.na] <- cluster.assig[not.na]
+    cl.cols <- c(categorical_pal(8), brewer.pal(8, "Set1"))
+    #barplot(rep(1, length(cl.cols)), col = cl.cols)
+
+    cluster.mem <- cluster_walktrap(tissue.bip)$membership
+
+    #plot network of terms only
+    plot(term.proj, vertex.size = 5, layout = layout_with_kk,
+        vertex.label.dist = 0.7, vertex.label.adj = 1, 
+        vertex.color = cl.cols[cluster.mem])
+
+    #plot network of terms as they relate to composite traits
+    node.color <- rep("lightgray", vcount(tissue.bip))
+    #node.cluster <- sapply(V(tissue.bip)$name, function(x) grep(gsub("...", "", x, fixed = TRUE), V(term.proj)$name, fixed = TRUE)) 
+    node.cluster <- sapply(V(tissue.bip)$name, function(x) which(V(term.proj)$name == x))
+
+    one.color <- sapply(node.cluster, function(x) if(length(x) == 1){cluster.mem[x]}else{0})
+    no.color <- sapply(node.cluster, function(x) if(length(x) == 0){max(cluster.mem)+1}else{0})
+    multi.color <- sapply(1:length(node.cluster), function(x) if(length(node.cluster[[x]]) > 1){cluster.mem[which(V(term.proj)$name == V(tissue.bip)$name[x])]}else{0})
+    cl.color <- rowSums(cbind(one.color, no.color, multi.color))
+
+    clustered.terms <- lapply(sort(unique(cl.color)), function(x) V(tissue.bip)$name[which(cl.color == x)])
+    layout.mat <- get.layout.mat((length(clustered.terms)-1))
+    
+    layout(layout.mat)
+    for(cl in 1:(length(clustered.terms)-1)){
+        par(mar = c(0,0,0,0))
+        word.bag <- unlist(strsplit(clustered.terms[[cl]], " ")) 
+        wordcloud(word.bag, scale = c(1, 0.1), min.freq = 0.05,
+            col = cl.cols[cl], rot.per = 0, max.words = 30)
     }
+
+    layout(matrix(1, ncol = 1))
+    par(mar = c(4,4,4,4))
+
     plot(tissue.bip, vertex.size = 5, layout = layout_with_kk,
-    vertex.label.dist = 0.7, vertex.label.adj = 1, vertex.color = go.cluster.color)
+    vertex.label.dist = 0.7, vertex.label.adj = 1, vertex.color = cl.cols[cluster.mem])
     cover_nodes(tissue.bip, label.term = "Transcript", 
     search.name = c("partial", "full"), rad = 0.03)
     add_picture_nodes(tissue.bip, exp.trait.mat[trait.order,], 
@@ -1283,7 +1312,7 @@ for(i in 1:length(tissue.names)){
     if(is.interactive){pdf(file.path(results.dir, paste0("Enrichment.mat.", 
     tissue.names[i], ".pdf")), height = 40, width = 9)}
     if(length(tissue.enrich[[i]]) > 1 && sum(sapply(tissue.enrich[[i]][[2]], length)) > 0){
-        enrich.mats[[i]] <- plot.enrichment.group(enrichment.list = tissue.enrich[[i]][[2]])
+        enrich.mats[[i]] <- plot.enrichment.group(enrichment.list = tissue.enrich[[i]][[2]], max.char = Inf)
     }else{
         plot.text("No Enrichment")
     }
@@ -1301,6 +1330,7 @@ simplifyEnrichment.
 #I'm turning this off so I can run on sumner for now. For some 
 #reason I can get simplifyEnrichment to install.
 if(run.simplify.enrichment){
+    library("simplifyEnrichment")
     go.domains <- c("BP")
     cluster.col <- brewer.pal(12, "Paired")
     #go.domains = c("BP", "MF", "CC")
@@ -1324,6 +1354,9 @@ if(run.simplify.enrichment){
             #mf.df = simplifyGO(mf.mat)
             #cc.df <- simplifyGO(cc.mat)
             bp.df <- simplifyGO(bp.mat)
+            write.table(bp.df, file.path(results.dir, 
+                paste0("GO_Term_Clusters_", tissue.names[i], ".txt")), 
+                sep = "\t", quote = FALSE, row.names = FALSE)
             dev.off()
 
             #keep the assignments for each GO term
@@ -1463,7 +1496,7 @@ network that shows how the composite transcripts relate to the original
 traits as well as to biological processes. The nodes representing 
 GO term enrichments are 
 
-```{r trait_term}
+```{r trait_term, warning = FALSE, message = FALSE}
 #I'm having trouble with pheatmap devices staying open 
 #and making unfinished pdfs. This code is here and at 
 #the bottom of the loop to make sure we close pdfs
@@ -1484,10 +1517,10 @@ for(i in 1:length(tissue.names)){
         enrich.bips[[i]] <- enrich_bipartite_proj(enrich.mat = enrich.mats[[i]], 
         vertex.col = "gray", label.vertex = NULL, label.col = "lightblue", 
         search.name = "partial")
-    
-        plot_decorated_bip(tissue.bip = enrich.bips[[i]]$Network, 
-        tissue.mats = matched.mats[[i]], tissue.results = boot.CCA.results[[i]], 
-        cluster.assig = V(enrich.bips[[i]]$Projection[[1]])$go_cluster,
+
+
+        plot_decorated_bip(tissue.full.bip = enrich.bips[[i]], 
+        tissue.mats = matched.mats[[i]], tissue.results = boot.CCA.results[[i]],
         file.path(results.dir, paste0("Bip_", tissue.names[i], ".", file.text, ".pdf")),
         fig.width = 30, fig.height = 30)
     }
@@ -1891,11 +1924,23 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
 
         gene.expr <- tissue.expr[,gene.idx,drop=FALSE]
         colnames(gene.expr) <- gene.names
-        
-        if(ncol(gene.expr) <= 5){
-            plot.text(paste("Up:", paste(gene.names[[1]], collapse = ", "), 
-                "\nDown", paste(gene.names[[2]], collapse = ", ")))
+        #pheatmap(t(gene.expr), show_colnames = FALSE)
+        #pheatmap(t(gene.expr[,which(ct.loadings < 0)]), show_colnames = FALSE)
+        #pheatmap(t(gene.expr[,which(ct.loadings > 0)]), show_colnames = FALSE)
+        #pheatmap(cor(gene.expr))
+        #pheatmap(cor(gene.expr[,which(ct.loadings < 0)]))
+        #pheatmap(cor(gene.expr[,which(ct.loadings > 0)]))
+        #plot.decomp(t(gene.expr[,which(ct.loadings < 0)]), label.points = TRUE)
+        #plot.decomp(t(gene.expr[,which(ct.loadings > 0)]), label.points = TRUE)
+        #plot.decomp(cor(gene.expr[,which(ct.loadings < 0)]), label.points = TRUE)
+        #plot.decomp(cor(t(gene.expr[,which(ct.loadings > 0)])), label.points = TRUE)
+        #plot.decomp(cor(t(gene.expr[,which(ct.loadings > 0)])), label.points = TRUE)
+
+
+        if(ncol(gene.expr) <= 5){        
+            plot.text(paste(paste(gene.names, collapse = "\n")))
         }
+
         if(ncol(gene.expr) > 5 && ncol(gene.expr) <= 50){
             expr.cor <- cor(gene.expr)
             col.order <- hclust(dist(expr.cor))$order
@@ -1996,23 +2041,33 @@ pheatmap(t(loading.mat), annotation_row = tissue.col, cluster_rows = FALSE)
 #pheatmap(cor(t(loading.mat[has.vals,])))
 ```
 
-## All together canonical correlations
 
-The following figure shows the distribution of canonical correlations
-for each tissue. The right-hand plot shows correlations for only 
-penalty combinations that had significant correlations.
+```{r ind_cor, eval = FALSE}
+#Compare canonical correlations to correlations between individual transcripts and traits.
+#this takes a little while to calculate, and I don't want to save the results, so 
+#I'm setting eval = FALSE, only run if you need a figure for this.
 
-```{r all_can_cor, fig.width = 8, fig.height = 4}
-perm.files <- lapply(tissue.names, function(x) file.path(results.dir, paste0(x, ".", file.text, ".perm.RDS")))
-all.tissue.perm <- lapply(perm.files, readRDS)
-all.perm.results <- lapply(all.tissue.perm, function(x) x$cors)
+straight.cor <- vector(mode = "list", length = length(tissue.names))
+names(straight.cor) <- tissue.names
+for(i in 1:length(matched.mats)){
+    cat(tissue.names[i], "\n")
+    trait.mat <- matched.mats[[i]]$Z
+    expr.mat <- matched.mats[[i]]$X
+    all.trait.cor <- lapply(1:ncol(trait.mat), function(x) apply(expr.mat, 2, function(y) cor(y, trait.mat[,x])))
+    straight.cor[[i]] <- abs(unlist(all.trait.cor))
+}
 
-par(mfrow = c(1,2))
-boxplot(all.perm.results, names = tissue.names, main = "Canonical Correlation by Tissue")
+can.cors <- lapply(all.cancor, function(x) x["CCA",which(x["CCA",] > 0)])
+boot.cors <- lapply(all.cancor, function(x) x["Boot",which(x["Boot",] > 0)])
 
-sig.cor <- lapply(1:length(all.tissue.perm), function(x) all.tissue.perm[[x]]$cors[which(all.tissue.perm[[x]]$pvals < 0.05)])
-boxplot(sig.cor, names = tissue.names, main = "Significant Canonical Correlation by Tissue")
+plot.grouped.boxes(list("Canonical Correlations" = can.cors,
+    "Bootstrapped Correlations" = boot.cors,
+    "Transcript-Trait Correlations" = straight.cor), 
+    legend.x = 10, legend.y = 0.9)
+
 ```
+
+
 
 ```{r check_eqtl, eval = FALSE}
 gene.name = "Lep"
@@ -2072,9 +2127,12 @@ of trait QTLs.
 
 
 ```{r mediation, eval = FALSE}
-#tissue.name <- "Islet"; CT = 6; Chr = "X"
+#tissue.name <- "Islet"; CT = 1; Chr = "X"
 tissue.name <- "Adipose"; CT = 1; Chr = "X"
 #tissue.name = "Liver"; CT = 1; Chr = 17
+#tissue.name = "Islet"; CT = 18; Chr = 11
+#tissue.name <- "Adipose"; CT = 19; Chr = 11
+
 
 #get data for specified tissue
 tissue.locale <- which(tissue.names == tissue.name)
@@ -2090,6 +2148,7 @@ if(Chr == "X"){
 
 trait.qtl <- scan1(genoprobs[,Chr], trait.trans$Composite_Traits[,CT,drop=FALSE], kinship = K[[chr.num]])
 transcript.qtl <- scan1(genoprobs[,Chr], trait.trans$Composite_Transcripts[,CT,drop=FALSE], kinship = K[[chr.num]])
+#par(mfrow = c(2,1))
 #plot(transcript.qtl, map = map)
 #plot(trait.qtl, map = map)
 trait.peaks <- find_peaks(trait.qtl, map = map, threshold = 5, prob = 0.95)
@@ -2100,13 +2159,31 @@ trait.peak.pos <- trait.peaks[1,"pos"]
 transcript.peak.lod <- transcript.peaks[1,"lod"]
 transcript.peak.pos <- transcript.peaks[1,"pos"]
 
+#see if transcript mediates trait qtl
+adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], trait.trans$Composite_Transcripts[,CT,drop=FALSE])
+med.qtl <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
+#par(mfrow = c(2,1))
+#plot(transcript.qtl, map = map)
+#plot(trait.qtl, map = map)
+#plot(med.qtl, map = map, add = TRUE, col = "red")
+
+
 #Use Mouse Mine to make a list of positional candidates for the region identified above
 
 #Identify transcripts with non-zero loadings
 non.zero.loadings <- which(boot.CCA.results[[tissue.locale]]$u[,CT] != 0)
 transcripts <- colnames(matched.mats[[tissue.locale]]$X)[non.zero.loadings]
 #transcript.names <- gene.info[[tissue.locale]][match(transcripts, gene.info[[tissue.locale]][,1]),"symbol"]
+#full.table <- cbind(transcript.names, transcripts, boot.CCA.results[[tissue.locale]]$u[non.zero.loadings,CT])
+#loading.order <- order(as.numeric(full.table[,3]))
+#write.table(full.table[loading.order,], "~/Desktop/Adipose_CT1_transcripts.txt", quote = FALSE, row.names = FALSE, col.names = FALSE, sep = "\t")
 #length(transcripts)
+
+chr.locale <- which(gene.info[[tissue.name]][,"chr"] == Chr)
+mb.locale <- intersect(which(as.numeric(gene.info[[tissue.name]][,"start"]) >= 40),
+                which(as.numeric(gene.info[[tissue.name]][,"end"]) <= 50))
+locus.genes <- gene.info[[tissue.name]][intersect(mb.locale, chr.locale),]
+
 
 #Use Mouse Mine to make a list of affected transcripts
 write.table(transcripts, "~/Desktop/transcripts.txt", quote = FALSE, sep = "\t", 
@@ -2117,8 +2194,8 @@ write.table(transcripts, "~/Desktop/transcripts.txt", quote = FALSE, sep = "\t",
 #to identify which are most likely to be causal.
 #or use all as candidates
 
-overlap.genes <- read.table("~/Downloads/results.tsv", stringsAsFactors = FALSE, sep = "\t")
-gene.name <- overlap.genes[,2]
+overlap.genes <- intersect(transcript.names, locus.genes)
+gene.name <- locus.genes[,"symbol"]
 
 #use the expression of each gene individually to mediate the effect of the locus on the trait
 gene.id <- gene.info[[tissue.locale]][match(gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
@@ -2156,9 +2233,51 @@ plot(mediated.lod, pch = 16, xlim = c(min(mediated.lod[,1]), max(mediated.lod[,1
 text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
 abline(v = trait.peak.lod, h = transcript.peak.lod) 
 
-#bulk mediation for subsets of related genes
-#all.expr <- matched.mats[[tissue.locale]]$X[,gene.locale,drop=FALSE]
-#colnames(all.expr) <- gene.names
+#show heatmap of individual gene expression along with trait values
+ct.loadings <- boot.CCA.results[[tissue.locale]]$u[,CT,drop=FALSE]
+most.pos <- order(ct.loadings, decreasing = TRUE)[1:10]
+most.neg <- order(ct.loadings, decreasing = FALSE)[1:10]
+cand.id <- gene.info[[tissue.name]][match("Sash3", gene.info[[tissue.name]][,"symbol"]),1]
+cand.pos <- which(colnames(matched.mats[[tissue.locale]]$X) == cand.id)
+ct.expr <- matched.mats[[tissue.locale]]$X[,c(most.pos, most.neg, cand.pos),drop=FALSE];show.gene.names = TRUE
+
+#use just SH3 domain containing genes
+#sh3.genes <- read.delim("~/Downloads/SH3_genes.tsv", stringsAsFactors = FALSE)
+#sh3.gene.id <- gene.info[[tissue.name]][match(sh3.genes[,2], gene.info[[tissue.name]][,"symbol"]),1]
+#ct.expr <- matched.mats[[tissue.locale]]$X[,sh3.gene.id,drop=FALSE];show.gene.names = TRUE
+
+
+#or use all non-zero
+#ct.expr <- matched.mats[[tissue.locale]]$X[,non.zero.loadings,drop=FALSE];show.gene.names = FALSE
+
+colnames(ct.expr) <- gene.info[[tissue.name]][match(colnames(ct.expr), gene.info[[tissue.name]][,1]),"symbol"]
+
+trait.df <- data.frame(trait.trans$Composite_Traits[,CT,drop=FALSE])
+colnames(trait.df) <- "Composite_Trait1"
+
+ctrait.order <- order(trait.df[,1], decreasing = TRUE)
+
+#make the heatmap just to get the order of the columns
+test <- pheatmap(ct.expr[ctrait.order,], show_rownames = FALSE, 
+    show_colnames = show.gene.names, cluster_rows = FALSE, cluster_cols = TRUE, 
+    annotation_row = trait.df, scale = "column")
+ctranscript.order <- test$tree_col$order
+
+#plot without dendrogram
+png("~/Desktop/Sash3_expression.png", width = 10, height = 4, units = "in", res = 200)
+pheatmap(t(ct.expr[ctrait.order,ctranscript.order]), show_colnames = FALSE, 
+    show_rownames = show.gene.names, cluster_rows = FALSE, cluster_cols = FALSE, 
+    annotation_col = trait.df, scale = "row")
+dev.off()
+
+
+#use row ordering
+pheatmap(ct.expr[ctrait.order,ctranscript.order], show_rownames = FALSE, 
+    show_colnames = show.gene.names, cluster_rows = TRUE, cluster_cols = TRUE, 
+    annotation_row = trait.df, scale = "column")
+
+
+
 #big.mat <- cbind(all.expr, trait.trans$Composite_Traits[,CT,drop=FALSE], trait.trans$Composite_Transcripts[,CT,drop=FALSE])
 #pheatmap(cor(big.mat), display_numbers = TRUE)
 #pairs(big.mat)
@@ -2185,7 +2304,7 @@ trait.peak.lod <- get_LOD(trait.qtl, map = map, chr = Chr, pos = trait.peak.pos)
 
 #check best individual candidates for matching allele effects
 #don't do too many here because blups take forever
-check.alleles <- c("Elf4")
+check.alleles <- c("Sash3")
 allele.check.id <- gene.info[[tissue.locale]][match(check.alleles, gene.info[[tissue.locale]][,"symbol"]),1]
 allele.check.locale <- match(allele.check.id, colnames(matched.mats[[tissue.locale]]$X))
 allele.check.start <- as.numeric(gene.info[[tissue.locale]][match(allele.check.id, gene.info[[tissue.locale]][,1]),"start"])
@@ -2197,6 +2316,7 @@ for(g in 1:length(check.alleles)){
         matched.mats[[tissue.locale]]$X[,allele.check.locale[g],drop=FALSE], kinship = K[[chr.num]])
     eqtl.blups <- scan1blup(genoprobs[,Chr], 
         matched.mats[[tissue.locale]]$X[,allele.check.locale[g],drop=FALSE], kinship = K[[chr.num]])
+   
     layout.mat <- matrix(c(1,1,2,2,3,3,4,0), nrow = 4, byrow = TRUE)
     layout(layout.mat)
     par(mar = c(1,1,1,1))
@@ -2244,11 +2364,103 @@ Now I'm going to see if I can build the case for Sash3 from the bottom up.
 
 ```{r bottom_up, eval = FALSE}
 #Is Sash3 expression correlated with any traits?
-
+#gene.name = "Elf4"
 gene.name = c("Sash3")
 gene.id <- gene.info[[tissue.locale]][match(gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
 gene.idx <- match(gene.id, colnames(matched.mats[[tissue.locale]]$X))
 gene.expr <- matched.mats[[tissue.locale]]$X[,gene.idx,drop=FALSE]
+
+par(mfrow = c(1,2))
+plot.with.model(gene.expr, trait.trans$Composite_Transcript[,CT,drop=FALSE], 
+    xlab = paste(gene.name, "expression"), ylab = "Composite Transcript")
+
+plot.with.model(gene.expr, trait.trans$Composite_Traits[,CT,drop=FALSE], 
+    xlab = paste(gene.name, "expression"), ylab = "Composite Trait")
+
+pdf("~/Desktop/Sash3.pdf", width = 5, height = 3.5)
+
+layout(matrix(c(1,2), ncol = 2), widths = c(1, 0.2))
+expr.color <- colors.from.values(gene.expr, use.pheatmap.colors = TRUE)
+
+par(mar = c(4,4,4,4))
+
+plot.with.model(trait.trans$Composite_Transcript[,CT,drop=FALSE], 
+    trait.trans$Composite_Traits[,CT,drop=FALSE], col = "black",
+    xlab = "Composite Transcript", ylab = "Composite Trait", 
+    main = paste("Colored by", gene.name, "expression"), report = "cor.test")
+
+par(mar = c(0,0,0,0))
+plot.text("")
+
+par(mar = c(4,4,4,4))
+plot.with.model(trait.trans$Composite_Transcript[,CT,drop=FALSE], 
+    trait.trans$Composite_Traits[,CT,drop=FALSE], col = expr.color,
+    xlab = "Composite Transcript", ylab = "Composite Trait", 
+    main = paste("Colored by", gene.name, "expression"), report = "cor.test")
+
+#par(mar = c(15,2,4,2.5))
+#par(mar = c(5,2,2,2.5))
+par(mar = c(9,1,2,2))
+imageWithTextColorbar(matrix(seq(-4, 4, 0.01), ncol = 1),
+    use.pheatmap.colors = TRUE, axis.line = 0, cex = 0.7)
+dev.off()
+
+
+#get genotypes at peak QTL
+marker.loc <- which(map[[Chr]] == transcript.peak.pos)
+genotypes <- genoprobs[[Chr]][,,marker.loc]
+common.ind <- intersect(rownames(gene.expr), rownames(genotypes))
+genotype.locale <- match(common.ind, rownames(genotypes))
+expr.ind.locale <- match(common.ind, rownames(gene.expr))
+comp.ind.locale <- match(common.ind, rownames(trait.trans$Composite_Transcript[,CT,drop=FALSE]))
+
+high.alleles <- c("D")
+low.alleles <- c("F")
+total.effect <- rowSums(genotypes[genotype.locale,low.alleles,drop=FALSE]*-1) + rowSums(genotypes[genotype.locale,high.alleles,drop=FALSE])
+
+cast.col <- colors.from.values(genotypes[genotype.locale,"F"], col.scale = "green", grad.dir = "high")
+nod.col <- colors.from.values(genotypes[genotype.locale,"D"], col.scale = "blue", grad.dir = "high")
+aj.col <- colors.from.values(genotypes[genotype.locale,"A"], col.scale = "yellow", grad.dir = "high")
+total.col <- colors.from.values(total.effect, use.pheatmap.colors = TRUE)
+
+par(mfrow = c(1,3))
+plot.with.model(trait.trans$Composite_Transcript[comp.ind.locale,CT,drop=FALSE], 
+    trait.trans$Composite_Traits[comp.ind.locale,CT,drop=FALSE], col = cast.col,
+    xlab = "Composite Transcript", ylab = "Composite Trait", main = "Colored by CAST allele",
+    report = "cor.test")
+boxplot(trait.trans$Composite_Transcript[comp.ind.locale,CT,drop=FALSE]~round(genotypes[genotype.locale,"F"], 2),
+    xlab = "CAST genotype", ylab = "Composite Transcript", main = "Transcript")
+boxplot(trait.trans$Composite_Trait[comp.ind.locale,CT,drop=FALSE]~round(genotypes[genotype.locale,"F"], 2),
+    xlab = "CAST genotype", ylab = "Composite Trait", main = "Trait")
+
+par(mfrow = c(1,3))
+plot.with.model(trait.trans$Composite_Transcript[comp.ind.locale,CT,drop=FALSE], 
+    trait.trans$Composite_Traits[comp.ind.locale,CT,drop=FALSE], col = nod.col,
+    xlab = "Composite Transcript", ylab = "Composite Trait", main = "Colored by NOD allele")
+boxplot(trait.trans$Composite_Transcript[comp.ind.locale,CT,drop=FALSE]~round(genotypes[genotype.locale,"D"], 1),
+    xlab = "NOD genotype", ylab = "Composite Transcript", main = "Transcript")
+boxplot(trait.trans$Composite_Trait[comp.ind.locale,CT,drop=FALSE]~round(genotypes[genotype.locale,"D"], 1),
+    xlab = "NOD genotype", ylab = "Composite Trait", main = "Trait")
+
+par(mfrow = c(1,3))
+plot.with.model(trait.trans$Composite_Transcript[comp.ind.locale,CT,drop=FALSE], 
+    trait.trans$Composite_Traits[comp.ind.locale,CT,drop=FALSE], col = aj.col,
+    xlab = "Composite Transcript", ylab = "Composite Trait", main = "Colored by A/J allele")
+boxplot(trait.trans$Composite_Transcript[comp.ind.locale,CT,drop=FALSE]~round(genotypes[genotype.locale,"A"], 1),
+    xlab = "A/J genotype", ylab = "Composite Transcript", main = "Transcript")
+boxplot(trait.trans$Composite_Trait[comp.ind.locale,CT,drop=FALSE]~round(genotypes[genotype.locale,"A"], 1),
+    xlab = "A/J genotype", ylab = "Composite Trait", main = "Trait")
+
+par(mfrow = c(1,3))
+plot.with.model(trait.trans$Composite_Transcript[comp.ind.locale,CT,drop=FALSE], 
+    trait.trans$Composite_Traits[comp.ind.locale,CT,drop=FALSE], col = total.col,
+    xlab = "Composite Transcript", ylab = "Composite Trait", main = "Colored by total allele effect")
+boxplot(trait.trans$Composite_Transcript[comp.ind.locale,CT,drop=FALSE]~round(total.effect, 1),
+    xlab = "total allele effect", ylab = "Composite Transcript", main = "Transcript")
+boxplot(trait.trans$Composite_Trait[comp.ind.locale,CT,drop=FALSE]~round(total.effect, 1),
+    xlab = "total allele effect", ylab = "Composite Trait", main = "Trait")
+
+
 
 if(ncol(gene.expr) > 1){
     expr.decomp <- plot.decomp(gene.expr)
@@ -2275,4 +2487,104 @@ plot(adj.scan, map = map, add = TRUE, col = "red")
 #Sash3 partially mediates the Chr X LOD score for weight_6wks, and HOMA_IR_0min
 #you wouldn't notice this unless we had concentrated the signals in a particular 
 #way. The effect it weak but consistent.
+```
+
+
+```{r eqtl, eval = FALSE}
+tissue.eqtl <- get(paste0("dataset.DO.Cube.", tissue.name))$lod.peaks$additive
+
+eqtl.pos <- strsplit(tissue.eqtl[[2]], "_")
+chr.locale <- which(sapply(eqtl.pos, function(x) x[1]) == Chr)
+mb.locale <- intersect(which(as.numeric(sapply(eqtl.pos, function(x) x[2])) >=  40e6),
+                which(as.numeric(sapply(eqtl.pos, function(x) x[2])) <=  50e6))
+eqtl.locale <- intersect(chr.locale, mb.locale)
+pos.eqtl <- tissue.eqtl[eqtl.locale,]
+u_trans <- unique(pos.eqtl[[1]])
+
+#there are length(u_trans) genes with eQTLs in the locus
+trans.info <- gene.info[[tissue.name]][which(gene.info[[tissue.name]][,1] %in% u_trans),]
+
+#some of these are in the composite transcript
+ct.genes <- colnames(matched.mats[[tissue.name]]$X)[which(boot.CCA.results[[tissue.name]]$u[,CT] != 0)]
+plotVenn(list("Transcripts_with_eQTL" = u_trans, "CT_genes" = ct.genes))
+overlap = intersect(u_trans, ct.genes)
+overlap.info <- gene.info[[tissue.name]][which(gene.info[[tissue.name]][,1] %in% overlap),]
+
+#none of the eqtls have large LOD scores.
+overlap.eqtl <- as.matrix(pos.eqtl[match(overlap, pos.eqtl[[1]]),])
+cat(overlap.eqtl[,1], sep = "\n")
+```
+look at Sash3 expression correlation with composite transcript
+    it is very highly correlated to the composite transcript
+    it is significantly but weakly correlated to the composite trait
+
+color trait-transcript cor plot by Sash3 expression and by individual genotype at locus
+    the only allele that seems to have an effect is the CAST allele
+    it is weak
+
+Yi sees the same chr X QTL - can compare my gene list with hers 
+
+association mapping
+
+look for any eQTL in the region, cis or trans
+    do genes in the composite transcript have eQTLs in this region?
+    yes, there are length(u_trans) transcript that have eQTL in this locus
+    length(overlap) genes of these are in the composite transcript
+    none of these have very strong LOD scores the max is 8-something.
+
+## Heritability 
+
+```{r herit, eval = FALSE}
+
+overall.kin.file <- here("Data", "overall.kinship.RDS")
+if(!file.exists(overall.kin.file)){
+    overall.kin <- calc_kinship(genoprobs, "overall")
+    saveRDS(overall.kin, overall.kin.file)
+}else{
+    overall.kin <- readRDS(overall.kin.file)
+}
+
+chr.kin <- calc_kinship(genoprobs, type = "chr")
+
+#start selection over again
+#tissue.name <- "Islet"
+tissue.name <- "Adipose"
+
+
+#get data for specified tissue
+tissue.locale <- which(tissue.names == tissue.name)
+trait.trans <- get_latent_var(tissue.mats = matched.mats[[tissue.locale]], 
+    tissue.results = boot.CCA.results[[tissue.locale]])
+
+
+trait.herit <- apply(trait.trans$Composite_Traits, 2, function(x) est_herit(x, overall.kin))
+barplot_with_num(round(trait.herit, 2), las = 2)
+
+trans.herit <- apply(trait.trans$Composite_Transcripts, 2, function(x) est_herit(x, overall.kin))
+barplot_with_num(round(trans.herit, 2), las = 2)
+
+all.transcript.herit.file <- file.path(results.dir, "all.transcript.heritability.RDS")
+if(!file.exists(all.transcript.herit.file)){
+    all.transcript.herit <- apply(matched.mats[[tissue.locale]]$X[,1:100], 2, function(x) est_herit(x, overall.kin))
+    saveRDS(all.transcript.herit, all.transcript.herit.file)
+}else{
+    all.transcript.herit <- readRDS(all.transcript.herit.file)
+}
+
+all.transcript.herit[which(all.transcript.herit < 0.1)]
+
+test.trans <- "ENSMUSG00000000134" #low heritability
+#test.trans <- "ENSMUSG00000000579" #high heritability
+
+test.scan <- scan1(genoprobs, matched.mats[[tissue.locale]]$X[,test.trans,drop=FALSE])
+multi.herit <- sapply(chr.kin, function(x) est_herit(matched.mats[[tissue.locale]]$X[,test.trans,drop=FALSE], x)[[1]])
+overall.herit <- est_herit(matched.mats[[tissue.locale]]$X[,test.trans,drop=FALSE], overall.kin)
+
+par(mfrow = c(2,1))
+plot(test.scan, map = map)
+barplot(multi.herit, ylim = c(0, max(c(multi.herit, overall.herit))))
+abline(h = overall.herit[[1]])
+
+pheno <- matched.mats[[tissue.locale]]$X[,test.trans,drop=FALSE]
+
 ```

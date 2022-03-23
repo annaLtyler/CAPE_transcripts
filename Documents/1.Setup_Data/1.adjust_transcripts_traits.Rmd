@@ -173,7 +173,6 @@ if(!file.exists(adj.expr.file)){
 }else{
 adj.expr <- readRDS(adj.expr.file)
 }
-
 ```
 
 ## Tissue Gene Expression Decomposition
@@ -183,7 +182,6 @@ transcript.list <- lapply(adj.expr, colnames)
 
 if(is.interactive){quartz()}
 plotVenn(transcript.list)
-
 
 common.transcripts <- Reduce("intersect", transcript.list)
 common.transcript.idx <- lapply(adj.expr, function(x) match(common.transcripts, colnames(x)))
@@ -206,13 +204,11 @@ if(!file.exists(expr.decomp.file)){
     expr.decomp <- readRDS(expr.decomp.file)
 }
 
-if(is.interactive){quartz()}
 plot(expr.decomp$u, col = as.numeric(as.factor(tissue.label)), pch = 16,
 xlab = "PC1", ylab = "PC2")
 legend("topleft", legend = levels(as.factor(tissue.label)), 
 col = 1:length(unique(tissue.label)), pch = 16)
 
-if(is.interactive){quartz()}
 xlim <- c(min(expr.decomp$u[,1]), max(expr.decomp$u[,1]))
 ylim <- c(min(expr.decomp$u[,2]), max(expr.decomp$u[,2]))
 par(mfrow = c(2,2))
@@ -297,5 +293,122 @@ for(i in 1:nrow(tissue.pairs)){
         xlab = tissue.names[tissue1.idx], ylab = tissue.names[tissue2.idx],
         report = "cor.test")
 }
+
+```
+
+## eQTL and Trait correlations {.tabset .tabset-fade .tabset-pills}
+
+The following plots show a clear negative correlation between 
+the strength of the eQTL and the correlation with traits. The 
+correlation shown below is the maximum correlation across all
+traits.
+
+The genes shown are the genes with at least a minimum correlation 
+threshold, ranked by LOD score and correlation. These are genes
+with high LOD scores that are also correlated with at least one 
+trait.
+
+These lists show us that some of the genes with high correlations
+also have eQTL that are considered significant, even if they are
+not the highest LOD scores in the bunch. These are good candidates
+for genes that influence traits in a way that we can trace back to
+genotype through gene expression.
+
+```{r eqtl, fig.width = 10, fig.height = 6, results = "asis"}
+get_max_eqtl <- function(gene.id){
+    gene.locale <- which(tissue.eqtl[[1]] == gene.id)
+    if(length(gene.locale) == 0){return(NA)}
+    max.lod <- max(tissue.eqtl[[3]][gene.locale])
+    return(max.lod)
+}
+cor.thresh = 0.4
+top.n <- 20
+
+for(i in 1:length(tissue.names)){
+    cat("###", tissue.names[i], "\n")
+    if(is.interactive){quartz(width = 10, height = 6)}
+    layout.mat <- matrix(c(1:5, 0), nrow = 2, byrow = TRUE)
+    layout(layout.mat)
+    expr.trait.cor.file <- here("Results", "General", paste0("Trait.", tissue.names[i], ".Expr.Cor.RDS"))
+    tissue.expr <- adj.expr[[i]]
+    tissue.data <- get(paste0("dataset.DO.Cube.", tissue.names[i]))
+    tissue.eqtl <- tissue.data$lod.peaks$additive
+    common.ind <- intersect(rownames(cca.pheno), rownames(tissue.expr))
+    expr.locale <- match(common.ind, rownames(tissue.expr))
+    pheno.locale <- match(common.ind, rownames(cca.pheno))
+
+    if(!file.exists(expr.trait.cor.file)){
+        trait.cor <- apply(cca.pheno[pheno.locale,], 2, function(y) apply(tissue.expr[expr.locale,], 2, function(x) cor(x, y, use = "pairwise.complete.obs")))
+        saveRDS(trait.cor, expr.trait.cor.file)
+    }else{
+        trait.cor <- readRDS(expr.trait.cor.file)
+    }
+    
+    cor.mean <- apply(trait.cor, 2, function(x) mean(abs(x)))
+    par(mar = c(4,8,2,2))
+    boxplot(abs(trait.cor[,order(cor.mean)]), las = 2, horizontal = TRUE, 
+        main = "Trait-Expression Correlation")
+
+    par(mar = c(4,8,2,2))
+    #plot.decomp(t(trait.cor), label.points = TRUE, main = "Decomposition of Trait-Expression Correlation")
+
+    max.eqtl.file <- here("Results", "General", paste0("max.eQTL.LOD.", tissue.names[i], ".RDS"))
+    if(!file.exists(max.eqtl.file)){
+        max.eqtl <- sapply(colnames(tissue.expr), get_max_eqtl)
+        saveRDS(max.eqtl, max.eqtl.file)
+    }else{
+        max.eqtl <- readRDS(max.eqtl.file)
+    }
+    
+    max.cor <- apply(abs(trait.cor), 1, max)
+    plot.with.model(max.eqtl, max.cor, report = "cor.test")
+    abline(h = cor.thresh, col = "red")
+
+    #ID genes with correlations > 0.4 and relatively high LOD scores
+    high.cor <- which(max.cor >= cor.thresh)
+    high.table <- cbind(max.cor[high.cor], max.eqtl[high.cor])
+    no.na <- which(!is.na(high.table[,2])) #take out genes with LOD scores < 6
+    high.table <- high.table[no.na,]
+    gene.ranks <- rank.2D(high.table)
+    ranked.genes <- high.table[order(gene.ranks[,1], decreasing = FALSE),]
+    top.genes <- ranked.genes[1:min(c(top.n, nrow(high.table))),]
+    #plot names for the top 10 genes
+    gene.names <- tissue.data$annot.mrna[[2]][match(rownames(top.genes), tissue.data$annot.mrna[[1]])]
+    rownames(top.genes) <- gene.names
+    colnames(top.genes) <- c("Max.Trait.Cor", "Max.LOD.Score")
+    #cat(gene.names, sep = "\n")    
+
+    gene.text <- paste(rownames(top.genes), collapse = "\n")
+    cor.text <- paste(round(top.genes[,1], 2), collapse = "\n")
+    lod.text <- paste(round(top.genes[,2], 1), collapse = "\n")
+    par(mar = c(0,0,0,0))
+    plot.text(paste("Top", top.n, "genes\n\n", gene.text), x = 0.35, add = FALSE)
+    plot.text(paste("Corr\n\n", cor.text), x = 0.5, add = TRUE)
+    plot.text(paste("LOD\n\n", lod.text), x = 0.6, add = TRUE)
+
+    trait.eqtl.cor <- apply(abs(trait.cor), 2, 
+        function(x) cor(max.eqtl, x, use = "pairwise.complete.obs"))
+    
+    #par(mfrow = c(4,5), mar = c(1,1,4,1))
+    #for(tr in 1:ncol(trait.cor)){
+    #    plot(max.eqtl, abs(trait.cor[,tr]), main = colnames(trait.cor)[tr])
+    #}
+
+    par(mar = c(8,4,2,2))
+    barplot(trait.eqtl.cor, las = 2, main = "Correlation between LOD\nscore and trait correlation")
+    
+    #plot(max.eqtl, abs(trait.cor[,3]), main = tissue.names[i], xlab = "Maximum eQTL", ylab = "Trait Correlation Magnitude")
+    expr.var <- apply(tissue.expr, 2, var)
+    
+    trait.var.cor <- apply(abs(trait.cor), 2, function(x) cor(expr.var, x, use = "pairwise.complete.obs"))
+    #plot.with.model(expr.var, abs(trait.cor[,1]), main = tissue.names[i], xlab = "Expression Variance", ylab = "Trait Correlation Magnitude", report = "cor.test")
+    #plot(expr.var, trait.cor[,1], xlab = "Maximum eQTL", ylab = "Variation in Expression", main = tissue.names[i])
+    par(mar = c(8,4,2,2))
+    barplot(trait.var.cor, las = 2, main = "Correlation between expression\nvariance and trait correlation")
+
+    mtext(tissue.names[i], side = 3, outer = TRUE, line = -1)
+    cat("\n\n")
+}
+
 
 ```

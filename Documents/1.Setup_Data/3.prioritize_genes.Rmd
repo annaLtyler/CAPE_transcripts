@@ -21,22 +21,38 @@ pair.
 
 
 ```{r get_args}
-exp.name <- "all_traits"
+
 #delete_previous <- TRUE
 delete_previous <- FALSE
 
-tissue.name = "Adipose"
-network.name = "adipose tissue"
-CT = 1
-```
+n.cores = 4
 
+#tissue.name = "Adipose"; network.name = "adipose tissue";CT = 1; qtl.chr = "X";exp.name = "ChrX"
+#tissue.name = "Islet"; network.name = "islets of langerhans";CT = 1; qtl.chr = "X";exp.name = "ChrX"
+tissue.name = "Adipose"; network.name = "adipose tissue";CT = 13; qtl.chr = 11;exp.name = "Chr11"
+#tissue.name = "Adipose"; network.name = "adipose tissue";CT = 14; qtl.chr = 11;exp.name = "Chr11"
+#tissue.name = "Adipose"; network.name = "adipose tissue"; CT = 16; qtl.chr = 11;exp.name = "Chr11"
+#tissue.name = "Adipose"; network.name = "adipose tissue"; CT = 17; qtl.chr = 11;exp.name = "Chr11"
+#tissue.name = "Adipose"; network.name = "adipose tissue";CT = 19; qtl.chr = 11;exp.name = "Chr11"
+
+#for CMAP prioritization
+#chromosome is not used in CMAP analysis, but I specify it so we can get through the code without errors
+#tissue.name = "Adipose"; network.name = "adipose tissue";CT = 1; qtl.chr = "X";exp.name = "ChrX"
+#tissue.name = "Islet"; network.name = "islets of langerhans";CT = 1; qtl.chr = 18;exp.name = "Chr18"
+#tissue.name = "Islet"; network.name = "islets of langerhans";CT = 9; qtl.chr = 18;exp.name = "Chr18"
+#tissue.name = "Liver"; network.name = "liver"; CT = 1; qtl.chr = 11;exp.name = "Chr11"
+#tissue.name = "SkeletalMuscle"; network.name = "skeletal muscle"; CT = 1; qtl.chr = 1;exp.name = "Chr1"
+
+project.name = paste0(tissue.name, "_Chr", qtl.chr, "_CT", CT)
+Mb.buffer = 1
+```
 
 ```{r load_code}
 is.interactive = FALSE
 #is.interactive = TRUE
 library("here")
 
-data.dir <- here("Results", "CCA_Clusters", exp.name)
+data.dir <- here("Results", "CCA_Clusters", "all_traits")
 results.dir <- here("Results", "Prioritization", exp.name)
 if(!file.exists(results.dir)){dir.create(results.dir)}
 
@@ -51,6 +67,22 @@ needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatma
 load_libraries(needed.libraries, personal.library = TRUE)
 ```
 
+Find the region to prioritize genes in. In the following code, this is based
+on the QTL in the trait specified above. We use default parameters in qtl2
+for finding peaks, and use a 95\% confidence interval to define the QTL boundaries.
+
+```{r find_prioritization_region}
+map <- readRDS(here("Data", "map.RDS")) #from dataset.DO.CUBE.multissue.RData, saved separately so we don't have to load the whole object
+qtl.scan <- readRDS(here("Results", "CCA_clusters", "all_traits", paste0("QTL.", tissue.name, ".trait.RDS")))
+peak.table <- find_peaks(qtl.scan$CTrait_QTL[,paste0("Composite_Trait", CT),drop=FALSE], 
+    map = map, prob = 0.95)
+chr.locale <- which(peak.table[,"chr"] == qtl.chr)
+chr.peak <- peak.table[chr.locale,]
+qtl.start <- (floor(chr.peak[,"ci_lo"])-Mb.buffer)*1e6
+qtl.end <- (ceiling(chr.peak[,"ci_hi"])+Mb.buffer)*1e6
+```
+
+
 Read in bootstrapped results.
 
 ```{r boot_results}
@@ -60,16 +92,24 @@ tissue.locale <- which(names(boot.CCA.results) == tissue.name)
 transcript.loadings <- boot.CCA.results[[tissue.locale]]$u[,CT]
 names(transcript.loadings) <- colnames(matched.mats[[tissue.locale]]$X)
 non.zero <- transcript.loadings[which(transcript.loadings != 0)]
+gene.info <- as.matrix(read.delim(here("Data", "mouse_gene_info.txt"), stringsAsFactors = FALSE))
+
+target.num = 550 #overshoot a bit, because some genes are always discarded
 
 pt.col <- rep("black", length = length(non.zero))
-if(length(non.zero) > 500)
-    score.lim <- sort(abs(non.zero), decreasing = TRUE)[500]
-    pt.col[which(abs(non.zero) > score.lim)] <- "red"
+if(length(non.zero) > target.num){ 
+    score.lim <- sort(abs(non.zero), decreasing = TRUE)[target.num]
+    #plot(sort(abs(non.zero), decreasing = TRUE))
+    selected <- which(abs(non.zero) > score.lim)
+}else{
+    selected <- 1:length(non.zero)
 }
+pt.col[selected] <- "red"
 pt.order <- order(non.zero)
 plot(non.zero[pt.order], col = pt.col[pt.order], ylab = "Loading", pch = 16)
 legend("topleft", col = c("red", "black"), legend = c("selected", "not selected"), pch = 16)
 abline(h = 0)
+
 ```
 
 
@@ -77,7 +117,7 @@ abline(h = 0)
 #Download the network if it hasn't been previously downloaded. 
 #full list available at:  http://fntm.princeton.edu
 tissue.type = gsub(" ", "_", network.name)
-net.file <- here("Data", paste0(network.name, "_top.RData"))
+net.file <- here("Data", paste0(tissue.type, "_top.RData"))
 if(!file.exists(net.file)){
     download.tissue.net(tissue.type, organism = "mouse", top.edges.only = TRUE, 
     project.dir = here("Data"))
@@ -91,4 +131,253 @@ net.loaded <- as.logical(length(which(all.var == "tissue.net")))
 if(!net.loaded){
     tissue.net <- readRDS(net.file)
 }
+```
+
+
+Get entrez gene IDs for genes we will train on. This is either 
+all genes in the networ, or the 500 with the largest magnitude loadings.
+
+```{r entrez}
+gene.id <- names(non.zero)[selected]
+entrezgene <- gconvert(gene.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
+```
+
+```{r generate_up_and_down_queries_for_cmap, eval = FALSE}
+cmap.target = 150 #cannot use more than 150 genes in query
+min.pos <- sort(transcript.loadings, decreasing = TRUE)[cmap.target]
+max.neg <- sort(transcript.loadings, decreasing = FALSE)[cmap.target]
+pos <- transcript.loadings[which(transcript.loadings > min.pos)]
+neg <- transcript.loadings[which(transcript.loadings < max.neg)]
+
+pos.hum <- mouse_to_human_entrez(names(pos))
+pos.id <- pos.hum[which(!is.na(pos.hum[,1])),1]
+pos.name <- gconvert(pos.id)
+
+neg.hum <- mouse_to_human_entrez(names(neg))
+neg.id <- neg.hum[which(!is.na(neg.hum[,1])),1]
+neg.name <- gconvert(neg.id)
+
+write.table(pos.name[,"name"], here("Results", "CMAP", paste(tissue.name, "CT", CT, 
+    "upreg.txt", sep = "_")), quote = FALSE, sep = "\t", row.names = FALSE, 
+    col.names = FALSE)
+write.table(neg.name[,"name"], here("Results", "CMAP", paste(tissue.name, "CT", CT, 
+    "downreg.txt", sep = "_")), quote = FALSE, sep = "\t", row.names = FALSE, 
+    col.names = FALSE)
+
+#create up and down files that combine all sets so far
+all.up <- list.files(here("Results", "CMAP"), pattern = "upreg")
+all.down <- list.files(here("Results", "CMAP"), pattern = "downreg")
+
+sink(here("Results", "CMAP", "all_up.gmt"))
+for(i in 1:length(all.up)){
+    up.genes <- read.delim(here("Results", "CMAP", all.up[i]))
+    cat(all.up[i], "\t", paste("up geneset for", all.up[i]), "\t")
+    cat(up.genes[,1], sep = "\t")
+    cat("\n")
+}
+sink()
+
+sink(here("Results", "CMAP", "all_down.gmt"))
+for(i in 1:length(all.down)){
+    down.genes <- read.delim(here("Results", "CMAP", all.down[i]))
+    cat(all.down[i], "\t", paste("down geneset for", all.down[i]), "\t")
+    cat(down.genes[,1], sep = "\t")
+    cat("\n")
+}
+sink()
+
+#go to https://clue.io/query#l1000 to enter these lists into the query app
+#can't figure out how to view multiple queries at once, or how to create a
+#batch query. So I downloaded my individual queries and will analyze them
+#here
+
+ids <- read.delim(here("Results", "CMAP", "CT1_all_tissue.txt"))
+#collect results
+query.results <- vector(mode = "list", length = nrow(ids))
+names(query.results) <- ids[,"Name"]
+for(i in 1:nrow(ids)){
+    query.dir <- here("Results", "CMAP", paste0("my_analysis.sig_queryl1k_tool.", ids[i,5]))
+    query.results[[i]] <- read.delim(file.path(query.dir, "gsea", "TAG", "arfs", "NORM_CS", "gsea_result.gct"), 
+    skip = 2)
+}
+
+#pull out the -log10 fdr and correlation columns
+common.id <- Reduce("intersect", lapply(query.results, function(x) x[,1]))
+nlog.fdr.mat <- sapply(query.results, function(x) x[match(common.id, x[,1]),"fdr_q_nlog10"])
+nlog.fdr.mat <- apply(nlog.fdr.mat[2:nrow(nlog.fdr.mat),], 2, as.numeric)
+rownames(nlog.fdr.mat) <- common.id[2:length(common.id)]
+
+cor.mat <- sapply(query.results, function(x) x[match(common.id, x[,1]),"raw_cs"])
+cor.mat <- apply(cor.mat[2:nrow(cor.mat),], 2, as.numeric)
+rownames(cor.mat) <- common.id[2:length(common.id)]
+
+good.fdr <- apply(nlog.fdr.mat, 2, function(x) which(x > 5))
+filtered.fdr <- nlog.fdr.mat[unique(unlist(good.fdr)),]
+filtered.cor <- cor.mat[unique(unlist(good.fdr)),]
+
+#merge over simpler names
+simple.name <- query.results[[1]][match(rownames(filtered.fdr), query.results[[1]][,1]),9] #get a less specific name
+name.groups <- lapply(unique(simple.name), function(x) which(simple.name == x))
+simple.fdr <- t(sapply(name.groups, function(x) apply(filtered.fdr[x,,drop=FALSE], 2, function(y) y[which.max(abs(y))])))
+rownames(simple.fdr) <- unique(simple.name)
+
+simple.cor <- t(sapply(name.groups, function(x) apply(filtered.cor[x,,drop=FALSE], 2, function(y) y[which.max(abs(y))])))
+rownames(simple.cor) <- unique(simple.name)
+
+pdf(here("Results", "CMAP", "summary.pdf"), width = 8, height = 14)
+pheatmap(filtered.fdr, main = "Full -log10(FDR)", display_numbers = TRUE)
+pheatmap(simple.fdr, main = "Largest -log10(FDR)", display_numbers = TRUE)
+pheatmap(filtered.cor, main = "Full correlation", display_numbers = TRUE)
+pheatmap(simple.cor, main = "Strongest correlation", display_numbers = TRUE)
+par(mar = c(4,12,2,2))
+barplot(sort(rowSums(simple.fdr)), las = 2, horiz = TRUE, cex.names = 0.5, main = "-log10(FDR) sum")
+par(mar = c(4,12,2,2))
+barplot(sort(rowSums(simple.cor)), beside = TRUE, las = 2, horiz = TRUE, cex.names = 0.5, main = "correlation sum")
+dev.off()
+
+tissue.col <- rep(1:4, each = nrow(filtered.fdr))
+plot(filtered.fdr, as.vector(filtered.cor), col = tissue.col, pch = 16)
+legend(x = 6, y = 0.8, legend = colnames(filtered.cor), fill = 1:4)
+high.fdr <- apply(filtered.fdr, 2, function(x) which(x > 15))
+cor.fdr <- lapply(1:length(high.fdr), function(x) cbind(filtered.fdr[high.fdr[[x]],x], filtered.cor[high.fdr[[x]],x]))
+names(cor.fdr)  <- colnames(filtered.fdr)
+```
+
+
+## Setup Positive-Labeled Gene Features
+
+Get the connection weights of the positive-labeled genes to each other
+in the tissue network. Not all of the genes in the GSEA list will have
+Entrez IDs, and not all of the genes will have connections to the 
+other genes in the tissue network. We trim off positive-labeled genes 
+that are not connected to any other positive-labeled genes.
+
+
+```{r pick_genes, echo = FALSE}
+tissue.adj <- tissue.adj.mat(tissue.net, entrezgene[,"target"], inc.all.genes = FALSE)
+```
+
+After identifying all Entrezgene IDs and building the positive-labeled network,
+we have `r nrow(tissue.adj)` positive-labeled genes for training.
+
+## Train SVM
+We used this positive-labeled network as features to train 100 SVMs to classify
+TB- and not TB-related genes. In each of the 100 SVMs, we selected a balanced
+set of unlabeled genes for training. We write each of the trained models to a 
+file for further analysis.
+
+```{r train_models, message = FALSE, warning = FALSE, error = FALSE, eval = TRUE}
+generate.triage.models(path = results.dir, project.name = project.name, 
+trait.genes = entrezgene[,"target"], fgn = tissue.net, n.trials = 100, 
+cluster.modules = FALSE, cluster.threshold = 700, max.cluster.size = 600, 
+min.cluster.size = 10, use.SVD = FALSE, verbose = TRUE, n.cores = n.cores)
+```
+
+## ROC Curves
+
+We calculated ROC curves for each SVM, as well as the overal AUC for
+the group. The plot below shows the ROC curves for all 100 models
+along with the average AUC.
+
+```{r roc, fig.height = 5, fig.width = 5}
+all.fptp <- svm.ROC(results.dir, n.cores = n.cores, plot.results = TRUE)
+all.auc <- sapply(all.fptp, function(x) smooth.auc(Reduce("rbind", x), plot = FALSE))
+```
+
+## Score all genes
+
+We then used the trained models to classify every gene in the specified region.
+
+```{r score_genes}
+chr.locale <- which(gene.info[,"chromosome_name"] == qtl.chr)
+mb.locale <- intersect(which(as.numeric(gene.info[,"start_position"]) >= qtl.start), 
+            which(as.numeric(gene.info[,"start_position"]) <= qtl.end))
+candidate.locale <- intersect(chr.locale, mb.locale)
+
+score.candidates(results.dir, 
+    candidate.genes = as.numeric(gene.info[candidate.locale,"entrezgene_id"]),
+    verbose = TRUE, plot.results = FALSE)
+
+merge.svm.gene.info(results.dir, gene.info)
+```
+
+
+```{r get_fp, error = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5}
+fp.mat <- get.all.fp(results.dir)
+cand.pos <- as.numeric(gene.info[match(rownames(fp.mat), gene.info[,"external_gene_name"]), "start_position"])
+
+layout(matrix(c(1,2), ncol = 2), widths = c(1, 0.2))
+par(mar = c(4,4,4,4))
+plot.new()
+plot.window(xlim = c(min(cand.pos/1e6), max(cand.pos/1e6)), 
+    ylim = c(min(-log10(fp.mat), na.rm = TRUE), max(-log10(fp.mat), na.rm = TRUE)))
+for(i in 1:ncol(fp.mat)){
+    points(cand.pos/1e6, -log10(fp.mat[,i]), pch = 16, col = i)
+    text(cand.pos/1e6, -log10(fp.mat[,i]), rownames(fp.mat), pos = 2, col = i)
+}
+axis(1);axis(2)
+mtext(side = 1, paste("Chr", qtl.chr, "position (Mb)"), line = 2)
+mtext(side = 2, "Functional Score", line = 2)
+abline(h = -log10(0.05))
+par(mar = c(0,0,0,0))
+plot.new()
+plot.window(xlim = c(0,1), ylim = c(0,1))
+par(xpd = NA)
+legend(x = -1, y = 1, legend = colnames(fp.mat), col = 1:ncol(fp.mat), lty = 1, lwd = 2)
+par(xpd = TRUE)
+```
+
+Sum of scores across all traits.
+
+```{r plot_sum, error = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5}
+score.sum <- rowSums(-log10(fp.mat), na.rm = TRUE)
+
+plot(cand.pos/1e6, score.sum, pch = 16, xlab = paste("Chr", qtl.chr, "position (Mb)"),
+    ylab = "Functional Score")
+text(cand.pos/1e6, score.sum, rownames(fp.mat), pos = 2, cex = 0.7)
+```
+
+# Check expression correlation with traits?
+
+```{r check_gene, eval = FALSE}
+cube.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+traits <- read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsAsFactors = FALSE)
+
+data.set <- get(paste0("dataset.DO.Cube.", tissue.name))
+covar.mat <- data.set$covar.matrix
+expr.data <- data.set$data$rz
+
+gene.name = "Evi2a"
+gene.id <- gene.info[which(gene.info[,"external_gene_name"] == gene.name),1]
+
+gene.locale <- which(colnames(expr.data) == gene.id)
+
+common.ind <- Reduce("intersect", list(traits[,"mouse.id"], rownames(expr.data), rownames(covar.mat)))
+trait.ind.locale <- match(common.ind, traits[,"mouse.id"])
+expr.ind.locale <- match(common.ind, rownames(expr.data))
+covar.ind.locale <- match(common.ind, rownames(covar.mat))
+
+adj.trait <- adjust(traits[trait.ind.locale,12:(ncol(traits)-1)], covar.mat[covar.ind.locale,])
+rownames(adj.trait) <- traits[trait.ind.locale,"mouse.id"]
+adj.expr <- adjust(expr.data[expr.ind.locale,gene.locale,drop=FALSE], covar.mat[covar.ind.locale,])
+
+par(mar = c(8,4,4,4))
+barplot(sort(apply(adj.trait, 2, function(x) cor(x, adj.expr, use = "pairwise.complete.obs"))), 
+las = 2, main = paste("Correlation with", gene.name))
+
+trait.name <- "weight_10wk"
+plot.with.model(adj.trait[,trait.name], adj.expr, report = "cor.test",
+    ylab  = paste(gene.name, "expression"), xlab = trait.name)
+```
+
+Can the expression mediate the effect of the QTL
+
+```{r mediation}
+orig.scan <- scan1(genoprobs, adj.trait[,trait.name, drop=FALSE], kinship = K)
+plot(orig.scan, map = map)
+
+med.trait <- adjust(adj.trait[,trait.name,drop=FALSE], adj.expr)
+med.scan <- scan1(genoprobs, med.trait, kinship = K)
+
+plot(med.scan, map = map, add = TRUE, col = "red")
 ```

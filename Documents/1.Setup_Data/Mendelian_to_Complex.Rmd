@@ -1,0 +1,329 @@
+---
+title: "Mendelian to Complex"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+The purpose of this workflow is to explore the idea of using known 
+diabetes/obesity genes cataloged in MGI as a place to start looking 
+through the Cube data. Nancy Cox has shown that alleles that cause
+Mendelian disease also have an effect on complex disease, even if 
+the carriers aren't diagnosed with disease. Perhaps we can use 
+knowledge already gained to help gain a broader picture of metabolic
+disease in a more natural population. 
+
+Some of the things I am thinking are:
+    Look at tissue distribution of the expression of known disease genes
+    Look at correlation of expression with traits
+    Look at whether these genes have eQTLs
+    Use gene expression to mediate effects on traits
+
+To start this project, I used the MGI Phenotypes, Alleles, and Disease Models
+tab and searched for diabetes and obesity. I downloaded the resulting table
+and filtered for genes.
+
+
+```{r get_args}
+mgi.file <- "MGIalleleQuery_20220304_100354.txt"
+construct.types <- c("Hypomorph", "Null/knockout", "Constitutively active", 
+    "Dominant negative")
+
+
+```
+
+
+```{r load_code}
+is.interactive = FALSE
+#is.interactive = TRUE
+library("here")
+
+adj.data.dir <- here("Results", "CCA_Clusters", "all_traits")
+results.dir <- here("Results", "Mendelian")
+if(!file.exists(results.dir)){dir.create(results.dir)}
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+all.packages <- c("pheatmap", "gprofiler2", "qtl2", "interactions")
+load_libraries(all.packages)
+```
+
+Read in pre-filtered and pre-adjusted transcript data from 
+adjust_transcripts_traits.Rmd
+
+```{r read_data}
+tissue.adj.expr <- readRDS(file.path(adj.data.dir, "Adjusted_Expression.RDS"))
+cca.pheno <- readRDS(file.path(adj.data.dir, "Adjusted_Phenotypes.RDS"))
+tissue.names <- names(tissue.adj.expr)
+
+all.var <- ls()
+data.loaded <- as.logical(which(all.var == "genoprobs"))
+if(!data.loaded){
+    tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+}
+
+data.set.names <- lapply(1:length(tissue.names), 
+function(x) paste0("dataset.DO.Cube.", tissue.names[x]))
+gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, function(x) get(x)$annot.mrna))))
+
+eqtl <- lapply(data.set.names, function(x) get(x)$lod.peaks$additive)
+
+#read known gene table
+gene.trait.list <- read.delim(here("Data", mgi.file), stringsAsFactors = FALSE)
+#effects <- unique(gene.trait.list[,"Abnormal.Phenotypes.Reported.in.these.Systems"])
+#constructs <- gene.trait.list[,"Allele.Attributes"]
+#construct.idx <- unique(unlist(lapply(construct.types, function(x) grep(x, constructs))))
+#construct.list <- gene.trait.list[construct.idx,]
+
+construct.list <- gene.trait.list
+
+allele.types <- unique(construct.list[,"Allele.Type"])
+allele.types <- allele.types[which(allele.types != "QTL")] #filter out QTL (not genes)
+allele.list <- lapply(allele.types, 
+    function(x) construct.list[which(construct.list[,"Allele.Type"] == x),"Allele.Symbol"])
+names(allele.list) <- allele.types
+```
+
+The following plot shows the number of genes associated with each modality.
+
+```{r stats, fig.width = 7, fig.height = 6}
+#extract gene names
+allele.genes <- lapply(allele.list, function(x) unique(sapply(strsplit(x, "<", fixed = TRUE), function(y) y[1])))
+
+u_genes <- unique(unlist(allele.genes))
+gene.id <- gconvert(u_genes, organism = "mmusculus")
+
+par(mar = c(12,4,4,4))
+barplot_with_num(sort(c(sapply(allele.genes, length), "Total" = length(u_genes))), 
+    las = 2, main = "Number of genes of each type")
+```
+
+Where are these genes expressed? The figure below shows that some of these
+are tissue specific, and many of them are expressed across all four tissues.
+
+```{r expr_location}
+tissue.gene.mats <- vector(mode = "list", length = length(tissue.names))
+names(tissue.gene.mats) <- tissue.names
+for(i in 1:length(tissue.adj.expr)){
+    gene.in.tissue <- which(gene.id[,"target"] %in% colnames(tissue.adj.expr[[i]]))
+    tissue.gene.mats[[i]]  <- tissue.adj.expr[[i]][,gene.in.tissue]
+}
+
+genes.by.tissue  <- lapply(tissue.gene.mats, colnames)
+plotVenn(genes.by.tissue)
+```
+
+##  Correlations with Traits
+
+What is the distribution of correlations of expression with traits?
+
+
+```{r expr_cor}
+expr.trait.cor <- vector(mode = "list", length = length(tissue.names))
+names(expr.trait.cor) <- tissue.names
+
+for(i in 1:length(expr.trait.cor)){
+    matched.mats <- get_common_rows(list(tissue.gene.mats[[i]], cca.pheno))
+    cor.mat <- matrix(NA, nrow = ncol(matched.mats[[1]]), ncol = ncol(matched.mats[[2]]))
+    rownames(cor.mat) <- colnames(matched.mats[[1]])
+    colnames(cor.mat) <- colnames(matched.mats[[2]])
+    for(j in 1:ncol(matched.mats[[2]])){
+        cor.mat[,j] <- apply(matched.mats[[1]], 2, function(x) cor(x, matched.mats[[2]][,j], use = "pairwise.complete.obs"))
+    }    
+    expr.trait.cor[[i]] <- cor.mat
+}
+
+```
+
+The following figures show the correlations between traits and genes
+for each tissue.
+
+```{r trait_cor_plot, fig.width = 7, fig.height = 5}
+for(i in 1:length(tissue.names)){
+    pheatmap(t(expr.trait.cor[[i]]), show_colnames = FALSE, main = tissue.names[i])
+}
+
+#pheatmap(cor(t(expr.trait.cor[[i]])), show_rownames = FALSE, show_colnames = FALSE)
+```
+
+The following box plots show the distribution of the magnitude of 
+correlations across tissues. They look like randomly sampled genes. 
+They do not seem to have stronger correlations than the full set of
+genes.
+
+```{r cor_dist, fig.width = 8, fig.height = 4}
+stripchart(lapply(expr.trait.cor, function(x) abs(round(x, 2))), 
+    method = "stack", vertical = TRUE, pch = 16, col = "darkgray", offset = 0.007)
+```
+
+## eQTLs
+
+What kind of eQTLs do these genes have?
+The following boxplots show the distribution of LOD scores across genes
+that are known to have an effect on diabetes and obesity traits. 
+They are impressive! I wasn't expecting to see so many high LOD scores.
+
+This suggests that there may be allele series in here that affect
+diabetes and obesity.
+
+```{r eqtl}
+tissue.eqtl <- vector(mode = "list", length = length(tissue.names))
+names(tissue.eqtl) <- tissue.names
+for(i in 1:length(tissue.names)){
+    has.eqtl <- which(gene.id[,"target"] %in% eqtl[[i]][[1]])
+    tissue.eqtl[[i]] <- as.matrix(eqtl[[i]][has.eqtl,])
+}
+
+all.lod <- lapply(tissue.eqtl, function(x) as.numeric(x[,"lod"]))
+boxplot(all.lod)
+```
+
+Given that these genes are known to have effects on metabolism
+and that they have eQTLs, now what?
+Mediation?
+
+The following box plot shows the distribution of LOD drops for
+the transcripts in each of the tissues. These are all for Ins_tAUC.
+I'm surprised that the drops aren't larger, but maybe these are large
+for individual transcripts that are not necessarily encoded in the 
+chr 11 QTL.
+
+```{r mediation}
+trait.name <- "Ins_tAUC"
+tissue.idx <- 1
+
+trait.scan <- scan1(genoprobs, cca.pheno[,trait.name, drop=FALSE], kinship = K)
+#plot(trait.scan, map = map)
+peak.marker <- which.max(trait.scan[,1])
+peak.chr <- as.numeric(strsplit(names(peak.marker), "_")[[1]][1])
+orig.lod <- trait.scan[peak.marker,1]
+
+tissue.mediation.file <- here("Results", "Mendelian", "lod.drop.by.tissue.RDS")
+if(!file.exists(tissue.mediation.file)){
+    all.lod.drop <- vector(mode = "list", length = length(tissue.names))
+    names(all.lod.drop) <- tissue.names
+    for(tissue.idx in 1:length(tissue.names)){
+        tissue.expr <- tissue.gene.mats[[tissue.idx]]
+        lod.drop <- rep(NA, ncol(tissue.expr))
+        for(i in 1:ncol(tissue.expr)){
+            report.progress(i, ncol(tissue.expr))
+            adj.trait <- adjust(cca.pheno[,trait.name, drop=FALSE], tissue.expr[,i,drop=FALSE])
+            med.scan <- scan1(genoprobs[,peak.chr], adj.trait, kinship = K[[peak.chr]])
+            lod.drop[i] <- orig.lod - med.scan[names(peak.marker),1]
+        }
+    names(lod.drop) <- colnames(tissue.expr)
+    all.lod.drop[[tissue.idx]] <- lod.drop
+
+    #plot(sort(lod.drop), main = tissue.names[tissue.idx]) 
+    }
+    saveRDS(all.lod.drop, tissue.mediation.file)
+}else{
+    all.lod.drop <- readRDS(tissue.mediation.file)
+}
+
+boxplot(all.lod.drop)
+
+```
+
+There are genes that mediate and reverse mediate the effect of the
+chr 11 locus on the Ins_tAUC. The transcripts with large positive
+effects are encoded in the locus. The transcripts with large negative
+effects are encoded elsewhere, but don't seem to be less relevant.
+The largest negative mediator in islet is Ins2. That means, that 
+Ins2 expression is somehow influencing the effect of this locus,
+but how do we interpret it?
+
+
+```{r lod_drop_mat}
+top.genes <- lapply(all.lod.drop, function(x) sort(x, decreasing = TRUE))
+lapply(top.genes, head)
+lapply(top.genes, tail)
+
+u_names <- unique(unlist(lapply(all.lod.drop, names)))
+
+lod.drop.mat <- matrix(NA, ncol = length(u_names), nrow = length(tissue.names))
+rownames(lod.drop.mat) <- tissue.names
+colnames(lod.drop.mat) <- u_names
+
+for(i in 1:length(tissue.names)){
+    lod.drop.mat[i,names(all.lod.drop[[i]])] <- all.lod.drop[[i]]
+}
+
+pheatmap(lod.drop.mat, cluster_rows = FALSE, cluster_cols = FALSE, show_colnames = FALSE)
+```
+
+Is there an interaction between Ins2 and genotype at the the Chr 11 locus? 
+It's hard to tell For B6 < 0.3, Ins2 expression is positively
+correlated with Ins_tAUC. For B6 >= 0.3, the effect is weaker. But
+the interaction is not nearly as obvious as for trahscripts with positive
+LOD drops.
+
+Is the gene expression compensating for/buffering the effect of the locus? 
+Is it responding to the phenotypic state of the animal? (which is not 
+necessarily a different question than the first)
+
+Is this saying something about epistasis? Could we bring cape in to 
+figure out more about this? How do these transcripts interact with 
+genetic loci to influence phenotype? 
+
+So for animals with a genotype that pushes Ins_tAUC up, they 
+should have a reduced effect if they have high Ins2?
+Adjusting for gene expression doesn't change the allele effects
+
+```{r gene_test}
+#ens.id <- "ENSMUSG00000000215"; tissue.idx = 2; #Ins2
+#ens.id <- "ENSMUSG00000000976"; tissue.idx = 1 #Heatr6
+ens.id <- "ENSMUSG00000001666"; tissue.idx = 1; #Ddt
+#ens.id <- "ENSMUSG00000001323"; tissue.idx = 2; #Ssr
+
+
+trait.allele.effects <- scan1coef(genoprobs[,11], cca.pheno[,trait.name,drop=FALSE], kinship = K[[11]])
+par(mfrow = c(2,1))
+plot_coefCC(trait.allele.effects, map = map) #pwk/wsb down, nod up
+
+test.allele.effects <- scan1coef(genoprobs[,11], 
+    adjust(cca.pheno[,trait.name,drop=FALSE], tissue.gene.mats[[tissue.idx]][,ens.id,drop=FALSE]), 
+    kinship = K[[11]])
+plot_coefCC(trait.allele.effects, map = map) #pwk/wsb down, nod up
+
+expr.effects <- scan1coef(genoprobs[,11], tissue.gene.mats[[tissue.idx]][,ens.id], kinship = K[[11]])
+plot_coefCC(expr.effects, map = map); #Heatr: wsb/cast/nzo down, all others up
+
+
+
+matched.mats <- get_common_rows(list(cca.pheno, tissue.gene.mats[[tissue.idx]]))
+plot.with.model(matched.mats[[1]][,trait.name], matched.mats[[2]][,ens.id], 
+    report = "cor.test", ylab = "trait", xlab = "expression")
+
+peak.genotype <- genoprobs[,peak.chr]
+peak.geno <- peak.genotype[[1]][,,names(peak.marker)]
+genotype.thresh <- 0.3
+peak.geno[which(peak.geno < genotype.thresh)] <- 0
+peak.geno[which(peak.geno >= genotype.thresh)] <- 1
+matched.mats <- get_common_rows(list(cca.pheno, tissue.gene.mats[[tissue.idx]], peak.geno))
+
+#i = 0
+for(i in 1:ncol(peak.geno)){
+    #i = i + 1
+    df <- data.frame(cbind(matched.mats[[3]][,i], round(matched.mats[[2]][,ens.id], 1), matched.mats[[1]][,trait.name]))
+    colnames(df) <- c("genotype", "Gene_Expr", "Ins_tAUC")
+    model <- lm(Ins_tAUC~Gene_Expr*genotype, data = df)
+    #summary(model)
+    #interact_plot(model, Gene_Expr, genotype, interval = TRUE, int.width = 0.9, main = colnames(matched.mats[[3]])[i])
+    interact_plot(model, genotype, Gene_Expr, interval = TRUE, int.width = 0.9, main = colnames(matched.mats[[3]])[i])
+    
+    model <- lm(Gene_Expr~Ins_tAUC*genotype, data = df)
+    interact_plot(model, genotype, Ins_tAUC, interval = TRUE, int.width = 0.9, main = colnames(matched.mats[[3]])[i])
+    #interact_plot(model, Ins_tAUC, genotype, interval = TRUE, int.width = 0.9, main = colnames(matched.mats[[3]])[i])
+}
+
+```

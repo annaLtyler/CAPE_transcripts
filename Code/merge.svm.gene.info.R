@@ -22,8 +22,8 @@ merge.svm.gene.info <- function(results.dir = ".", gene.info.table){
 		fp.rates <- read.csv(fp.csv.file, stringsAsFactors = FALSE)
 		mean.fp <- colMeans(fp.rates)
 
-		common.genes <- intersect(gene.info.table[,"entrezgene_id"], gene.ids)
-		gene.locale.table <- match(common.genes, gene.info.table[,"entrezgene_id"])
+		common.genes <- intersect(as.numeric(gene.info.table[,"entrezgene_id"]), gene.ids)
+		gene.locale.table <- match(common.genes, as.numeric(gene.info.table[,"entrezgene_id"]))
 		# head(cbind(gene.ids, gene.info.table[gene.locale.table,]))
 		gene.locale.svm <- match(common.genes, gene.ids)
 		# head(cbind(common.genes, gene.ids[gene.locale.svm]))
@@ -35,12 +35,14 @@ merge.svm.gene.info <- function(results.dir = ".", gene.info.table){
 		
 		write.table(final.table, results.file, sep = ",", quote = FALSE, row.names = FALSE)
 		
-		mean.gene.position <- rowMeans(final.table[,c("start_position", "end_position")])
+		mean.gene.position <- rowMeans(apply(final.table[,c("start_position", "end_position")], 2, as.numeric))
 		
 		jpeg(plot.file, height = 7, width = 10, units = "in", res = 300)
 		plot.new()
-		plot.window(xlim = c(min(mean.gene.position), max(mean.gene.position)), ylim = c(min(final.table[,"Mean.SVM.Score"]), max(final.table[,"Mean.SVM.Score"])))
-		text(x = mean.gene.position, y = final.table[,"Mean.SVM.Score"], labels = final.table[,"external_gene_name"], cex = 0.7)
+		plot.window(xlim = c(min(mean.gene.position), max(mean.gene.position)), 
+			ylim = c(min(as.numeric(final.table[,"Mean.SVM.Score"])), max(as.numeric(final.table[,"Mean.SVM.Score"]))))
+		text(x = as.numeric(mean.gene.position), y = as.numeric(final.table[,"Mean.SVM.Score"]), 
+			labels = final.table[,"external_gene_name"], cex = 0.7)
 		axis(1);axis(2)
 		mtext("Genomic Position", side = 1, line = 2.5)				
 		mtext("SVM Score", side = 2, line = 2.5)

@@ -12,18 +12,32 @@ plot.results = TRUE, add = FALSE, plot.type = "p"){
 	report <- report[1]
 	
 	model <- lm(y~x)
-	
-	if(report == "lm"){
-		f <- summary(model)$fstatistic
-	    p <- pf(f[1],f[2],f[3],lower.tail=F)
-		r2 <- signif(summary(model)$r.squared, 2)
-		rlab <- "R2"
+
+	if(!is.na(coef(model)[2])){
+		if(report == "lm"){
+			f <- summary(model)$fstatistic
+			p <- pf(f[1],f[2],f[3],lower.tail=F)
+			r2 <- signif(summary(model)$r.squared, 2)
+			rlab <- "R2"
+			}else{
+			test <- cor.test(x,y)	
+			p <- signif(test$p.value, 2)
+			r2 <- signif(test$estimate, 2)
+			rlab <- "r"
+			}
+	}else{
+		if(report == "lm"){
+			f <- NA
+			p <- NA
+			r2 <- NA
+			rlab <- "R2"
 		}else{
-		test <- cor.test(x,y)	
-		p <- signif(test$p.value, 2)
-		r2 <- signif(test$estimate, 2)
-		rlab <- "r"
-		}
+			test <- NA
+			p <- NA
+			r2 <- NA
+			rlab <- "r"
+			}
+	}
 
 	if(plot.results){
 	new.title <- paste0(main, "\n", rlab, " = ", r2, ", p = ", signif(p, 2))
@@ -33,7 +47,10 @@ plot.results = TRUE, add = FALSE, plot.type = "p"){
 	}else{
 		points(x,y, col = col, pch = pch, cex = cex)
 	}
-	abline(model, col = "#a6bddb", lwd = 3)
+
+	if(!is.na(coef(model)[2])){
+		abline(model, col = "#a6bddb", lwd = 3)
+	}
 	}
 	
 	invisible(c("r" = r2, "p" = p))
