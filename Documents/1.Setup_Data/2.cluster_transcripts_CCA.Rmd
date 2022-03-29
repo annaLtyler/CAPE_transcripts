@@ -32,6 +32,8 @@ if(is.na(exp.name)){
 
 nperms = 10 #number of permutations to do in penalized CCA to determine optimal penalties
 n.bootstraps = 100 #number of bootstraps to perform to stabilize CCA estimates
+lodthresh = 5
+peak.dist <- 10 #maximum distance in MB for overlapping QTL
 ```
 
 
@@ -468,8 +470,6 @@ get_best_penalty  <- function(tissue.grid.results){
     #las = 2, cex.axis = 0.8, col = box.col)
     return(best.tissue.penalty)
 }
-
-
 ```
 
 For each set of transcripts, we performed sparse CCA over a series of penalties
@@ -1724,8 +1724,6 @@ a given threshold. We then plot the allele effects of the two to see
 if they match.
 
 ```{r allele_plots}
-lodthresh = 5.5
-peak.dist <- 10 #maximum distance in MB for overlapping QTL
 shared.peaks <- vector(mode = "list", length = length(tissue.names))
 names(shared.peaks) <- tissue.names
 
@@ -1984,11 +1982,24 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
         }
 
         #5-6 transcript and trait mapping
+        lod.mat <- cbind(tissue.qtl[[2]][,colnames(latent_trait_trans[[1]])[ct]], 
+            tissue.qtl[[1]][,colnames(latent_trait_trans[[2]])[ct]])
+        mark.locale <- Reduce("intersect", apply(lod.mat, 2, function(x) which(x > lodthresh)))
         par(mar = c(4,4,2,4))
         plot(tissue.qtl[[2]], map = map, lodcol = colnames(latent_trait_trans[[1]])[ct], 
             main = "Composite Trait QTL")
+        plot.dim <- par("usr")
+        points((mark.locale/nrow(lod.mat))*plot.dim[2], lod.mat[mark.locale,1], 
+            pch = 16, col = "red", cex = 0.5)
         plot(tissue.qtl[[1]], map = map, lodcol = colnames(latent_trait_trans[[2]])[ct], 
             main = "Composite Transcript QTL")
+        plot.dim <- par("usr")
+        points((mark.locale/nrow(lod.mat))*plot.dim[2], lod.mat[mark.locale,2], pch = 16, 
+            col = "red", cex = )
+
+
+        
+
 
         #7 plot latent transcript-latent trait correlation
         plot.with.model(latent_trait_trans[[2]][,ct], latent_trait_trans[[1]][,ct],
@@ -2132,6 +2143,8 @@ tissue.name <- "Adipose"; CT = 1; Chr = "X"
 #tissue.name = "Liver"; CT = 1; Chr = 17
 #tissue.name = "Islet"; CT = 18; Chr = 11
 #tissue.name <- "Adipose"; CT = 19; Chr = 11
+#tissue.name <- "Liver"; CT = 5; Chr = 4
+#tissue.name <- "Liver"; CT = 5; Chr = 8
 
 
 #get data for specified tissue
@@ -2148,11 +2161,14 @@ if(Chr == "X"){
 
 trait.qtl <- scan1(genoprobs[,Chr], trait.trans$Composite_Traits[,CT,drop=FALSE], kinship = K[[chr.num]])
 transcript.qtl <- scan1(genoprobs[,Chr], trait.trans$Composite_Transcripts[,CT,drop=FALSE], kinship = K[[chr.num]])
-#par(mfrow = c(2,1))
-#plot(transcript.qtl, map = map)
-#plot(trait.qtl, map = map)
-trait.peaks <- find_peaks(trait.qtl, map = map, threshold = 5, prob = 0.95)
 transcript.peaks <- find_peaks(transcript.qtl, map = map, threshold = 5, prob = 0.95)
+trait.peaks <- find_peaks(trait.qtl, map = map, threshold = 5, prob = 0.95)
+
+quartz(width = 10, height = 6);par(mfrow = c(2,1))
+plot(trait.qtl, map = map, main = "CTrait")
+abline(v = trait.peaks[1,"pos"])
+plot(transcript.qtl, map = map, main = "CTranscript")
+abline(v = transcript.peaks[1,"pos"])
 
 trait.peak.lod <- trait.peaks[1,"lod"]
 trait.peak.pos <- trait.peaks[1,"pos"]
@@ -2162,20 +2178,22 @@ transcript.peak.pos <- transcript.peaks[1,"pos"]
 #see if transcript mediates trait qtl
 adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], trait.trans$Composite_Transcripts[,CT,drop=FALSE])
 med.qtl <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
-#par(mfrow = c(2,1))
-#plot(transcript.qtl, map = map)
-#plot(trait.qtl, map = map)
-#plot(med.qtl, map = map, add = TRUE, col = "red")
 
+quartz(width = 10, height = 6);par(mfrow = c(2,1))
+par(mfrow = c(2,1))
+plot(transcript.qtl, map = map)
+plot(trait.qtl, map = map)
+plot(med.qtl, map = map, add = TRUE, col = "red")
 
 #Use Mouse Mine to make a list of positional candidates for the region identified above
 
 #Identify transcripts with non-zero loadings
 non.zero.loadings <- which(boot.CCA.results[[tissue.locale]]$u[,CT] != 0)
 transcripts <- colnames(matched.mats[[tissue.locale]]$X)[non.zero.loadings]
-#transcript.names <- gene.info[[tissue.locale]][match(transcripts, gene.info[[tissue.locale]][,1]),"symbol"]
-#full.table <- cbind(transcript.names, transcripts, boot.CCA.results[[tissue.locale]]$u[non.zero.loadings,CT])
-#loading.order <- order(as.numeric(full.table[,3]))
+transcript.names <- gene.info[[tissue.locale]][match(transcripts, gene.info[[tissue.locale]][,1]),"symbol"]
+
+full.table <- cbind(transcript.names, transcripts, boot.CCA.results[[tissue.locale]]$u[non.zero.loadings,CT])
+loading.order <- order(as.numeric(full.table[,3]))
 #write.table(full.table[loading.order,], "~/Desktop/Adipose_CT1_transcripts.txt", quote = FALSE, row.names = FALSE, col.names = FALSE, sep = "\t")
 #length(transcripts)
 
@@ -2233,11 +2251,13 @@ plot(mediated.lod, pch = 16, xlim = c(min(mediated.lod[,1]), max(mediated.lod[,1
 text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
 abline(v = trait.peak.lod, h = transcript.peak.lod) 
 
+candidate.name = "Sigmar1"
+
 #show heatmap of individual gene expression along with trait values
 ct.loadings <- boot.CCA.results[[tissue.locale]]$u[,CT,drop=FALSE]
 most.pos <- order(ct.loadings, decreasing = TRUE)[1:10]
 most.neg <- order(ct.loadings, decreasing = FALSE)[1:10]
-cand.id <- gene.info[[tissue.name]][match("Sash3", gene.info[[tissue.name]][,"symbol"]),1]
+cand.id <- gene.info[[tissue.name]][match(candidate.name, gene.info[[tissue.name]][,"symbol"]),1]
 cand.pos <- which(colnames(matched.mats[[tissue.locale]]$X) == cand.id)
 ct.expr <- matched.mats[[tissue.locale]]$X[,c(most.pos, most.neg, cand.pos),drop=FALSE];show.gene.names = TRUE
 
@@ -2246,9 +2266,8 @@ ct.expr <- matched.mats[[tissue.locale]]$X[,c(most.pos, most.neg, cand.pos),drop
 #sh3.gene.id <- gene.info[[tissue.name]][match(sh3.genes[,2], gene.info[[tissue.name]][,"symbol"]),1]
 #ct.expr <- matched.mats[[tissue.locale]]$X[,sh3.gene.id,drop=FALSE];show.gene.names = TRUE
 
-
 #or use all non-zero
-#ct.expr <- matched.mats[[tissue.locale]]$X[,non.zero.loadings,drop=FALSE];show.gene.names = FALSE
+ct.expr <- matched.mats[[tissue.locale]]$X[,non.zero.loadings,drop=FALSE];show.gene.names = FALSE
 
 colnames(ct.expr) <- gene.info[[tissue.name]][match(colnames(ct.expr), gene.info[[tissue.name]][,1]),"symbol"]
 
@@ -2264,7 +2283,7 @@ test <- pheatmap(ct.expr[ctrait.order,], show_rownames = FALSE,
 ctranscript.order <- test$tree_col$order
 
 #plot without dendrogram
-png("~/Desktop/Sash3_expression.png", width = 10, height = 4, units = "in", res = 200)
+png("~/Desktop/CT_transcripts_expression.png", width = 10, height = 4, units = "in", res = 200)
 pheatmap(t(ct.expr[ctrait.order,ctranscript.order]), show_colnames = FALSE, 
     show_rownames = show.gene.names, cluster_rows = FALSE, cluster_cols = FALSE, 
     annotation_col = trait.df, scale = "row")

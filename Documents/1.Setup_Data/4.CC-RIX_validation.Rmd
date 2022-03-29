@@ -93,7 +93,8 @@ the corresponding parameters in the appropriate if chunk.
 manual.or.CT <- "CT" #set whether to set genes by hand or to use a CT from the DO study
 
 if(manual.or.CT == "manual"){
-    gene.name <- "Sash3" #set gene name(s) here
+    #gene.name <- "Sash3" #set gene name(s) here
+    gene.name <- "Lep"
     gene.weights <- 1 #set weights here
 
     #convert to ensembl ID
@@ -104,6 +105,8 @@ if(manual.or.CT == "manual"){
     #create a weighted vector for the gene(s)    
     expr.vector  <- c(1)
     names(expr.vector) <- gene.id
+
+    label.text <- paste(gene.name, "expression")
 }
 
 if(manual.or.CT == "CT"){
@@ -111,8 +114,11 @@ if(manual.or.CT == "CT"){
     #doing this by hand now, but maybe can automate later.
 
     #tissue.name <- "Adipose"; CT <- 1
+    #tissue.name <- "Adipose"; CT <- 20
     #tissue.name <- "Islet"; CT <- 1
-    tissue.name <- "Adipose"; CT <- 6
+    #tissue.name <- "Liver"; CT <- 1
+    tissue.name <- "Liver"; CT <- 5 #only a few genes, but highly correlated with traits
+    #tissue.name <- "SkeletalMuscle"; CT <- 1
 
     #read expression data to get transcript names
     do.expr <- readRDS(here("Results", "CCA_Clusters", "all_traits", "Adjusted_Expression.RDS"))
@@ -122,10 +128,12 @@ if(manual.or.CT == "CT"){
     tissue.idx <- which(names(boot.CCA.results) == tissue.name)
     expr.vector <- boot.CCA.results[[tissue.idx]]$u[,CT]
     names(expr.vector) <- colnames(do.expr[[tissue.idx]])
+
+    label.text <- paste(tissue.name, "CT", CT)
 }
 ```
 
-Gene expression in this analysis was set as `r manual.or.CT`.
+Gene expression in this analysis was set to analyze `r label.text`.
 
 ```{r read_data}
 all.var <- ls()
@@ -551,13 +559,25 @@ for(i in 1:length(all.chem.expr.cor)){
 }
 ```
 
-Gene expression in the adipose tissue is most correlated overall with blood chemistries.
+The following box plots further summarize the correlations across
+tissues and chemistries. 
+
+### All Tissues and Chemistries
+
+```{r grouped_boxes, fig.width = 10, fig.height = 5}
+plot.grouped.boxes(all.chem.expr.cor, type = "Matrix")
+abline(h = 0)
+```
+
+### All Tissues
 
 ```{r cor_by_tissue, fig.width = 4, fig.height = 4}
 boxplot(lapply(all.chem.expr.cor, abs), ylab = "correlation")
 ```
 
 Insulin has the greatest correlation with gene expression
+
+### Tissues and Chemistries Separated
 
 ```{r cor_by_chem, fig.width = 9, fig.height = 4}
 par(mfrow = c(1,3))
@@ -590,22 +610,35 @@ aligned.expr.bw <- match_pheno_expr(composite.expr, full.bw.mat)
 bw.matched.expr <- aligned.expr.bw[[1]]
 matched.bw <- aligned.expr.bw[[2]]
 
+all.bw.cor <- vector(mode = "list", length = length(tissue.expr))
+names(all.bw.cor) <- names(tissue.expr)
+
 for(i in 1:length(tissue.expr)){
     cat("###", names(tissue.expr)[i],"\n")
-    
+    bw.cor.mat <- rep(NA, nrow(groups))
     #quartz(width = 10, height = 5)
     layout(layout.matrix)
     for(g in 1:nrow(groups)){
         group.locale <- Reduce("intersect", lapply(group.def, 
             function(x) which(matched.chem[[i]][,x] == groups[g,x])))        
-        plot.with.model(rankZ(bw.matched.expr[[i]][group.locale]),
+        bw.cor <- plot.with.model(rankZ(bw.matched.expr[[i]][group.locale]),
             rankZ(as.numeric(matched.bw[[i]][group.locale,"mouse.weight.val"])),
             ylab = "Final BW", xlab = "Expression", main = paste(groups[g,], collapse = " "), 
             report = "cor.test")
+        bw.cor.mat[g] <- bw.cor[1]
     }
+    all.bw.cor[[i]] <- bw.cor.mat
     cat("\n\n")
 }
 
+```
+
+The following plot summarizes the correlations across tissues.
+
+### All Tissues
+
+```{r bw_cor_box}
+boxplot(all.bw.cor)
 ```
 
 ## Allele Effects {.tabset .tabset-fade .tabset-pills}
@@ -624,28 +657,38 @@ If the manual.or.CT parameter is set to CT, the figure
 below shows the allele effects from the DO for 
 comparison with allele effects from the CC-RIX.
 
+This piece is only for CT pairs that had overlapping 
+composite transcript QTL and composite trait QTL.
+Otherwise, we can't compare trait and transcript allele 
+effects. So if there are no overlapping QTLs for the 
+given CT pair, this part is skipped.
+
 ```{r, plot_orig, fig.width = 9, fig.height = 5, results = "asis"}
 if(manual.or.CT == "CT"){
 
     qtl.file <- list.files(here("Results", "CCA_Clusters", "all_traits"), 
         pattern = paste0("Individual.QTL.", tissue.name, ".Composite_Trait", CT, ".Chr"), 
         full.names = TRUE)
-    qtl.map <- readRDS(here("Data", "map.RDS"))
-    qtl.scan <- lapply(qtl.file, readRDS)
-    Ctranscript.peaks <- lapply(qtl.scan, function(x) find_peaks(x$Transcript_LOD, map = qtl.map))
-    #Ctrait.peaks <- lapply(qtl.scan, function(x) find_peaks(x$Trait_LOD, map = qtl.map))
-    names(Ctranscript.peaks) <- sapply(Ctranscript.peaks, function(x) paste(x["chr"], x["pos"], sep = "_"))
+    if(length(qtl.file) >0){
+        qtl.map <- readRDS(here("Data", "map.RDS"))
+        qtl.scan <- lapply(qtl.file, readRDS)
+        Ctranscript.peaks <- lapply(qtl.scan, function(x) find_peaks(x$Transcript_LOD, map = qtl.map))
+        #Ctrait.peaks <- lapply(qtl.scan, function(x) find_peaks(x$Trait_LOD, map = qtl.map))
+        names(Ctranscript.peaks) <- sapply(Ctranscript.peaks, function(x) paste(x["chr"], x["pos"], sep = "_"))
 
-    for(i in 1:length(qtl.scan)){
-        chr.label <- strsplit(basename(qtl.file[[i]]), ".", fixed = TRUE)[[1]][6]
-        cat("QTL on Chr", chr.label, "\n")
-        #quartz(width = 9, height = 5)
-        plot_coefCC(qtl.scan[[i]]$Transcript_Coef, map = qtl.map, 
-            main = paste(tissue.name, "Composite Transcript", CT))
-        plot_coefCC(qtl.scan[[i]]$Trait_Coef, map = qtl.map, 
-            main = paste(tissue.name, "Composite Trait", CT))
-        cat("\n\n")
+        for(i in 1:length(qtl.scan)){
+            chr.label <- strsplit(basename(qtl.file[[i]]), ".", fixed = TRUE)[[1]][6]
+            cat("QTL on Chr", chr.label, "\n")
+            #quartz(width = 9, height = 5)
+            plot_coefCC(qtl.scan[[i]]$Transcript_Coef, map = qtl.map, 
+                main = paste(tissue.name, "Composite Transcript", CT))
+            plot_coefCC(qtl.scan[[i]]$Trait_Coef, map = qtl.map, 
+                main = paste(tissue.name, "Composite Trait", CT))
+            cat("\n\n")
+        }
     }
+}else{
+    qtl.file <- NULL
 }
 
 ```
@@ -868,48 +911,50 @@ test.alleles <- c("AJ" = "AA", "B6" = "BB", "129" = "CC",
     "WSB" = "HH")
 ```
 
-```{r bw_marker_effects}, fig.width = 9, fig.height = 6, results = "asis"}
+```{r bw_marker_effects, fig.width = 9, fig.height = 6, results = "asis"}
 #The peak of the QTL for the adipose composite transcript was at 49 Mb in the DO
-max.allele.expr.effect <- lapply(1:length(Ctranscript.peaks), function(x) matrix(NA, nrow = length(test.alleles), ncol = length(tissue.expr)))
-max.allele.bw.effect <- lapply(1:length(Ctranscript.peaks), function(x) matrix(NA, nrow = length(test.alleles), ncol = 1))
-names(max.allele.expr.effect) <- names(max.allele.bw.effect) <- names(Ctranscript.peaks)
-for(i in 1:length(max.allele.expr.effect)){
-    rownames(max.allele.expr.effect[[i]]) <- rownames(max.allele.bw.effect[[i]]) <- names(test.alleles)
-    colnames(max.allele.expr.effect[[i]]) <- names(tissue.expr)
-}
-for(a in 1:length(test.alleles)){
-    cat("####", names(test.alleles)[a], "\n")
-    #quartz(width = 9, height = 6)
-    layout.mat = matrix(c(1:5,0), nrow = 2, byrow = TRUE)
-    layout(layout.mat)
-    for(r in 1:length(Ctranscript.peaks)){
-        region.chr <- Ctranscript.peaks[[r]][1,"chr"]
-        region.start <- Ctranscript.peaks[[r]][1,"pos"] - 1
-        region.end <- Ctranscript.peaks[[r]][1,"pos"] + 1
-        max.bw.expr.markers <- test_region_pheno(genoprobs, test.pheno = bw.matched.expr, 
-            manifest, map, region.chr, region.start, allele = test.alleles[a],
-            region.end, trait.label = expr.trait.label, col = CCcolors[a])
-    
-        max.allele.expr.effect[[r]][a,] <- sapply(max.bw.expr.markers[[2]], function(x) x[1])
-    
-        #The same allele has a slight negative effect on body weight too.
-        #quartz(width = 4, height = 6)
-        #par(mfrow = c(2,1))
-        test.bw <- list(apply(matched.bw[[1]][,"mouse.weight.val",drop=FALSE], 2, as.numeric))
-        rownames(test.bw[[1]]) <- rownames(matched.bw[[1]])
+if(length(qtl.file) > 0){
+    max.allele.expr.effect <- lapply(1:length(Ctranscript.peaks), function(x) matrix(NA, nrow = length(test.alleles), ncol = length(tissue.expr)))
+    max.allele.bw.effect <- lapply(1:length(Ctranscript.peaks), function(x) matrix(NA, nrow = length(test.alleles), ncol = 1))
+    names(max.allele.expr.effect) <- names(max.allele.bw.effect) <- names(Ctranscript.peaks)
+    for(i in 1:length(max.allele.expr.effect)){
+        rownames(max.allele.expr.effect[[i]]) <- rownames(max.allele.bw.effect[[i]]) <- names(test.alleles)
+        colnames(max.allele.expr.effect[[i]]) <- names(tissue.expr)
+    }
+    for(a in 1:length(test.alleles)){
+        cat("####", names(test.alleles)[a], "\n")
+        #quartz(width = 9, height = 6)
+        layout.mat = matrix(c(1:5,0), nrow = 2, byrow = TRUE)
+        layout(layout.mat)
+        for(r in 1:length(Ctranscript.peaks)){
+            region.chr <- Ctranscript.peaks[[r]][1,"chr"]
+            region.start <- Ctranscript.peaks[[r]][1,"pos"] - 1
+            region.end <- Ctranscript.peaks[[r]][1,"pos"] + 1
+            max.bw.expr.markers <- test_region_pheno(genoprobs, test.pheno = bw.matched.expr, 
+                manifest, map, region.chr, region.start, allele = test.alleles[a],
+                region.end, trait.label = expr.trait.label, col = CCcolors[a])
+        
+            max.allele.expr.effect[[r]][a,] <- sapply(max.bw.expr.markers[[2]], function(x) x[1])
+        
+            #The same allele has a slight negative effect on body weight too.
+            #quartz(width = 4, height = 6)
+            #par(mfrow = c(2,1))
+            test.bw <- list(apply(matched.bw[[1]][,"mouse.weight.val",drop=FALSE], 2, as.numeric))
+            rownames(test.bw[[1]]) <- rownames(matched.bw[[1]])
 
-        max.bw.markers <- test_region_pheno(genoprobs, test.pheno = test.bw, 
-            manifest, map, region.chr, region.start, allele = test.alleles[a], 
-            region.end, plot.results = TRUE, trait.label = "Final Body Weight", 
-            col = CCcolors[a])
-        #take the additive effect, since this is what we are comparing to in 
+            max.bw.markers <- test_region_pheno(genoprobs, test.pheno = test.bw, 
+                manifest, map, region.chr, region.start, allele = test.alleles[a], 
+                region.end, plot.results = TRUE, trait.label = "Final Body Weight", 
+                col = CCcolors[a])
+            #take the additive effect, since this is what we are comparing to in 
 
-        max.allele.bw.effect[[r]][a,] <- sapply(max.bw.markers[[2]], function(x) x[1])
+            max.allele.bw.effect[[r]][a,] <- sapply(max.bw.markers[[2]], function(x) x[1])
 
-        plot.text(paste("Chromosome", Ctranscript.peaks[[r]]["chr"], 
-            "\n", round(as.numeric(Ctranscript.peaks[[r]]["pos"]), 2), 
-            "\u00B1", "1 Mb"), cex = 2)
-        cat("\n\n")
+            plot.text(paste("Chromosome", Ctranscript.peaks[[r]]["chr"], 
+                "\n", round(as.numeric(Ctranscript.peaks[[r]]["pos"]), 2), 
+                "\u00B1", "1 Mb"), cex = 2)
+            cat("\n\n")
+        }
     }
 }
 
@@ -922,19 +967,22 @@ in each tissue type. This is an aggregation of the correlations
 shown above.
 
 ```{r plot_allele_effects, fig.width = 9, fig.height = 6}
-for(r in 1:length(Ctranscript.peaks)){
-    ylim <- c(min(max.allele.expr.effect[[r]], na.rm = TRUE), 
-    max(max.allele.expr.effect[[r]], na.rm = TRUE))
-    par(mfrow = c(2,3))
-    for(i in 1:length(tissue.expr)){
-        allele.order <- order(max.allele.expr.effect[[r]][,i])
-        barplot(max.allele.expr.effect[[r]][allele.order,i], col = CCcolors[allele.order], las = 2,
-        ylab = "Maximum Allele Effect on Expression", main = names(tissue.expr)[i])
-        abline(h = 0)
+if(length(qtl.file) > 0){
+
+    for(r in 1:length(Ctranscript.peaks)){
+        ylim <- c(min(max.allele.expr.effect[[r]], na.rm = TRUE), 
+        max(max.allele.expr.effect[[r]], na.rm = TRUE))
+        par(mfrow = c(2,3))
+        for(i in 1:length(tissue.expr)){
+            allele.order <- order(max.allele.expr.effect[[r]][,i])
+            barplot(max.allele.expr.effect[[r]][allele.order,i], col = CCcolors[allele.order], las = 2,
+            ylab = "Maximum Allele Effect on Expression", main = names(tissue.expr)[i])
+            abline(h = 0)
+        }
+        bw.effect.order <- order(max.allele.bw.effect[[r]][,1])
+        barplot(max.allele.bw.effect[[r]][bw.effect.order,1], col = CCcolors[bw.effect.order],
+        ylab = "Maximum Allele Effect on Weight", main = "Body Weight", las = 2)
     }
-    bw.effect.order <- order(max.allele.bw.effect[[r]][,1])
-    barplot(max.allele.bw.effect[[r]][bw.effect.order,1], col = CCcolors[bw.effect.order],
-    ylab = "Maximum Allele Effect on Weight", main = "Body Weight", las = 2)
 }
 ```
 
@@ -948,57 +996,61 @@ Effects on expression are not recapitulated here, because they are
 the same as above. Instead we focus on showing all blood chemistries.
 
 ```{r allele_effects_chem, results = "asis", fig.width = 9, fig.height = 6, message = FALSE, warning = FALSE, error = FALSE}
-max.allele.chem.effect <- lapply(1:length(Ctranscript.peaks), function(x) matrix(NA, nrow = length(test.alleles), ncol = 10))
-for(i in 1:length(Ctranscript.peaks)){
-    rownames(max.allele.chem.effect[[r]]) <- names(test.alleles)
-}
+if(length(qtl.file) > 0){
 
-for(a in 1:length(test.alleles)){
-    cat("####", names(test.alleles)[a], "\n")
-    #quartz(width = 9, height = 6)
-    
-    #quartz(width = 4, height = 6)
-    #par(mfrow = c(2,1))
-    test.chem <- list(apply(matched.chem[[1]][,5:14,drop=FALSE], 2, as.numeric))
-    rownames(test.chem[[1]]) <- rownames(matched.chem[[1]])
-
-    layout.mat <- matrix(c(1:6), nrow = 2, byrow = FALSE)
-    layout(layout.mat)
-    for(r in 1:length(Ctranscript.peaks)){
-        region.chr <- Ctranscript.peaks[[r]][1,"chr"]
-        region.start <- Ctranscript.peaks[[r]][1,"pos"] - 1
-        region.end <- Ctranscript.peaks[[r]][1,"pos"] + 1
-
-        for(ch in 1:ncol(test.chem[[1]])){
-            one.chem <- list(test.chem[[1]][,ch,drop=FALSE])
-            max.chem.markers <- test_region_pheno(genoprobs, test.pheno = one.chem, 
-                manifest, map, region.chr, region.start, allele = test.alleles[a], 
-                region.end, plot.results = TRUE, trait.label = colnames(test.chem[[1]])[ch],
-                col = CCcolors[a])
-            max.allele.chem.effect[[r]][a,ch] <- sapply(max.chem.markers[[2]], function(x) x[1])
-        }
-    colnames(max.allele.chem.effect[[r]]) <- colnames(test.chem[[1]])
+    max.allele.chem.effect <- lapply(1:length(Ctranscript.peaks), function(x) matrix(NA, nrow = length(test.alleles), ncol = 10))
+    for(i in 1:length(Ctranscript.peaks)){
+        rownames(max.allele.chem.effect[[r]]) <- names(test.alleles)
     }
-    
-    cat("\n\n")
-}
 
+    for(a in 1:length(test.alleles)){
+        cat("####", names(test.alleles)[a], "\n")
+        #quartz(width = 9, height = 6)
+        
+        #quartz(width = 4, height = 6)
+        #par(mfrow = c(2,1))
+        test.chem <- list(apply(matched.chem[[1]][,5:14,drop=FALSE], 2, as.numeric))
+        rownames(test.chem[[1]]) <- rownames(matched.chem[[1]])
+
+        layout.mat <- matrix(c(1:6), nrow = 2, byrow = FALSE)
+        layout(layout.mat)
+        for(r in 1:length(Ctranscript.peaks)){
+            region.chr <- Ctranscript.peaks[[r]][1,"chr"]
+            region.start <- Ctranscript.peaks[[r]][1,"pos"] - 1
+            region.end <- Ctranscript.peaks[[r]][1,"pos"] + 1
+
+            for(ch in 1:ncol(test.chem[[1]])){
+                one.chem <- list(test.chem[[1]][,ch,drop=FALSE])
+                max.chem.markers <- test_region_pheno(genoprobs, test.pheno = one.chem, 
+                    manifest, map, region.chr, region.start, allele = test.alleles[a], 
+                    region.end, plot.results = TRUE, trait.label = colnames(test.chem[[1]])[ch],
+                    col = CCcolors[a])
+                max.allele.chem.effect[[r]][a,ch] <- sapply(max.chem.markers[[2]], function(x) x[1])
+            }
+        colnames(max.allele.chem.effect[[r]]) <- colnames(test.chem[[1]])
+        }
+        
+        cat("\n\n")
+    }
+}
 ```
 
 ### Blood Chemistry Allele Effects Summary
 
 ```{r plot_chem_summary, fig.width = 9, fig.height = 9}
-#quartz(width = 9, height = 9)
-par(mfrow = c(3,3))
-for(r in 1:length(max.allele.chem.effect)){
-    for(i in 1:ncol(max.allele.chem.effect[[r]])){
-        allele.order <- order(max.allele.chem.effect[[r]][,i])
-        barplot(max.allele.chem.effect[[r]][allele.order,i], 
-        col = CCcolors[allele.order], las = 2, ylab = "r", 
-        ylim = c(min(max.allele.chem.effect[[r]], na.rm = TRUE), 
-        max(max.allele.chem.effect[[r]], na.rm = TRUE)),
-        main = colnames(max.allele.chem.effect[[r]])[i])
-        abline(h = 0)
+if(length(qtl.file) > 0){
+    #quartz(width = 9, height = 9)
+    par(mfrow = c(3,3))
+    for(r in 1:length(max.allele.chem.effect)){
+        for(i in 1:ncol(max.allele.chem.effect[[r]])){
+            allele.order <- order(max.allele.chem.effect[[r]][,i])
+            barplot(max.allele.chem.effect[[r]][allele.order,i], 
+            col = CCcolors[allele.order], las = 2, ylab = "r", 
+            ylim = c(min(max.allele.chem.effect[[r]], na.rm = TRUE), 
+            max(max.allele.chem.effect[[r]], na.rm = TRUE)),
+            main = colnames(max.allele.chem.effect[[r]])[i])
+            abline(h = 0)
+        }
     }
 }
 
@@ -1009,8 +1061,10 @@ The following plot is a heatmap of the allele effects above to condense
 the figure even more.
 
 ```{r chem_effect_heat, fig.height = 4.5, fig.width = 5}
-for(r in 1:length(max.allele.chem.effect)){
-    pheatmap(max.allele.chem.effect[[r]], cluster_rows = FALSE, cluster_cols = FALSE,
-    display_numbers = TRUE)
+if(length(qtl.file) > 0){
+    for(r in 1:length(max.allele.chem.effect)){
+        pheatmap(max.allele.chem.effect[[r]], cluster_rows = FALSE, cluster_cols = FALSE,
+        display_numbers = TRUE)
+    }
 }
 ```
