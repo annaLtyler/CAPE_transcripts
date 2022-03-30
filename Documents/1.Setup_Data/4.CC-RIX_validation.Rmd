@@ -113,11 +113,11 @@ if(manual.or.CT == "CT"){
     #set tissue, CT, and region from DO study to analyze
     #doing this by hand now, but maybe can automate later.
 
-    #tissue.name <- "Adipose"; CT <- 1
+    tissue.name <- "Adipose"; CT <- 1
     #tissue.name <- "Adipose"; CT <- 20
     #tissue.name <- "Islet"; CT <- 1
     #tissue.name <- "Liver"; CT <- 1
-    tissue.name <- "Liver"; CT <- 5 #only a few genes, but highly correlated with traits
+    #tissue.name <- "Liver"; CT <- 5 #only a few genes, but highly correlated with traits
     #tissue.name <- "SkeletalMuscle"; CT <- 1
 
     #read expression data to get transcript names
@@ -548,8 +548,17 @@ global.min <- min(unlist(all.chem.expr.cor))
 for(i in 1:length(all.chem.expr.cor)){
     cat("###", names(all.chem.expr.cor)[i], "\n")
     par(mar = c(10,7,1,1))
-    imageWithText(t(all.chem.expr.cor[[i]]), global.color.scale = TRUE, 
-        global.min = global.min, global.max = global.max, 
+    #sort rows and columns based on the first PC
+    #plot.decomp(all.chem.expr.cor[[i]], label.points = TRUE)
+    #plot.decomp(t(all.chem.expr.cor[[i]]), label.points = TRUE)
+    row.order.2d <- sort.by.then.by(plot.decomp(all.chem.expr.cor[[i]], 
+        plot.results = FALSE)$u, col.type = c("n", "n"), return.order = TRUE)
+    row.order <- row.order.2d[,1]
+    col.order.2d <- sort.by.then.by(plot.decomp(t(all.chem.expr.cor[[i]]), 
+        plot.results = FALSE)$u, col.type = c("n", "n"), return.order = TRUE)
+    col.order <- col.order.2d[,1]
+    imageWithText(t(all.chem.expr.cor[[i]][row.order, col.order]), 
+        global.color.scale = TRUE, global.min = global.min, global.max = global.max, 
         use.pheatmap.colors = TRUE, col.text.rotation = 45, cex = 0.8,
         col.text.adj = 1, col.text.shift = 0.08, row.text.shift = 0.08)
     

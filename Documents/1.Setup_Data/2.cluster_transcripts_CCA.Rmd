@@ -32,8 +32,9 @@ if(is.na(exp.name)){
 
 nperms = 10 #number of permutations to do in penalized CCA to determine optimal penalties
 n.bootstraps = 100 #number of bootstraps to perform to stabilize CCA estimates
-lodthresh = 5
-peak.dist <- 10 #maximum distance in MB for overlapping QTL
+lodthresh = 5.5
+peak.dist <- 2 #maximum distance in MB for overlapping QTL
+perc.drop.thresh = 0.75 #fraction of full LOD score mediated LOD score needs to be to be scanned further
 ```
 
 
@@ -1720,7 +1721,9 @@ if(!file.exists(trait.lod.file) || delete_previous){
 
 We are most interested in trait-transcript pairs that have shared QTL.
 Here we go through each pair and identify overlapping peaks above
-a given threshold. We then plot the allele effects of the two to see
+a given threshold. We then perform a mediation analysis to test 
+whether the allele effects match. We 
+We then plot the allele effects of the two to see
 if they match.
 
 ```{r allele_plots}
@@ -1767,17 +1770,25 @@ for(i in 1:length(tissue.names)){
 
 
 ```{r plot_shared, results = "asis", fig.height = 9, fig.width = 11}
+all.lod.drop <- vector(mode = "list", length = length(tissue.names))
+names(all.lod.drop) <- tissue.names
 for(i in 1:length(shared.peaks)){
     if(is.interactive){pdf(file.path(results.dir, 
     paste0("Overlapping.Peaks.", tissue.names[i], ".pdf")), width = 10, height = 6)}
     cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
     if(length(shared.peaks[[i]]) > 0){
+        lod.drop.table <- matrix(NA, nrow = nrow(shared.peaks[[i]]), ncol = 5)
+        colnames(lod.drop.table) <- c("chr", "pos", "original", "mediated", "percent_drop")
+        rownames(lod.drop.table) <- shared.peaks[[i]][,2]
+        
         for(tr in 1:nrow(shared.peaks[[i]])){
             cat("####", shared.peaks[[i]][tr,2], ", Chr", shared.peaks[[i]][tr,3], "\n")
                 
             trait = as.numeric(gsub("Composite_Trait", "", shared.peaks[[i]][tr,2]))
             chr = as.numeric(shared.peaks[[i]][tr,3])
             pos.trait.qtl <- as.numeric(shared.peaks[[i]][tr,4])
+            trait.qtl.lod <- as.numeric(shared.peaks[[i]][tr,5])
+            peak.marker <- which(map[[chr]] == pos.trait.qtl)
             pos.transcript.qtl <- as.numeric(shared.peaks[[i]][tr,11])
             if(chr == 20){chr = "X"}
 
@@ -1789,37 +1800,57 @@ for(i in 1:length(shared.peaks)){
             rownames(ctrait) <- rownames(matched.mats[[i]]$Z)
             colnames(ctrait) <- paste0("CTrans", 1:ncol(ctrait))
 
-            #map and save results, blups take a very long time
-            individual.scan.file <- file.path(results.dir, 
-                paste0("Individual.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
+            mediation.scan.file <- file.path(results.dir, 
+                paste0("Mediation.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
                 ".Chr.", shared.peaks[[i]][tr,3], ".RDS"))
 
-            if(!file.exists(individual.scan.file) || delete_previous){
-                
-                #map the transcript
-                transcript.lod <- scan1(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
-                #find_peaks(transcript.lod, map = map, threshold = 5, prob = 0.95)
-                #transcript.coef <- scan1coef(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
-                transcript.coef <- scan1blup(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
-            
-                #map the trait too
-                trait.lod <- scan1(genoprobs[,chr], ctrait[,trait,drop=FALSE])
-                #find_peaks(trait.lod, map = map, threshold = 5, prob = 0.95)
-                #trait.coef <- scan1coef(genoprobs[,chr], ctrait[,trait,drop=FALSE])
-                trait.coef <- scan1blup(genoprobs[,chr], ctrait[,trait,drop=FALSE])
-                
-                result <- list("Transcript_LOD" = transcript.lod, 
-                "Transcript_Coef" = transcript.coef, 
-                "Trait_LOD" = trait.lod, 
-                "Trait_Coef" = trait.coef)
-
-                saveRDS(result, individual.scan.file)
+            if(!file.exists(mediation.scan.file)){
+                #scan to see if the transcript mediates the trait QTL
+                adj.trait <- adjust(ctrait, trans)
+                adj.scan <- scan1(genoprobs[,chr], adj.trait, kinship = K[[chr]])
+                saveRDS(adj.scan, mediation.scan.file)
             }else{
-                result <- readRDS(individual.scan.file)
-                transcript.lod = result$Transcript_LOD
-                transcript.coef <- result$Transcript_Coef
-                trait.lod <- result$Trait_LOD
-                trait.coef <- result$Trait_Coef
+                adj.scan <- readRDS(mediation.scan.file)
+            }
+
+            med.lod <- adj.scan[peak.marker,1]
+            perc.drop <- (trait.qtl.lod-med.lod)/trait.qtl.lod
+            lod.drop.table[tr,] <- c(as.numeric(shared.peaks[[i]][tr,3:4]), trait.qtl.lod, med.lod, perc.drop)
+
+            #if the percent drop is greater than 50% run the blups to visualize the 
+            #allele effects
+            if(perc.drop > perc.drop.thresh){
+                individual.scan.file <- file.path(results.dir, 
+                    paste0("Individual.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
+                    ".Chr.", shared.peaks[[i]][tr,3], ".RDS"))
+
+                if(!file.exists(individual.scan.file) || delete_previous){
+                
+                    #map the transcript
+                    transcript.lod <- scan1(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
+                    #find_peaks(transcript.lod, map = map, threshold = 5, prob = 0.95)
+                    #transcript.coef <- scan1coef(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
+                    transcript.coef <- scan1blup(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
+            
+                    #map the trait too
+                    trait.lod <- scan1(genoprobs[,chr], ctrait[,trait,drop=FALSE])
+                    #find_peaks(trait.lod, map = map, threshold = 5, prob = 0.95)
+                    #trait.coef <- scan1coef(genoprobs[,chr], ctrait[,trait,drop=FALSE])
+                    trait.coef <- scan1blup(genoprobs[,chr], ctrait[,trait,drop=FALSE])
+                
+                    result <- list("Transcript_LOD" = transcript.lod, 
+                    "Transcript_Coef" = transcript.coef, 
+                    "Trait_LOD" = trait.lod, 
+                    "Trait_Coef" = trait.coef)
+
+                    saveRDS(result, individual.scan.file)
+                }else{
+                    result <- readRDS(individual.scan.file)
+                    transcript.lod = result$Transcript_LOD
+                    transcript.coef <- result$Transcript_Coef
+                    trait.lod <- result$Trait_LOD
+                    trait.coef <- result$Trait_Coef
+                }
             }
            
             #plot the results
@@ -1853,8 +1884,10 @@ for(i in 1:length(shared.peaks)){
             xlab = "Trait Coefficients", ylab = "Transcript Coefficients", cex = 2)
      
             cat("\n\n")
-        }
-    }  #end peaks for tissue
+
+            all.lod.drop[[i]] <- lod.drop.table
+        } #end looping through shared peaks for the tissue
+    }  #end looping through tissues
     if(is.interactive){dev.off()}
 }
 ```
