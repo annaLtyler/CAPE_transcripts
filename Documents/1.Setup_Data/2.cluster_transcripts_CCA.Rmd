@@ -102,10 +102,10 @@ names(all.var.expr) <- names(matched.expr)
 for(i in 1:length(all.var.expr)){
    all.var.expr[[i]] <- plot.decomp(matched.expr[[i]], plot.results = FALSE)
 }
-par(mfrow = c(2,2))
-for(i in 1:length(all.var.expr)){
-    barplot_with_num(round(all.var.expr[[i]]$var.exp[1:20], 2), main = tissue.names[i])
-}
+#par(mfrow = c(2,2))
+#for(i in 1:length(all.var.expr)){
+#    barplot_with_num(round(all.var.expr[[i]]$var.exp[1:20], 2), main = tissue.names[i])
+#}
 
 tissue.label <- unlist(lapply(1:length(matched.expr), 
 function(x) rep(names(tissue.adj.expr)[x], ncol(matched.expr[[x]]))))
@@ -407,7 +407,6 @@ file.text <- "trait"
 names(matched.mats) <- tissue.names
 #saveRDS(matched.mats, file.path(results.dir, "Trait.Expression.Matched.RDS"))
 ```
-
 
 ## Penalty Optimization {.tabset .tabset-fade .tabset-pills}
 
@@ -2178,19 +2177,19 @@ composite transcript mediates the composite trait QTL by at least
 The pipeline is roughly as follows:
 1. 
 
-```{r mediation, results = "asis", fig.width = 10, fig.height = 10}
+```{r mediation, results = "asis", fig.width = 10, fig.height = 7}
 
 for(i in 1:length(all.lod.drop)){
     cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
     tissue.name <- tissue.names[i]
     if(length(all.lod.drop[[i]]) > 0){
-        for(tr in 1:nrow(all.lod.drop[[i]]))
+        for(tr in 1:nrow(all.lod.drop[[i]])){
             CT <- as.numeric(gsub("Composite_Trait", "", rownames(all.lod.drop[[i]])[tr]))
             chr.num <- all.lod.drop[[i]][tr,"chr"]
             lod.cut <- all.lod.drop[[i]][tr,"percent_drop"]
 
             if(lod.cut > perc.drop.thresh){
-                cat("####", rownames(all.lod.drop[[i]])[tr], "{.tabset .tabset-fade .tabset-pills}\n")
+                cat("####", rownames(all.lod.drop[[i]])[tr], "Chr", chr.num, "{.tabset .tabset-fade .tabset-pills}\n")
                 #get data for specified tissue
                 tissue.locale <- which(tissue.names == tissue.name)
                 trait.trans <- get_latent_var(tissue.mats = matched.mats[[tissue.locale]], 
@@ -2227,10 +2226,11 @@ for(i in 1:length(all.lod.drop)){
 
                 #quartz(width = 10, height = 6)
                 cat("##### Mediation Scan\n")
-                par(mfrow = c(2,1))
-                plot(transcript.qtl, map = map)
+                layout(matrix(c(1,0), ncol = 1), heights = c(0.8, 1))
+                #plot(transcript.qtl, map = map)
                 plot(trait.qtl, map = map)
                 plot(med.qtl, map = map, add = TRUE, col = "red")
+                abline(v = trait.peaks[1,"pos"], col = "blue", lwd = 3)
 
                 #Identify transcripts with non-zero loadings
                 non.zero.loadings <- which(boot.CCA.results[[tissue.locale]]$u[,CT] != 0)
@@ -2292,7 +2292,8 @@ for(i in 1:length(all.lod.drop)){
                 abline(h = transcript.peak.lod)
 
                 cat("##### Transcript vs. Trait LOD Drops\n")
-                plot(mediated.lod, pch = 16, xlim = c(min(mediated.lod[,1]), max(mediated.lod[,1])*1.1))
+                plot(mediated.lod, pch = 16, xlim = c(min(mediated.lod[,1]), max(mediated.lod[,1])*1.1),
+                    xlab = "Trait Mediated LOD", ylab = "Transcript Mediated LOD")
                 text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
                 abline(v = trait.peak.lod, h = transcript.peak.lod)             
 
@@ -2324,21 +2325,26 @@ for(i in 1:length(all.lod.drop)){
                 eqtl.lod <- rep(NA, length(gene.names))
                 names(eqtl.lod) <- gene.names
                 for(g in 1:length(gene.names)){
-                    cat(g, gene.names[g], "\n")
+                    #cat(g, gene.names[g], "\n")
                     eqtl <- scan1(genoprobs[,Chr], matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE], 
                         kinship = K[[chr.num]])
                     eqtl.lod[g] <- get_LOD(eqtl, map = map, chr = Chr, pos = gene.pos[g])
                     #plot(eqtl, map = map);abline(v = gene.pos[g])
                 }
                 cat("##### Local eQTL LOD Scores\n")
+                layout(matrix(c(1,0), ncol = 1))
+                par(mar = c(8,4,2,2))
                 barplot_with_num(sort(round(eqtl.lod, 2)), las = 2)
 
                 trait.peak.lod <- get_LOD(trait.qtl, map = map, chr = Chr, pos = trait.peak.pos)
 
-
+                cat("\n\n")
             } #end case for when there is good mediation by the composite transcript
+            cat("\n\n")
         } #end looping through rows of overlapping peaks
+    cat("\n\n")
     } #end case for when there are overlapping peaks for the tissue
+    cat("\n\n")
 } #end looping through tissues.
 
 ```
