@@ -32,7 +32,7 @@ if(is.na(exp.name)){
 
 nperms = 10 #number of permutations to do in penalized CCA to determine optimal penalties
 n.bootstraps = 100 #number of bootstraps to perform to stabilize CCA estimates
-lodthresh = 5
+lodthresh = 4
 peak.dist <- 2 #maximum distance in MB for overlapping QTL
 perc.drop.thresh = 0.75 #fraction of full LOD score mediated LOD score needs to be to be scanned further
 ```
@@ -64,8 +64,8 @@ Read in pre-filtered and pre-adjusted transcript data from
 adjust_transcripts_traits.Rmd
 
 ```{r read_data}
-tissue.adj.expr <- readRDS(file.path(results.dir, "Adjusted_Expression.RDS"))
-pheno.file <- here("Results", "CCA_Clusters", exp.name, "Adjusted_Phenotypes.RDS")
+tissue.adj.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
+pheno.file <- here("Data", "Adjusted_Phenotypes.RDS")
 cca.pheno <- readRDS(pheno.file)
 tissue.names <- names(tissue.adj.expr)
 

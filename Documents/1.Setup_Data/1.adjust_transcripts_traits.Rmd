@@ -144,10 +144,11 @@ adj.pheno <- adjust(matX = num.pheno[,keep.trait.locale],
 cca.pheno <- apply(adj.pheno, 2, scale)
 rownames(cca.pheno) <- rownames(adj.pheno)
 
-pheno.file <- here("Results", "CCA_Clusters", exp.name, "Adjusted_Phenotypes.RDS")
+#save these in data so they are easily accessible to other workflows
+pheno.file <- here("Data", "Adjusted_Phenotypes.RDS")
 saveRDS(cca.pheno, pheno.file)
 
-covar.file <- here("Results", "CCA_Clusters", exp.name, "Covariates.RDS")
+covar.file <- here("Data", "Covariates.RDS")
 saveRDS(all.covar, covar.file)
 ```
 
@@ -162,7 +163,7 @@ normalized expression matrix.
 ```{r adjust_covar}
 min.mean = 5
 
-adj.expr.file <- file.path(results.dir, "Adjusted_Expression.RDS")
+adj.expr.file <- here("Data", "Adjusted_Expression.RDS")
 if(!file.exists(adj.expr.file)){
     tissue.fil.expr <- lapply(tissue.norm, 
         function(x) x[,which(colMeans(x, na.rm = TRUE) > min.mean)])
@@ -196,7 +197,7 @@ function(x) rep(names(adj.expr)[x], ncol(matched.expr[[x]]))))
 
 all.expr <- Reduce("cbind", matched.expr)
 
-expr.decomp.file <- file.path(results.dir, "all.expr.decomp.RDS")
+expr.decomp.file <- here(results.dir, "all.expr.decomp.RDS")
 if(!file.exists(expr.decomp.file)){
     expr.decomp <- plot.decomp(t(all.expr), plot.results = FALSE)
     saveRDS(expr.decomp, expr.decomp.file)
