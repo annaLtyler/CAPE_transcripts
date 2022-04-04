@@ -32,9 +32,12 @@ if(is.na(exp.name)){
 
 nperms = 10 #number of permutations to do in penalized CCA to determine optimal penalties
 n.bootstraps = 100 #number of bootstraps to perform to stabilize CCA estimates
+pval.thresh = 0.05
+cor.diff.thresh = 0.4
 lodthresh = 4
 peak.dist <- 2 #maximum distance in MB for overlapping QTL
 perc.drop.thresh = 0.75 #fraction of full LOD score mediated LOD score needs to be to be scanned further
+
 ```
 
 
@@ -501,25 +504,9 @@ for(i in 1:length(matched.mats)){
 
 
     perm.results <- get_perm_grid(tissue.perm)
-    par(mfrow = c(2,2))
-    imageWithText(perm.results$Z, col.scale = "red", main = "Z statistics", col.text.shift = 0.07,
-    row.text.shift = 0.07)
-    imageWithText(perm.results$Cor, col.scale = "blue", main = "Correlation", col.text.shift = 0.07,
-    row.text.shift = 0.07)
-    imageWithText(-log10(perm.results$p+1e-6), col.scale = "purple", main = "-log10(p)", 
-    col.text.shift = 0.07, row.text.shift = 0.07)
-    plot(abs(perm.results$Cor), -log10(perm.results$p+1e-6),
-    xlab = "Correlation",ylab = "-log10(p)")
-
-    sig.cor.idx <- which(tissue.perm$pvals < 0.05)
-
-    if(length(sig.cor.idx) > 0){
-        best.cor.idx <- which.max(tissue.perm$ft.cors[sig.cor.idx])
-        tissue.trait.penalty[[i]] <- c("X" = tissue.perm$penaltyxs[sig.cor.idx[best.cor.idx]], 
-        "Y" = tissue.perm$penaltyzs[sig.cor.idx[best.cor.idx]])
-    }else{
-        tissue.trait.penalty[[i]] = NA
-    }
+    tissue.trait.penalty[[i]] <- perm_best_results(perm.results, pval.thresh = pval.thresh, 
+        cor.diff.thresh = cor.diff.thresh, col.text.shift = 0.1, row.text.shift = 0.1,
+        return.top.only = TRUE)
     cat("\n\n")
 }
 
@@ -1850,41 +1837,42 @@ for(i in 1:length(shared.peaks)){
                     trait.lod <- result$Trait_LOD
                     trait.coef <- result$Trait_Coef
                 }
-            }
+            
            
-            #plot the results
-            layout.mat <- matrix(c(1,1,2,2,3,3,4,4,5,0,0,0), nrow = 3, byrow = TRUE)
-            layout(layout.mat)
-            par(mar = c(2,2,2,2))
-            plot(transcript.lod, map = map, main = paste("Transcript QTL"))
-            abline(v = pos.transcript.qtl)
-            
-            plot_coefCC(transcript.coef, map = map)
-            abline(v = pos.transcript.qtl)
-            mtext(paste("CTranscript", trait, "Chr", chr), side = 3, outer = TRUE, line = -2)
-            #cat("\n\n")
+                #plot the results
+                layout.mat <- matrix(c(1,1,2,2,3,3,4,4,5,0,0,0), nrow = 3, byrow = TRUE)
+                layout(layout.mat)
+                par(mar = c(2,2,2,2))
+                plot(transcript.lod, map = map, main = paste("Transcript QTL"))
+                abline(v = pos.transcript.qtl)
+                
+                plot_coefCC(transcript.coef, map = map)
+                abline(v = pos.transcript.qtl)
+                mtext(paste("CTranscript", trait, "Chr", chr), side = 3, outer = TRUE, line = -2)
+                #cat("\n\n")
 
-            plot(trait.lod, map = map, main = "Trait QTL")
-            abline(v = pos.trait.qtl)
-            plot_coefCC(trait.coef, map = map)
-            abline(v = pos.trait.qtl)
-            #mtext(paste0("CTrait: ", trait, ", Chr: ", chr), side = 3, 
-            #outer = TRUE, line = -2)
+                plot(trait.lod, map = map, main = "Trait QTL")
+                abline(v = pos.trait.qtl)
+                plot_coefCC(trait.coef, map = map)
+                abline(v = pos.trait.qtl)
+                #mtext(paste0("CTrait: ", trait, ", Chr: ", chr), side = 3, 
+                #outer = TRUE, line = -2)
 
-            #compare allele coefficients for the trait and transcript
-            chr.pos.trait <- as.numeric(sapply(strsplit(rownames(trait.coef), "_"), function(x) x[2]))
-            nearest.trait.marker <- get.nearest.pt(chr.pos.trait, pos.trait.qtl*1e6)
-            trait.allele <- trait.coef[nearest.trait.marker,LETTERS[1:8]]
-            
-            chr.pos.trans <- as.numeric(sapply(strsplit(rownames(transcript.coef), "_"), function(x) x[2]))
-            nearest.trans.marker <- get.nearest.pt(chr.pos.trans, pos.transcript.qtl*1e6)
-            transcript.allele <- transcript.coef[nearest.trans.marker,LETTERS[1:8]]
-            plot.with.model(trait.allele, transcript.allele, pch = 16, col = CCcolors,
-            xlab = "Trait Coefficients", ylab = "Transcript Coefficients", cex = 2)
-     
-            cat("\n\n")
+                #compare allele coefficients for the trait and transcript
+                chr.pos.trait <- as.numeric(sapply(strsplit(rownames(trait.coef), "_"), function(x) x[2]))
+                nearest.trait.marker <- get.nearest.pt(chr.pos.trait, pos.trait.qtl*1e6)
+                trait.allele <- trait.coef[nearest.trait.marker,LETTERS[1:8]]
+                
+                chr.pos.trans <- as.numeric(sapply(strsplit(rownames(transcript.coef), "_"), function(x) x[2]))
+                nearest.trans.marker <- get.nearest.pt(chr.pos.trans, pos.transcript.qtl*1e6)
+                transcript.allele <- transcript.coef[nearest.trans.marker,LETTERS[1:8]]
+                plot.with.model(trait.allele, transcript.allele, pch = 16, col = CCcolors,
+                xlab = "Trait Coefficients", ylab = "Transcript Coefficients", cex = 2)
+        
+                cat("\n\n")
 
-            all.lod.drop[[i]] <- lod.drop.table
+                all.lod.drop[[i]] <- lod.drop.table
+            }#end case for passing lod drop threshold
         } #end looping through shared peaks for the tissue
     }  #end looping through tissues
     if(is.interactive){dev.off()}
