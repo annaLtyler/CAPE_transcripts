@@ -4,13 +4,20 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
     pass.p <- which(perm_grid$p <= pval.thresh)
     cor.diff <- perm_grid$Cor - perm_grid$Perm.Cor
     pass.cor <- which(cor.diff > cor.diff.thresh)
-    best.penalty <- intersect(pass.p, pass.cor)
-    nx <- ncol(cor.diff)
-    nz <- nrow(cor.diff)
-    best.penalty.z <- best.penalty %% nz
-    best.penalty.x <- ceiling(best.penalty/nx)
-    best.penalty <- list("x" = as.numeric(colnames(cor.diff)[best.penalty.x]),
-        "z" = as.numeric(rownames(cor.diff)[best.penalty.z]))
+    best.penalty.idx <- intersect(pass.p, pass.cor)
+    
+    nx <- nrow(cor.diff)
+    nz <- ncol(cor.diff)    
+
+    #which rows correspond to the indices found
+    best.penalty.x <- best.penalty.idx %% nx
+    best.penalty.x[which(best.penalty.x == 0)] <- 1
+
+    #which columns correspond to the indices found
+    best.penalty.z <- ceiling(best.penalty.idx/nx)
+    
+    best.penalty <- list("x" = as.numeric(rownames(cor.diff)[best.penalty.x]),
+        "z" = as.numeric(colnames(cor.diff)[best.penalty.z]))
 
     star.nudge = 0.3
 
