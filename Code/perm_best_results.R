@@ -17,7 +17,7 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
 
     #which rows correspond to the indices found
     best.penalty.x <- best.penalty.idx %% nx
-    best.penalty.x[which(best.penalty.z == 0)] <- nx
+    best.penalty.x[which(best.penalty.x == 0)] <- nx
 
     #which columns correspond to the indices found
     best.penalty.z <- ceiling(best.penalty.idx/nx)
