@@ -2229,7 +2229,7 @@ for(i in 1:length(all.lod.drop)){
                 #plot(transcript.qtl, map = map)
                 plot(trait.qtl, map = map)
                 plot(med.qtl, map = map, add = TRUE, col = "red")
-                abline(v = trait.peaks[1,"pos"], col = "blue", lwd = 3)
+                abline(v = peak.pos, col = "blue", lwd = 3)
 
                 #Identify transcripts with non-zero loadings
                 non.zero.loadings <- which(boot.CCA.results[[tissue.locale]]$u[,CT] != 0)
