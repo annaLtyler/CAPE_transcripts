@@ -2252,96 +2252,100 @@ for(i in 1:length(all.lod.drop)){
                 overlap.genes <- intersect(transcript.names, locus.genes)
                 gene.name <- locus.genes[,"symbol"]
 
-                #use the expression of each gene individually to mediate the effect of the locus on the trait
-                gene.id <- gene.info[[tissue.locale]][match(gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
-                gene.id <- gene.id[which(!is.na(gene.id))]
-                #gene.id <- transcripts #use all transcript IDs
-                gene.names <- gene.info[[tissue.locale]][match(gene.id, gene.info[[tissue.locale]][,1]),"symbol"]
-                gene.locale <- match(gene.id, colnames(matched.mats[[tissue.locale]]$X))
-                gene.pos <- as.numeric(gene.info[[tissue.locale]][match(gene.names, gene.info[[tissue.locale]][,"symbol"]), "start"])
+                if(length(gene.name) > 0){
+                    #use the expression of each gene individually to mediate the effect of the locus on the trait
+                    gene.id <- gene.info[[tissue.locale]][match(gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
+                    gene.id <- gene.id[which(!is.na(gene.id))]
+                    #gene.id <- transcripts #use all transcript IDs
+                    gene.names <- gene.info[[tissue.locale]][match(gene.id, gene.info[[tissue.locale]][,1]),"symbol"]
+                    gene.locale <- match(gene.id, colnames(matched.mats[[tissue.locale]]$X))
+                    gene.pos <- as.numeric(gene.info[[tissue.locale]][match(gene.names, gene.info[[tissue.locale]][,"symbol"]), "start"])
 
-                mediated.lod <- matrix(NA, nrow = length(gene.locale), ncol = 2)
-                rownames(mediated.lod) <- gene.names
-                colnames(mediated.lod) <- c("CTrait", "CTranscript")
-                for(g in 1:length(gene.locale)){
-                    if(is.interactive){cat(g, gene.names[g], "\n")}
-                    adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], 
-                        matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE])
-                    adj.transcript <- adjust(trait.trans$Composite_Transcripts[,CT,drop=FALSE],
-                        matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE])
+                    mediated.lod <- matrix(NA, nrow = length(gene.locale), ncol = 2)
+                    rownames(mediated.lod) <- gene.names
+                    colnames(mediated.lod) <- c("CTrait", "CTranscript")
+                    for(g in 1:length(gene.locale)){
+                        if(is.interactive){cat(g, gene.names[g], "\n")}
+                        adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], 
+                            matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE])
+                        adj.transcript <- adjust(trait.trans$Composite_Transcripts[,CT,drop=FALSE],
+                            matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE])
                     
-                    med.trait <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
-                    mediated.lod[g,1] <- get_LOD(med.trait, map = map, chr = Chr, pos = trait.peak.pos)
+                        med.trait <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
+                        mediated.lod[g,1] <- get_LOD(med.trait, map = map, chr = Chr, pos = trait.peak.pos)
 
-                    med.transcript <- scan1(genoprobs[,Chr], adj.transcript, kinship = K[[chr.num]])
-                    mediated.lod[g,2] <- get_LOD(med.transcript, map = map, chr = Chr, pos = transcript.peak.pos)
+                        med.transcript <- scan1(genoprobs[,Chr], adj.transcript, kinship = K[[chr.num]])
+                        mediated.lod[g,2] <- get_LOD(med.transcript, map = map, chr = Chr, pos = transcript.peak.pos)
 
-                    #plot(trait.qtl, map = map, ylim = c(0, max(c(unlist(trait.qtl), unlist(med.trait)))));plot(med.trait, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
-                    #plot(transcript.qtl, map = map, ylim = c(0, max(c(unlist(transcript.qtl), unlist(med.transcript)))));plot(med.transcript, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
-                }
-                cat("##### LOD Score Drops\n")
-                par(mfrow = c(2,1))
-                barplot_with_num(sort(round(mediated.lod[,1], 2)), 
-                    main = "Mediated Trait Peaks", las = 2, text.gap = 0.2,
-                    text.shift = 0.12)
-                abline(h = trait.peak.lod)
-                barplot_with_num(sort(round(mediated.lod[,2], 2)), 
-                    main = "Mediated Transcript Peaks", las = 2, text.gap = 0.2,
-                    text.shift = 0.12)
-                abline(h = transcript.peak.lod)
+                        #plot(trait.qtl, map = map, ylim = c(0, max(c(unlist(trait.qtl), unlist(med.trait)))));plot(med.trait, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
+                        #plot(transcript.qtl, map = map, ylim = c(0, max(c(unlist(transcript.qtl), unlist(med.transcript)))));plot(med.transcript, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
+                    }
 
-                cat("##### Transcript vs. Trait LOD Drops\n")
-                plot(mediated.lod, pch = 16, xlim = c(min(mediated.lod[,1]), max(mediated.lod[,1])*1.1),
-                    xlab = "Trait Mediated LOD", ylab = "Transcript Mediated LOD")
-                text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
-                abline(v = trait.peak.lod, h = transcript.peak.lod)             
+                    cat("##### LOD Score Drops\n")
+                    par(mfrow = c(2,1))
+                    barplot_with_num(sort(round(mediated.lod[,1], 2)), 
+                        main = "Mediated Trait Peaks", las = 2, text.gap = 0.2,
+                        text.shift = 0.12)
+                    abline(h = trait.peak.lod)
+                    barplot_with_num(sort(round(mediated.lod[,2], 2)), 
+                        main = "Mediated Transcript Peaks", las = 2, text.gap = 0.2,
+                        text.shift = 0.12)
+                    abline(h = transcript.peak.lod)
 
-                #show heatmap of individual gene expression along with trait values
-                ct.expr <- matched.mats[[tissue.locale]]$X[,non.zero.loadings,drop=FALSE]
-                colnames(ct.expr) <- gene.info[[tissue.name]][match(colnames(ct.expr), gene.info[[tissue.name]][,1]),"symbol"]
-            
-                ind.order <- order(trait.trans$Composite_Traits[,CT,drop=FALSE], decreasing = TRUE)
+                    cat("##### Transcript vs. Trait LOD Drops\n")
+                    plot(mediated.lod, pch = 16, xlim = c(min(mediated.lod[,1]), max(mediated.lod[,1])*1.1),
+                        xlab = "Trait Mediated LOD", ylab = "Transcript Mediated LOD")
+                    text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
+                    abline(v = trait.peak.lod, h = transcript.peak.lod)             
 
-                #scale expression across transcripts
-                scaled.expr <- apply(ct.expr, 2, rankZ)
-                #trans.order <- hclust(dist(t(scaled.expr)))$order
-                if(ncol(scaled.expr) > 1){
-                    trans.order <- order(plot.decomp(t(scaled.expr), plot.results = FALSE)$u[,1])
-                }else{
-                    trans.order <- 1
-                }
+                    #show heatmap of individual gene expression along with trait values
+                    ct.expr <- matched.mats[[tissue.locale]]$X[,non.zero.loadings,drop=FALSE]
+                    colnames(ct.expr) <- gene.info[[tissue.name]][match(colnames(ct.expr), gene.info[[tissue.name]][,1]),"symbol"]
+                
+                    ind.order <- order(trait.trans$Composite_Traits[,CT,drop=FALSE], decreasing = TRUE)
 
-                #plot without dendrogram
-                #png("~/Desktop/CT_transcripts_expression.png", width = 10, height = 4, units = "in", res = 200)
-                cat("##### Transcripts by Trait\n")
-                layout(matrix(c(1,2), nrow = 1), widths = c(1,0.2))
-                par(mar = c(2,2,2,2))
-                imageWithText(scaled.expr[ind.order, trans.order,drop=FALSE], 
-                    show.text = FALSE, use.pheatmap.colors = TRUE, col.names = NULL,
-                    row.names = NULL)
-                par(mar = c(2,2,2,4))
-                imageWithText(trait.trans$Composite_Traits[ind.order,CT,drop=FALSE], 
-                    show.text = FALSE, use.pheatmap.colors = TRUE, row.names = NULL)
+                    #scale expression across transcripts
+                    scaled.expr <- apply(ct.expr, 2, rankZ)
+                    #trans.order <- hclust(dist(t(scaled.expr)))$order
+                    if(ncol(scaled.expr) > 1){
+                        trans.order <- order(plot.decomp(t(scaled.expr), plot.results = FALSE)$u[,1])
+                    }else{
+                        trans.order <- 1
+                    }
+
+                    #plot without dendrogram
+                    #png("~/Desktop/CT_transcripts_expression.png", width = 10, height = 4, units = "in", res = 200)
+                    cat("##### Transcripts by Trait\n")
+                    layout(matrix(c(1,2), nrow = 1), widths = c(1,0.2))
+                    par(mar = c(2,2,2,2))
+                    imageWithText(scaled.expr[ind.order, trans.order,drop=FALSE], 
+                        show.text = FALSE, use.pheatmap.colors = TRUE, col.names = NULL,
+                        row.names = NULL)
+                    par(mar = c(2,2,2,4))
+                    imageWithText(trait.trans$Composite_Traits[ind.order,CT,drop=FALSE], 
+                        show.text = FALSE, use.pheatmap.colors = TRUE, row.names = NULL)
                                 
 
-                #look for eQTL among positional candidates
-                eqtl.lod <- rep(NA, length(gene.names))
-                names(eqtl.lod) <- gene.names
-                for(g in 1:length(gene.names)){
-                    #cat(g, gene.names[g], "\n")
-                    eqtl <- scan1(genoprobs[,Chr], matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE], 
-                        kinship = K[[chr.num]])
-                    eqtl.lod[g] <- get_LOD(eqtl, map = map, chr = Chr, pos = gene.pos[g])
-                    #plot(eqtl, map = map);abline(v = gene.pos[g])
-                }
-                cat("##### Local eQTL LOD Scores\n")
-                layout(matrix(c(1,0), ncol = 1))
-                par(mar = c(8,4,2,2))
-                barplot_with_num(sort(round(eqtl.lod, 2)), las = 2)
+                    #look for eQTL among positional candidates
+                    eqtl.lod <- rep(NA, length(gene.names))
+                    names(eqtl.lod) <- gene.names
+                    for(g in 1:length(gene.names)){
+                        #cat(g, gene.names[g], "\n")
+                        eqtl <- scan1(genoprobs[,Chr], matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE], 
+                            kinship = K[[chr.num]])
+                        eqtl.lod[g] <- get_LOD(eqtl, map = map, chr = Chr, pos = gene.pos[g])
+                        #plot(eqtl, map = map);abline(v = gene.pos[g])
+                    }
+                    cat("##### Local eQTL LOD Scores\n")
+                    layout(matrix(c(1,0), ncol = 1))
+                    par(mar = c(8,4,2,2))
+                    barplot_with_num(sort(round(eqtl.lod, 2)), las = 2)
 
-                trait.peak.lod <- get_LOD(trait.qtl, map = map, chr = Chr, pos = trait.peak.pos)
+                    trait.peak.lod <- get_LOD(trait.qtl, map = map, chr = Chr, pos = trait.peak.pos)
 
-                cat("\n\n")
+                    cat("\n\n")
+                } #end case for when there are genes to mediate on
+
             } #end case for when there is good mediation by the composite transcript
             cat("\n\n")
         } #end looping through rows of overlapping peaks
