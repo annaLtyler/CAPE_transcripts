@@ -1774,7 +1774,7 @@ for(i in 1:length(shared.peaks)){
             chr = as.numeric(shared.peaks[[i]][tr,3])
             pos.trait.qtl <- as.numeric(shared.peaks[[i]][tr,4])
             trait.qtl.lod <- as.numeric(shared.peaks[[i]][tr,5])
-            peak.marker <- which(map[[chr]] == pos.trait.qtl)
+            peak.marker <- get.nearest.pt(map[[chr]], pos.trait.qtl)
             pos.transcript.qtl <- as.numeric(shared.peaks[[i]][tr,11])
             if(chr == 20){chr = "X"}
 
