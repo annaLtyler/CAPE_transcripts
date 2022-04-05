@@ -30,13 +30,16 @@ if(is.na(exp.name)){
     delete_previous <- FALSE
 }
 
+#cca parameters
 nperms = 10 #number of permutations to do in penalized CCA to determine optimal penalties
 n.bootstraps = 100 #number of bootstraps to perform to stabilize CCA estimates
-pval.thresh = 0.05
-cor.diff.thresh = 0.4
-lodthresh = 4
+pval.thresh = 0.05 #maximum p value for selecting useful penalty combinations
+cor.diff.thresh = 0.4 #minimum difference in canonical correlation between data and null for selecting useful penalty combinations
+
+#qtl overlap parameters
+lodthresh = 4 #Minimum LOD score for a QTL we will examine
 peak.dist <- 2 #maximum distance in MB for overlapping QTL
-perc.drop.thresh = 0.75 #fraction of full LOD score mediated LOD score needs to be to be scanned further
+perc.drop.thresh = 0.75 #fraction of full LOD score mediated LOD score needs to be to be investigated further
 
 ```
 
@@ -1963,9 +1966,15 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
             expr.cor <- cor(gene.expr)
             col.order <- hclust(dist(expr.cor))$order
             par(mar = c(4, 2, 2, 0))
-            imageWithText(expr.cor[col.order,col.order], split.at.vals = TRUE, 
-            col.scale = c("blue", "red"), show.text = FALSE, grad.dir = "ends",
-            col.text.shift = 1, row.text.shift = 1, row.text.cex = 0.6, col.text.cex = 0.6)
+            if(all(sign(expr.cor) == 1) || all(sign(expr.cor) == -1)){
+                imageWithText(expr.cor[col.order,col.order], split.at.vals = FALSE, 
+                col.scale = "blue", show.text = FALSE, grad.dir = "high",
+                col.text.shift = 1, row.text.shift = 1, row.text.cex = 0.6, col.text.cex = 0.6)
+            }else{
+                imageWithText(expr.cor[col.order,col.order], split.at.vals = TRUE, 
+                col.scale = c("blue", "red"), show.text = FALSE, grad.dir = "ends",
+                col.text.shift = 1, row.text.shift = 1, row.text.cex = 0.6, col.text.cex = 0.6)
+            }
             par(xpd = FALSE)
         }
         #plot the decomposition of the gene expression matrix. 
