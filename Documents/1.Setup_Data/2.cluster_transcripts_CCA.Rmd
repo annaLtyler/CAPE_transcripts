@@ -1771,8 +1771,11 @@ for(i in 1:length(shared.peaks)){
         rownames(lod.drop.table) <- shared.peaks[[i]][,2]
         
         for(tr in 1:nrow(shared.peaks[[i]])){
-                
-            trait = as.numeric(gsub("Composite_Trait", "", shared.peaks[[i]][tr,2]))
+
+            trait.trans <- get_latent_var(tissue.mats = matched.mats[[i]], 
+                tissue.results = boot.CCA.results[[i]])
+
+            CT = as.numeric(gsub("Composite_Trait", "", shared.peaks[[i]][tr,2]))
             chr = as.numeric(shared.peaks[[i]][tr,3])
             pos.trait.qtl <- as.numeric(shared.peaks[[i]][tr,4])
             trait.qtl.lod <- as.numeric(shared.peaks[[i]][tr,5])
@@ -1780,13 +1783,8 @@ for(i in 1:length(shared.peaks)){
             pos.transcript.qtl <- as.numeric(shared.peaks[[i]][tr,11])
             if(chr == 20){chr = "X"}
 
-            trans <- apply(boot.CCA.results[[i]]$u, 2, function(x) matched.mats[[i]]$X %*% x)
-            rownames(trans) <- rownames(matched.mats[[i]]$X)
-            colnames(trans) <- paste0("CTrans", 1:ncol(trans))
-
-            ctrait <- apply(boot.CCA.results[[i]]$v, 2, function(x) matched.mats[[i]]$Z %*% x)
-            rownames(ctrait) <- rownames(matched.mats[[i]]$Z)
-            colnames(ctrait) <- paste0("CTrans", 1:ncol(ctrait))
+            trans <- trait.trans$Composite_Transcripts[,CT,drop=FALSE]
+            ctrait <- trait.trans$Composite_Traits[,CT,drop=FALSE]
 
             mediation.scan.file <- file.path(results.dir, 
                 paste0("Mediation.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
@@ -2234,11 +2232,11 @@ for(i in 1:length(all.lod.drop)){
                 cat("\n\n")
                 #quartz(width = 10, height = 6)
                 cat("##### Mediation Scan\n")
-                layout(matrix(c(1,0), ncol = 1), heights = c(0.8, 1))
+                layout(matrix(c(1,0), ncol = 1))
                 #plot(transcript.qtl, map = map)
-                plot(trait.qtl, map = map)
+                plot(trait.qtl, map = map, ylim = ylim)
                 plot(med.qtl, map = map, add = TRUE, col = "red")
-                abline(v = peak.pos, col = "blue", lwd = 3)
+                segments(x0 = peak.pos, y0 = 0, y1 = 6, col = "blue", lwd = 2)
 
                 #Identify transcripts with non-zero loadings
                 non.zero.loadings <- which(boot.CCA.results[[tissue.locale]]$u[,CT] != 0)
@@ -2315,7 +2313,8 @@ for(i in 1:length(all.lod.drop)){
                     cat("##### Transcript vs. Trait LOD Drops\n")
                     plot(mediated.lod, pch = 16,
                         xlab = "Trait Mediated LOD", ylab = "Transcript Mediated LOD",
-                        xlim = c(0, ylim[2]), ylim = c(0, ylim[2]), col = gene.col)
+                        xlim = c(min(mediated.lod[,1]), ylim[2]), 
+                        ylim = c(min(mediated.lod[,2]), ylim[2]), col = gene.col)
                     text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
                     abline(v = trait.peak.lod, h = transcript.peak.lod)             
 
