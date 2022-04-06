@@ -1805,7 +1805,7 @@ for(i in 1:length(shared.peaks)){
             perc.drop <- (trait.qtl.lod-med.lod)/trait.qtl.lod
             lod.drop.table[tr,] <- c(as.numeric(shared.peaks[[i]][tr,3:4]), trait.qtl.lod, med.lod, perc.drop)
 
-            #if the percent drop is greater than 50% run the blups to visualize the 
+            #if the percent drop is greater than the threshold run the blups to visualize the 
             #allele effects
             if(perc.drop > perc.drop.thresh){
                 cat("####", shared.peaks[[i]][tr,2], ", Chr", shared.peaks[[i]][tr,3], "\n")
@@ -2267,7 +2267,7 @@ for(i in 1:length(all.lod.drop)){
                     gene.col[match(overlap.genes, locus.gene.name)] <- "red"
                 }
 
-                if(nrow(locus.gene.name) > 0){
+                if(length(locus.gene.name) > 0){
                     #use the expression of each gene individually to mediate the effect of the locus on the trait
                     gene.id <- gene.info[[tissue.locale]][match(locus.gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
                     gene.id <- gene.id[which(!is.na(gene.id))]
