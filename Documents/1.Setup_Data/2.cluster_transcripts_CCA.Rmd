@@ -546,8 +546,8 @@ for(i in 1:length(tissue.names)){
         if(!file.exists(CCA.file) || delete_previous){            
             cca.results <- CCA(matched.mats[[i]]$X, matched.mats[[i]]$Z, 
             typex = "standard", typez = "standard", K = num.components, 
-            penaltyx = tissue.trait.penalty[[i]][1], 
-            penaltyz = tissue.trait.penalty[[i]][2], trace = FALSE)
+            penaltyx = as.numeric(tissue.trait.penalty[[i]]$x), 
+            penaltyz = as.numeric(tissue.trait.penalty[[i]]$z), trace = FALSE)
             saveRDS(cca.results, CCA.file)
         }else{
             cca.results <- readRDS(CCA.file)
