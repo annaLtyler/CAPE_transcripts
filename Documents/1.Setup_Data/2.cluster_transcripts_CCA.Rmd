@@ -2058,7 +2058,7 @@ for(i in 1:length(tissue.names)){
         separate.windows = is.interactive)
     if(is.interactive){
         dev.off()
-    }else
+    }else{
         cat("\n\n")
     }
 }
@@ -2231,6 +2231,7 @@ for(i in 1:length(all.lod.drop)){
                 adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], trait.trans$Composite_Transcripts[,CT,drop=FALSE])
                 med.qtl <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
 
+                cat("\n\n")
                 #quartz(width = 10, height = 6)
                 cat("##### Mediation Scan\n")
                 layout(matrix(c(1,0), ncol = 1), heights = c(0.8, 1))
@@ -2252,17 +2253,23 @@ for(i in 1:length(all.lod.drop)){
                                 which(as.numeric(gene.info[[tissue.name]][,"end"]) <= 50))
                 locus.genes <- gene.info[[tissue.name]][intersect(mb.locale, chr.locale),,drop=FALSE]
 
+                #Mediate on all gene in the locus. 
+                #Color genes that are also in the transcript red.
                 #Intersect the lists to find any transcripts encoded in QTL
                 #If there are some. Export the list and try using mediation
                 #to identify which are most likely to be causal.
                 #or use all as candidates
 
-                overlap.genes <- intersect(transcript.names, locus.genes)
-                gene.name <- locus.genes[,"symbol"]
+                locus.gene.name <- locus.genes[,"symbol"]
+                overlap.genes <- intersect(transcript.names, locus.gene.name)
+                gene.col <- rep("darkgray", length = length(locus.gene.name))
+                if(length(overlap.genes) > 0){
+                    gene.col[match(overlap.genes, locus.gene.name)] <- "red"
+                }
 
-                if(length(gene.name) > 0){
+                if(nrow(locus.gene.name) > 0){
                     #use the expression of each gene individually to mediate the effect of the locus on the trait
-                    gene.id <- gene.info[[tissue.locale]][match(gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
+                    gene.id <- gene.info[[tissue.locale]][match(locus.gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
                     gene.id <- gene.id[which(!is.na(gene.id))]
                     #gene.id <- transcripts #use all transcript IDs
                     gene.names <- gene.info[[tissue.locale]][match(gene.id, gene.info[[tissue.locale]][,1]),"symbol"]
@@ -2289,20 +2296,26 @@ for(i in 1:length(all.lod.drop)){
                         #plot(transcript.qtl, map = map, ylim = c(0, max(c(unlist(transcript.qtl), unlist(med.transcript)))));plot(med.transcript, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
                     }
 
+                    cat("\n\n")
                     cat("##### LOD Score Drops\n")
                     par(mfrow = c(2,1))
-                    barplot_with_num(sort(round(mediated.lod[,1], 2)), 
+                    ylim = c(0, max(c(round(mediated.lod[,1], 2), trait.peak.lod, transcript.peak.lod)))
+                    trait.med.order <- order(round(mediated.lod[,1], 2))
+                    barplot_with_num(round(mediated.lod[trait.med.order,1]), 
                         main = "Mediated Trait Peaks", las = 2, text.gap = 0.2,
-                        text.shift = 0.12)
+                        text.shift = 0.12, ylim = ylim, col = gene.col[trait.med.order])
                     abline(h = trait.peak.lod)
-                    barplot_with_num(sort(round(mediated.lod[,2], 2)), 
+                    transcript.med.order <- order(round(mediated.lod[,2], 2))
+                    barplot_with_num(round(mediated.lod[transcript.med.order,2], 2), 
                         main = "Mediated Transcript Peaks", las = 2, text.gap = 0.2,
-                        text.shift = 0.12)
+                        text.shift = 0.12, ylim = ylim, col = gene.col[transcript.med.order])
                     abline(h = transcript.peak.lod)
 
+                    cat("\n\n")
                     cat("##### Transcript vs. Trait LOD Drops\n")
-                    plot(mediated.lod, pch = 16, xlim = c(min(mediated.lod[,1]), max(mediated.lod[,1])*1.1),
-                        xlab = "Trait Mediated LOD", ylab = "Transcript Mediated LOD")
+                    plot(mediated.lod, pch = 16,
+                        xlab = "Trait Mediated LOD", ylab = "Transcript Mediated LOD",
+                        xlim = c(0, ylim[2]), ylim = c(0, ylim[2]), col = gene.col)
                     text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
                     abline(v = trait.peak.lod, h = transcript.peak.lod)             
 
@@ -2323,6 +2336,7 @@ for(i in 1:length(all.lod.drop)){
 
                     #plot without dendrogram
                     #png("~/Desktop/CT_transcripts_expression.png", width = 10, height = 4, units = "in", res = 200)
+                    cat("\n\n")
                     cat("##### Transcripts by Trait\n")
                     layout(matrix(c(1,2), nrow = 1), widths = c(1,0.2))
                     par(mar = c(2,2,2,2))
@@ -2344,12 +2358,14 @@ for(i in 1:length(all.lod.drop)){
                         eqtl.lod[g] <- get_LOD(eqtl, map = map, chr = Chr, pos = gene.pos[g])
                         #plot(eqtl, map = map);abline(v = gene.pos[g])
                     }
+                    cat("\n\n")
                     cat("##### Local eQTL LOD Scores\n")
                     layout(matrix(c(1,0), ncol = 1))
                     par(mar = c(8,4,2,2))
-                    barplot_with_num(sort(round(eqtl.lod, 2)), las = 2)
+                    eqtl.order <- order(round(eqtl.lod, 2))
+                    barplot_with_num(round(eqtl.lod, 2)[eqtl.order], las = 2, col = gene.col[eqtl.order])
 
-                    trait.peak.lod <- get_LOD(trait.qtl, map = map, chr = Chr, pos = trait.peak.pos)
+                    #trait.peak.lod <- get_LOD(trait.qtl, map = map, chr = Chr, pos = trait.peak.pos)
 
                     cat("\n\n")
                 } #end case for when there are genes to mediate on
