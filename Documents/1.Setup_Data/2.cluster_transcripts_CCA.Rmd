@@ -584,7 +584,7 @@ if(!file.exists(boot.trans.file) || delete_previous){
     names(tissue.transcript.boots) <- names(tissue.trait.boots) <- tissue.names
 
     for(i in 1:length(tissue.names)){
-        penalties <- tissue.trait.penalty[[i]]
+        penalties <- unlist(tissue.trait.penalty[[i]])
         all.transcript.loadings <- vector(mode = "list", length = n.bootstraps)
         all.trait.loadings <- vector(mode = "list", length = n.bootstraps)
         for(b in 1:n.bootstraps){
