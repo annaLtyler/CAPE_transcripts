@@ -1815,16 +1815,16 @@ for(i in 1:length(shared.peaks)){
                 if(!file.exists(individual.scan.file) || delete_previous){
                 
                     #map the transcript
-                    transcript.lod <- scan1(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
+                    transcript.lod <- scan1(genoprobs[,chr], trans, kinship = K[[chr]])
                     #find_peaks(transcript.lod, map = map, threshold = 5, prob = 0.95)
-                    #transcript.coef <- scan1coef(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
-                    transcript.coef <- scan1blup(genoprobs[,chr], trans[,trait,drop=FALSE], kinship = K[[chr]])
+                    #transcript.coef <- scan1coef(genoprobs[,chr], trans, kinship = K[[chr]])
+                    transcript.coef <- scan1blup(genoprobs[,chr], trans, kinship = K[[chr]])
             
                     #map the trait too
-                    trait.lod <- scan1(genoprobs[,chr], ctrait[,trait,drop=FALSE], kinship = K[[chr]])
+                    trait.lod <- scan1(genoprobs[,chr], ctrait, kinship = K[[chr]])
                     #find_peaks(trait.lod, map = map, threshold = 5, prob = 0.95)
-                    #trait.coef <- scan1coef(genoprobs[,chr], ctrait[,trait,drop=FALSE])
-                    trait.coef <- scan1blup(genoprobs[,chr], ctrait[,trait,drop=FALSE], kinship = K[[chr]])
+                    #trait.coef <- scan1coef(genoprobs[,chr], ctrait)
+                    trait.coef <- scan1blup(genoprobs[,chr], ctrait, kinship = K[[chr]])
                 
                     result <- list("Transcript_LOD" = transcript.lod, 
                     "Transcript_Coef" = transcript.coef, 
@@ -1850,7 +1850,7 @@ for(i in 1:length(shared.peaks)){
                 
                 plot_coefCC(transcript.coef, map = map)
                 abline(v = pos.transcript.qtl)
-                mtext(paste("CTranscript", trait, "Chr", chr), side = 3, outer = TRUE, line = -2)
+                mtext(paste("CTranscript", CT, "Chr", chr), side = 3, outer = TRUE, line = -2)
                 #cat("\n\n")
 
                 plot(trait.lod, map = map, main = "Trait QTL")
@@ -1872,10 +1872,9 @@ for(i in 1:length(shared.peaks)){
                 xlab = "Trait Coefficients", ylab = "Transcript Coefficients", cex = 2)
         
                 cat("\n\n")
-
-                all.lod.drop[[i]] <- lod.drop.table
             }#end case for passing lod drop threshold
         } #end looping through shared peaks for the tissue
+    all.lod.drop[[i]] <- lod.drop.table
     }  #end looping through tissues
     if(is.interactive){dev.off()}
 }
