@@ -1764,14 +1764,13 @@ names(all.lod.drop) <- tissue.names
 for(i in 1:length(shared.peaks)){
     if(is.interactive){pdf(file.path(results.dir, 
     paste0("Overlapping.Peaks.", tissue.names[i], ".pdf")), width = 10, height = 6)}
-    cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
     if(length(shared.peaks[[i]]) > 0){
+        cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
         lod.drop.table <- matrix(NA, nrow = nrow(shared.peaks[[i]]), ncol = 5)
         colnames(lod.drop.table) <- c("chr", "pos", "original", "mediated", "percent_drop")
         rownames(lod.drop.table) <- shared.peaks[[i]][,2]
         
         for(tr in 1:nrow(shared.peaks[[i]])){
-            cat("####", shared.peaks[[i]][tr,2], ", Chr", shared.peaks[[i]][tr,3], "\n")
                 
             trait = as.numeric(gsub("Composite_Trait", "", shared.peaks[[i]][tr,2]))
             chr = as.numeric(shared.peaks[[i]][tr,3])
@@ -1809,6 +1808,8 @@ for(i in 1:length(shared.peaks)){
             #if the percent drop is greater than 50% run the blups to visualize the 
             #allele effects
             if(perc.drop > perc.drop.thresh){
+                cat("####", shared.peaks[[i]][tr,2], ", Chr", shared.peaks[[i]][tr,3], "\n")
+
                 individual.scan.file <- file.path(results.dir, 
                     paste0("Individual.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
                     ".Chr.", shared.peaks[[i]][tr,3], ".RDS"))
@@ -2042,8 +2043,11 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
 
 ```{r plot_all, results = "asis", fig.width = 12, fig.height = 9}
 for(i in 1:length(tissue.names)){
-    pdf(file.path(results.dir, paste0("All.together.", tissue.names[i], ".pdf")), width = 12, height = 7)
-    cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
+    if(is.interactive){
+        pdf(file.path(results.dir, paste0("All.together.", tissue.names[i], ".pdf")), width = 12, height = 7)
+    }else{
+        cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
+    }
     tissue.gene.list <- get_transcript_list(tissue.mats = matched.mats[[i]], 
         tissue.results = boot.CCA.results[[i]])
     plot.all.together(tissue.mats = matched.mats[[i]], 
@@ -2052,7 +2056,11 @@ for(i in 1:length(tissue.names)){
         tissue.qtl = qtl.results[[i]], tissue.gene.list = tissue.gene.list, 
         tissue.expr = tissue.adj.expr[[i]], tissue.info = gene.info[[i]],
         separate.windows = is.interactive)
-    dev.off()
+    if(is.interactive){
+        dev.off()
+    }else
+        cat("\n\n")
+    }
 }
 ```
 
