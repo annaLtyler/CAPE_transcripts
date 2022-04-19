@@ -106,6 +106,9 @@ Run the SOM.
 ```{r som}
 for(i in 1:length(tissue.expr)){
   tissue.name <- names(tissue.expr)[i]
+  tissue.info <- unique(t(sapply(rownames(adj.expr[[i]]), 
+    function(x) get_mouse_info(x, manifest, "Barcode.1"))))
+
   som.result.file <- here("Documents", "1.Setup_Data", 
     paste0("CC-RIX_", tissue.name, "_by_", contrast_by, ".RData"))
 
@@ -117,7 +120,12 @@ for(i in 1:length(tissue.expr)){
     exp.name <- gsub(".RData", "", basename(som.result.file))
     env <- opossom.new(list(dataset.name = exp.name))
     env$indata <- t(adj.expr[[i]])
-    env$group.labels <- 
+    if(contrast_by == "Diet"){
+      env$group.labels <- tissue.info[,"Diet"]
+    }
+    if(contrast_by == "Treatment"){
+      env$group.labels <- tissue.info[,"Treatment"]
+    }
     opossom.run(env)
   }
 
