@@ -4,6 +4,9 @@ main = "", type = c("list", "matrix"),
 plot.type = c("box", "strip"), print.vals = c("mean", "median"), 
 text.cex = 0.7, label.srt = 0, legend.x = NULL, legend.y = NULL, notch = FALSE){
 
+	oldPar <- par(no.readonly = TRUE)
+	on.exit(oldPar)
+
 	plot.type = plot.type[1]
 	print.vals <- print.vals[1]
 	type <- type[1]

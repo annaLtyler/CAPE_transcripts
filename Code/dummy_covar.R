@@ -6,7 +6,7 @@
 
 dummy_covar <- function(covar.mat){
 
-    u_factors <- apply(covar.mat, 2, function(x) sort(unique(x)))
+    u_factors <- lapply(1:ncol(covar.mat), function(x) sort(unique(covar.mat[,x])))
     num.factors <- sapply(u_factors, length)
     total.columns <- sum(num.factors) - length(num.factors)
     new.names <- lapply(1:length(u_factors), function(x) paste(colnames(covar.mat)[x], u_factors[[x]][2:length(u_factors[[x]])], sep = "_"))

@@ -17,31 +17,6 @@ hypotheses developed in the DO CCA analysis.
 
 This pipeline does the following:
 
-
-The previous analysis found that a composite trait 
-and composite transcript co-mapped to a locus on chromosome X. The 
-composite transcript mediated the effect of the locus on the composite 
-trait. Through multiple independent methods we prioritized Sash3 as the 
-causal gene at the locus. Sash3 gene expression was positively correlated 
-with the composite trait and mediated the effect of the locus on the 
-composite trait. All effects through this chain were weak, but 
-consistently pointed to Sash3. 
-
-Here we use the CC-RIX data to test whether we can find independent 
-evidence for an influence of Sash3 on metabolic phenotypes.
-
-The data from the CC-RIX are unfortuantely very different from the DO
-data, so we will need to think about this carefully.
-
-The allele frequencies are a mess, so we probably won't be able to 
-do any mapping. Also, the traits measured are different. Hopefully
-there is enough overlap that we can still see an effect of Sash3.
-
-We may have to shift the focus of the validation to something that
-takes advantage of the data in the CC-RIX, namely different diets
-and treatment with metformin.
-
-
 ```{r load_code}
 is.interactive = FALSE
 #is.interactive = TRUE
@@ -53,6 +28,8 @@ if(!file.exists(results.dir)){dir.create(results.dir)}
 
 all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
 for(i in 1:length(all.fun)){source(all.fun[i])}
+
+gene.info <- read.delim(here("data", "mouse_gene_info.txt"))
 ```
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
@@ -60,46 +37,6 @@ all.packages <- c("pheatmap", "qtl2", "gprofiler2")
 load_libraries(all.packages, personal.library = TRUE)
 ```
 
-The following code chunk is where the object of the analysis is set.
-The analysis can either look at an individual gene, or a few genes 
-set by hand, or it can read in results from the DO study, and pull
-out a specified composite transcript to analyze. These parameters
-are all set below. After setting the manual or CT parameter, set
-the corresponding parameters in the appropriate if chunk.
-
-```{r set_param}
-manual.or.CT <- "CT" #set whether to set genes by hand or to use a CT from the DO study
-
-if(manual.or.CT == "manual"){
-    gene.name <- "Sash3" #set gene name(s) here
-    gene.weights <- 1 #set weights here
-
-    #convert to ensembl ID
-    #gene.id.table <- gconvert(gene.name, organism = "mmusculus")
-    #gene.id <- gene.id.table[,"target"]    
-    gene.id <- "ENSMUSG00000031101"
-
-    #create a weighted vector for the gene(s)    
-    expr.vector  <- c(1)
-    names(expr.vector) <- gene.id
-}
-
-if(manual.or.CT == "CT"){
-    tissue.name <- "Islet" #set tissue from DO analysis
-    CT <- 1 #set CT to analyze
-
-    #read expression data to get transcript names
-    do.expr <- readRDS(here("Results", "CCA_Clusters", "all_traits", "Adjusted_Expression.RDS"))
-
-    #read CT data
-    boot.CCA.results <- readRDS(here("Results", "CCA_Clusters", "all_traits", "Aggregate.Results.RDS"))
-    tissue.idx <- which(names(boot.CCA.results) == tissue.name)
-    expr.vector <- boot.CCA.results[[tissue.idx]]$u[,CT]
-    names(expr.vector) <- colnames(do.expr[[tissue.idx]])
-}
-```
-
-Gene expression in this analysis was set as `r manual.or.CT`.
 
 ```{r read_data}
 all.var <- ls()
@@ -107,7 +44,14 @@ data.loaded <- as.logical(length(which(all.var == "expr")))
 
 if(!data.loaded){
     annot <- read.csv(file.path(data.dir, "final_sample_annotations.csv"))
-    expr <- read.csv(file.path(data.dir, "norm_expression_matrix.csv"))
+    expr.files <- list.files(here("Data", "CC-RIX"), pattern = "vst")
+    expr <- lapply(expr.files, function(x) read.csv(file.path(data.dir, x), row.names = 1))
+
+    #take out gene names and create matrices
+    for(i in 1:length(expr)){
+        expr[[i]] <- as.matrix(expr[[i]][,2:ncol(expr[[i]])])
+    }
+
     genoprobs <- readRDS(file.path(data.dir, "Genoprobs.RDS")) #created by 3.5.CC-RIX_genotypes.Rmd
     K <- readRDS(file.path(data.dir, "Kinship.RDS"))
     map <- readRDS(file.path(data.dir, "Map.RDS"))
@@ -123,59 +67,36 @@ want to subdivide along these groups in the future.
 ```{r covar}
 factor.covar <- annot[,c("Sex", "Age", "RNAseq_Batch", "Diet", "Treatment")]
 rownames(factor.covar) <- annot[,1]
+write.csv(factor.covar, file.path(data.dir, "Covar.csv"))
+
 group.def <- c("Sex", "Diet", "Treatment") #use these factors to define groups
 groups <- unique(factor.covar[,group.def])
-
+write.csv(groups, file.path(data.dir, "Groups.csv"), quote = FALSE)
 #covar.mat <- dummy_covar(factor.covar)
 ```
 
-## Split Expression by Tissue
+## Transpose Expression
 
-Split expression by tissue.
-Create a matrix with individuals in rows and transcripts 
-in columns to match other expression data sets we are 
+Transpose the expression matrices to have
+individuals in rows and transcripts in columns 
+to match other expression data sets we are 
 working with.
 
 ```{r filter_expr}
-assay.id <- colnames(expr)
-assay.id.locale <- match(annot[,1], assay.id)
-aligned.expr <- t(expr[,assay.id.locale]) #align expression data with annotation data
-colnames(aligned.expr) <- expr[,1] #add transcript names
-
-tissue.names <- unique(annot[,"Tissue"])
-tissue.annot <- lapply(tissue.names, function(x) annot[which(annot[,"Tissue"] == x),])
-tissue.expr <- lapply(tissue.names, function(x) aligned.expr[which(annot[,"Tissue"] == x),])
-names(tissue.annot) <- names(tissue.expr) <- tissue.names
-```
-
-```{r id_fun}
-#use any ID type to get back a mouse-level ID
-#if the input type is known, specify input type.
-#this will speed up the translation.
-get_mouse_info <- function(input.ID, manifest, input.type = NULL){
-    if(is.null(input.type)){
-        id.col <- which.max(apply(manifest, 2, function(x) length(which(x == input.ID))))
-    }else{
-        id.col <- which(colnames(manifest) == input.type)
-    }
-    id.locale <- which(manifest[,id.col] == input.ID)[1]
-    mouse.info <- manifest[id.locale,c("Barcode.1", "CLIMB.ID", "Sex", "Diet", "Treatment", "User.Defined.Strain", "Timepoint")]
-    mouse.info[which(mouse.info == "10% fat + fiber")] <- "LFD"
-    mouse.info[which(mouse.info == "44% fat + fiber")] <- "HFD"
-  
-    return(mouse.info)
+for(i in 1:length(expr)){
+    expr[[i]] <- t(expr[[i]])
 }
+names(expr) <- gsub(".csv", "", gsub("vst_expression_matrix_", "", expr.files))
 
 ```
 
 ```{r mouse_id}
 #use the manifest to label samples with a mouse ID
-for(i in 1:length(tissue.expr)){
-    expr.mouse.info.table <- t(sapply(rownames(tissue.expr[[i]]), function(x) get_mouse_info(x, manifest, input.type = "User.Inputs")))
-    rownames(tissue.expr[[i]]) <- expr.mouse.info.table[,1]
-    covar.mouse.info.table <- t(sapply(tissue.annot[[i]][,1], function(x) get_mouse_info(x, manifest, input.type = "User.Inputs")))
-    rownames(tissue.annot[[i]]) <- covar.mouse.info.table[,1]
+for(i in 1:length(expr)){
+    expr.mouse.info.table <- t(sapply(rownames(expr[[i]]), function(x) get_mouse_info(x, manifest, input.type = "User.Inputs")))
+    rownames(expr[[i]]) <- expr.mouse.info.table[,1]
 }
+saveRDS(expr, file.path(data.dir, "Expression.by.Tissue.RDS"))
 ```
 
 ## Phenotypes
@@ -324,6 +245,8 @@ pheatmap(pred.weight.mat[weight.order,], cluster_rows = FALSE, cluster_cols = FA
 
 mouse.weight.val <- apply(pred.weight.mat, 1, function(x) x[max(which(!is.na(x)))])
 #hist(mouse.weight.val, breaks = 100)
+write.table(mouse.weight.val, file.path(data.dir, "Weight.Summarized.csv"), 
+col.names = "Body.Weight", sep = ",")
 ```
 
 
@@ -402,6 +325,7 @@ for(g in 1:nrow(groups)){
     cat("\n\n")
 }   
 
+write.csv(chem.mat, file.path(data.dir, "Blood.Chemistries.Summarized.csv"))
 ```
 
 I am going to save the food and water processing for another time. 
@@ -471,501 +395,4 @@ match_pheno_expr <- function(expr.list, pheno.mat){
     return(matched.lists)
 }
 
-```
-
-```{r match_expression_and_traits}
-#This code uses the weighted gene vectors set at the top of the
-#file and creates corresponding composite expression vectors out 
-#of the CC expression data. Change the parameters at the top
-#of the file to change what is analyzed here.
-
-#don't adjust because we are looking at groups separately
-composite.expr <- get_expr(tissue.expr, expr.vector, adjust.for.covariates = FALSE)
-expr.and.chem <- match_pheno_expr(composite.expr, chem.mat)
-
-chem.matched.expr <- expr.and.chem[[1]]
-matched.chem <- expr.and.chem[[2]]
-```
-
-
-```{r genes_and_chem, results = "asis", fig.width = 10, fig.height = 5}
-all.chem.expr.cor <- vector(mode = "list", length = length(tissue.expr))
-names(all.chem.expr.cor) <- names(tissue.expr)
-
-for(i in 1:length(tissue.expr)){
-    cat("###", names(tissue.expr)[i], "{.tabset .tabset-fade .tabset-pills}\n")
-    group.cor.mat <- matrix(NA, nrow = nrow(groups), ncol = 10)
-    colnames(group.cor.mat) <- colnames(matched.chem[[i]])[5:14]
-    rownames(group.cor.mat) <- apply(groups, 1, function(x) paste(x, collapse = "_"))
-    for(g in 1:nrow(groups)){
-        cat("####", paste(groups[g,], collapse = " "), "\n")
-        #quartz(width = 10, height = 5)
-        group.locale <- Reduce("intersect", lapply(group.def, 
-            function(x) which(matched.chem[[i]][,x] == groups[g,x])))
-
-        par(mfrow = c(2,5))
-        all.group.cor <- sapply(5:ncol(matched.chem[[i]]), 
-                function(j) plot.with.model(rankZ(chem.matched.expr[[i]][group.locale,1]),
-                rankZ(as.numeric(matched.chem[[i]][group.locale,j])),
-                ylab = colnames(matched.chem[[i]])[j], xlab = "Expression", 
-                main = colnames(matched.chem[[i]])[j], report = "cor.test"))
-        group.cor.mat[g,] <- all.group.cor[1,]
-    cat("\n\n")
-    }
-    all.chem.expr.cor[[i]] <- group.cor.mat
-    cat("\n\n")
-}
-
-```
-
-## Gene Expression and Blood Chemistry Summary {.tabset .tabset-fade .tabset-pills}
-
-The following plots summarize the correlations above.
-
-```{r plot_chem_cor_summary, results = "asis", fig.height = 6, fig.width = 6}
-global.max <- max(unlist(all.chem.expr.cor))
-global.min <- min(unlist(all.chem.expr.cor))
-for(i in 1:length(all.chem.expr.cor)){
-    cat("###", names(all.chem.expr.cor)[i], "\n")
-    par(mar = c(10,7,1,1))
-    imageWithText(t(all.chem.expr.cor[[i]]), global.color.scale = TRUE, 
-        global.min = global.min, global.max = global.max, 
-        use.pheatmap.colors = TRUE, col.text.rotation = 45, cex = 0.8,
-        col.text.adj = 1, col.text.shift = 0.08, row.text.shift = 0.08)
-    
-    #pheatmap(t(all.chem.expr.cor[[i]]), cluster_rows = FALSE, 
-    #cluster_cols = FALSE, display_numbers = TRUE)
-    cat("\n\n")
-}
-```
-
-Gene expression in the adipose tissue is most correlated overall with blood chemistries.
-
-```{r cor_by_tissue, fig.width = 4, fig.height = 4}
-boxplot(lapply(all.chem.expr.cor, abs), ylab = "correlation")
-```
-
-Insulin has the greatest correlation with gene expression
-
-```{r cor_by_chem, fig.width = 9, fig.height = 4}
-par(mfrow = c(1,3))
-for(i in 1:length(all.chem.expr.cor)){
-    boxplot(all.chem.expr.cor[[i]], las = 2, 
-    main = names(all.chem.expr.cor)[i], 
-    ylim = c(global.min, global.max))
-    abline(h = 0)
-}
-```
-
-
-## Gene expression and body weight {.tabset .tabset-fade .tabset-pills}
-
-```{r genes_and_bw, fig.width = 10, fig.height = 5, results = "asis"}
-
-bw.mouse.id <- sapply(all.bw, function(x) x[[1]][1])
-bw.info.mat <- t(sapply(bw.mouse.id, 
-    function(x) get_mouse_info(x, manifest, input.type = "Barcode.1")))
-bw.info.mat[which(bw.info.mat[,"Diet"] == "44% fat + fiber"),"Diet"] <- "HFD"
-bw.info.mat[which(bw.info.mat[,"Diet"] == "10% fat + fiber"),"Diet"] <- "LFD"
-
-
-full.bw.mat <- cbind(bw.info.mat, mouse.weight.val)
-rownames(full.bw.mat) <- full.bw.mat[,1]
-#head(full.bw.mat)
-
-aligned.expr.bw <- match_pheno_expr(composite.expr, full.bw.mat)
-
-bw.matched.expr <- aligned.expr.bw[[1]]
-matched.bw <- aligned.expr.bw[[2]]
-
-for(i in 1:length(tissue.expr)){
-    cat("###", names(tissue.expr)[i],"\n")
-    
-    #quartz(width = 10, height = 5)
-    layout(layout.matrix)
-    for(g in 1:nrow(groups)){
-        group.locale <- Reduce("intersect", lapply(group.def, 
-            function(x) which(matched.chem[[i]][,x] == groups[g,x])))        
-        plot.with.model(rankZ(bw.matched.expr[[i]][group.locale]),
-            rankZ(as.numeric(matched.bw[[i]][group.locale,"mouse.weight.val"])),
-            ylab = "Final BW", xlab = "Expression", main = paste(groups[g,], collapse = " "), 
-            report = "cor.test")
-    }
-    cat("\n\n")
-}
-
-```
-
-## Allele Effects {.tabset .tabset-fade .tabset-pills}
-
-We can't do any mapping in this population, but we can at 
-least check to see if the alleles that are present have 
-effects in a direction we are expecting. 
-
-In the DO, CAST had a strong negative effect on the 
-composite transcript and the composite trait. Here 
-we collect the transcripts from the composite
-transcript and look for downregulation in PWK-containing
-individuals.
-
-If the manual.or.CT parameter is set to CT, the figure 
-below shows the allele effects from the DO for 
-comparison with allele effects from the CC-RIX.
-
-```{r, plot_orig, fig.width = 9, fig.height = 5, results = "asis"}
-if(manual.or.CT == "CT"){
-
-    qtl.file <- list.files(here("Results", "CCA_Clusters", "all_traits"), 
-        pattern = paste0("Individual.QTL.", tissue.name, ".Composite_Trait", CT, ".Chr"), 
-        full.names = TRUE)
-    qtl.map <- readRDS(here("Data", "map.RDS"))
-    qtl.scan <- lapply(qtl.file, readRDS)
-
-    for(i in 1:length(qtl.scan)){
-        chr.label <- strsplit(basename(qtl.file[[i]]), ".", fixed = TRUE)[[1]][6]
-        cat("QTL on Chr", chr.label, "\n")
-        #quartz(width = 9, height = 5)
-        plot_coefCC(qtl.scan[[i]]$Transcript_Coef, map = qtl.map, 
-            main = paste(tissue.name, "Composite Transcript", CT))
-        plot_coefCC(qtl.scan[[i]]$Trait_Coef, map = qtl.map, 
-            main = paste(tissue.name, "Composite Trait", CT))
-        cat("\n\n")
-    }
-}
-
-```
-
-```{r allele_effects}
-match_geno_pheno <- function(genoprobs, mouse.pheno.id, manifest){
-    #get mouse info from the mouse id
-    all.pheno.id <- t(sapply(mouse.pheno.id, function(x) get_mouse_info(x, manifest)))
-
-    all.geno.group <- apply(all.pheno.id, 1, function(x) paste(gsub(" X ", "_", x[6]), x[3], sep = "_"))
-    #match up with the genotype data
-    all.pheno.idx <- match(all.geno.group, rownames(genoprobs[[1]]))
-    #take out na's
-    not.na.locale <- which(!is.na(all.pheno.idx))
-    all.pheno.idx <- all.pheno.idx[not.na.locale]
-    mouse.pheno.id <- mouse.pheno.id[not.na.locale]
-    
-    new.genoprobs <- genoprobs
-    #expand genoprobs to incorporate all these individuals
-    #assign unique IDs to all individuals
-    for(i in 1:length(genoprobs)){
-        new.genoprobs[[i]] <- genoprobs[[i]][all.pheno.idx,,]
-        rownames(new.genoprobs[[i]]) <- mouse.pheno.id
-    }
-
-    return(new.genoprobs)
-}
-
-get_geno_region <- function(genoprobs, map, chr, start.pos, end.pos){
-    chr.locale <- which(names(map) == chr)
-    marker.region <- intersect(which(map[[chr.locale]] >= start.pos), which(map[[chr.locale]] <= end.pos))
-    marker.pos <- map[[chr.locale]][marker.region]
-    region.geno <- genoprobs[[chr.locale]][,,marker.region]
-    names(dimnames(region.geno)[[3]]) <- as.numeric(marker.pos)
-    return(region.geno)
-}
-
-match_geno_pheno_region <- function(geno.region, mouse.pheno.id, manifest){
-    #get mouse info from the mouse id
-    all.pheno.id <- t(sapply(mouse.pheno.id, function(x) get_mouse_info(x, manifest)))
-
-    all.geno.group <- apply(all.pheno.id, 1, function(x) paste(gsub(" X ", "_", x[6]), x[3], sep = "_"))
-    #match up with the genotype data
-    all.pheno.idx <- match(all.geno.group, rownames(geno.region))
-    #take out na's
-    not.na.locale <- which(!is.na(all.pheno.idx))
-    all.pheno.idx <- all.pheno.idx[not.na.locale]
-    mouse.pheno.id <- mouse.pheno.id[not.na.locale]
-    
-    #expand genoprobs to incorporate all these individuals
-    #assign unique IDs to all individuals
-    new.region <- geno.region[all.pheno.idx,,]
-    rownames(new.region) <- mouse.pheno.id
-    
-    return(new.region)
-}
-
-binned_geno_allele <- function(region.genoprobs, allele){
-    genotypes <- c(0, 0.5, 1)
-    binned.geno <- sapply(1:dim(region.genoprobs)[3], function(x) bin.vector(region.genoprobs[,allele,x], genotypes))
-    colnames(binned.geno) <- dimnames(region.genoprobs)[[3]]
-    return(binned.geno)
-}
-
-get_effects <- function(geno, pheno, 
-    model = c("Additive", "Dominant", "Recessive"), plot.results = FALSE,
-    col = "black", ylab = "phenotype", xlab = "genotype", main = "", xlim = c(0,1),
-    report = "cor.test"){
-    model <- model[1]
-    binned.geno <- geno
-
-    if(model == "Dominant"){
-        binned.geno <- geno
-        binned.geno[which(geno > 0.3)] <- 1
-    }
-    if(model == "Recessive"){
-        binned.geno <- geno
-        binned.geno[which(geno < 0.7)] <- 0
-    }
-    test <- lm(pheno~binned.geno)
-
-    if(plot.results){
-        plot.with.model(binned.geno, pheno, ylab = ylab, col = col,
-        main = main, xlim = xlim, xlab = xlab, report = report)
-    }
-    invisible(return(test))
-}
-
-
-
-test_region_pheno <- function(genoprobs, test.pheno, manifest, map, 
-    region.chr, region.start, region.end, allele, return.additive = TRUE,
-    plot.results = TRUE, trait.label = "Expression", col = "black"){
-
-    all.mouse.id <- unique(unlist(lapply(test.pheno, rownames)))
-
-    #get mouse covariates
-    num.info <- get_num_covar(all.mouse.id)
-
-    #pull out the region of the genome we will be looking at
-    region.genotypes <- get_geno_region(genoprobs, map, 
-        region.chr, region.start, region.end)
-    marker.pos <- as.numeric(names(dimnames(region.genotypes)[[3]]))
-
-    #expand the region to match all mice with measured phenotypes
-    matched.geno <- match_geno_pheno_region(geno.region = region.genotypes, 
-        mouse.pheno.id = all.mouse.id, manifest)
-    
-
-    #pull out the allele of interest and round so that we are
-    #not fitting effects to error
-    #allele.geno <- binned_geno_allele(matched.geno, allele)
-    allele.geno <- round(matched.geno[,allele,], 2)
-
-    marker.effects <- vector(mode = "list", length = length(test.pheno))
-    names(marker.effects) <- names(test.pheno)
-    
-    for(i in 1:length(test.pheno)){
-        common.ind <- Reduce("intersect", list(rownames(test.pheno[[i]]), rownames(allele.geno), rownames(num.info)))
-        ind.pheno.locale <- match(common.ind, rownames(test.pheno[[i]]))
-        ind.geno.locale <- match(common.ind, rownames(allele.geno))
-        ind.covar.locale <- match(common.ind, rownames(num.info))
-
-        #adjust for all covariates
-        adj.pheno <- adjust(test.pheno[[i]][ind.pheno.locale,,drop=FALSE], num.info[ind.covar.locale,])
-        #par(mfrow = c(1,2));hist(test.pheno[[i]][ind.pheno.locale,]);hist(adj.pheno)
-
-        add.tests <- apply(allele.geno, 2, 
-            function(x) get_effects(pheno = rankZ(adj.pheno), 
-            geno = x[ind.geno.locale], model = "Additive"))
-        add.effects <- sapply(add.tests, function(x) coef(x)[2])
-        #barplot(add.effects)
-
-        dom.tests <- apply(allele.geno, 2, 
-            function(x) get_effects(pheno = rankZ(adj.pheno), 
-            geno = x[ind.geno.locale], model = "Dominant"))
-        dom.effects <- sapply(dom.tests, function(x) coef(x)[2])
-        #barplot(dom.effects)
-    
-        rec.tests <- apply(allele.geno, 2, 
-            function(x) get_effects(pheno = rankZ(adj.pheno), 
-            geno = x[ind.geno.locale], model = "Recessive"))
-        rec.effects <- sapply(rec.tests, function(x) coef(x)[2])
-        #barplot(rec.effects)
-
-        effect.table <- cbind(add.effects, dom.effects, rec.effects)
-        rownames(effect.table) <- colnames(allele.geno)  
-
-        marker.effects[[i]] <- effect.table
-        #pheatmap(marker.effects[[i]], cluster_rows = FALSE, cluster_cols = FALSE)
-    }
-    
-    models <- c("Additive", "Dominant", "Recessive")
-    max.allele.effect <- vector(mode = "list", length = length(test.pheno))
-    names(max.allele.effect) <- names(test.pheno)
-    if(plot.results){
-        for(i in 1:length(marker.effects)){
-            common.ind <- intersect(rownames(test.pheno[[i]]), rownames(allele.geno))
-            ind.pheno.locale <- match(common.ind, rownames(test.pheno[[i]]))
-            ind.geno.locale <- match(common.ind, rownames(allele.geno))
-            ind.covar.locale <- match(common.ind, rownames(num.info))
-
-            #adjust for all covariates
-            adj.pheno <- adjust(test.pheno[[i]][ind.pheno.locale,,drop=FALSE], num.info[ind.covar.locale,])
-            #par(mfrow = c(1,2));hist(test.pheno[[i]][ind.pheno.locale,]);hist(adj.pheno)
-
-            max.model <- which.max(colMeans(marker.effects[[i]]))
-            max.marker <- which.max(marker.effects[[i]][,max.model])
-
-            if(length(max.model) == 0 || return.additive){
-                max.model <- max.marker <- 1 #for when there is no variation in the genotype
-            }
-
-            test.result <- get_effects(geno = allele.geno[ind.geno.locale,max.marker], 
-                pheno = rankZ(adj.pheno), plot.results = FALSE, 
-                model = models[max.model], xlim = c(0,1), col = col,
-                xlab = names(max.marker), ylab = trait.label, report = "cor.test",
-                main = paste(names(test.pheno)[i], trait.label, names(allele), models[max.model]))
-
-            boxplot(rankZ(adj.pheno)~bin.vector(allele.geno[ind.geno.locale,max.marker], c(0, 0.5, 1)), 
-                col = col, xlab = names(max.marker), ylab = trait.label, 
-                main = paste(names(test.pheno)[i], trait.label, names(allele)))
-
-            max.allele.effect[[i]] <- coef(test.result)[2]
-        }
-    }
-    result <- list("marker.effects" = marker.effects, "max.marker.cor" = max.allele.effect)
-    return(result)
-}
-
-```
-
-### Allele effects on body weight {.tabset .tabset-fade .tabset-pills}
-
-The following plots show allele effects in the region on 
-both gene expression and body weight. The marker with the
-maximum R2 is marked with a red asterisk.
-
-In the DO, the effects on both expression and the trait were the following:
-
-* AJ - positive effect
-* B6 - no effect
-* 129 - no effect
-* NOD - positive effect
-* NZO - no effect
-* CAST - negative effect
-* PWK - negative effect
-* WSB - positive effect
-
-```{r set_region_and_labels}
-region.chr <- "X"; region.start <- 48; region.end <- 50
-
-if(manual.or.CT == "manual"){
-    expr.trait.label <- paste(gene.name, "Expression")
-}else{
-    expr.trait.label <- paste("Expression of\n", tissue.name, "CT", CT, "Genes")
-}
-
-test.alleles <- c("AJ" = "AA", "B6" = "BB", "129" = "CC", 
-    "NOD" = "DD", "NZO" = "EE", "CAST" = "FF", "PWK" = "GG",
-    "WSB" = "HH")
-```
-
-```{r bw_marker_effects}, fig.width = 9, fig.height = 6, results = "asis"}
-#The peak of the QTL for the adipose composite transcript was at 49 Mb in the DO
-max.allele.expr.effect <- matrix(NA, nrow = length(test.alleles), ncol = length(tissue.expr))
-max.allele.bw.effect <- matrix(NA, nrow = length(test.alleles), ncol = 1)
-rownames(max.allele.expr.effect) <- rownames(max.allele.bw.effect) <- names(test.alleles)
-for(a in 1:length(test.alleles)){
-    cat("####", names(test.alleles)[a], "\n")
-    #quartz(width = 9, height = 6)
-    layout.mat = matrix(c(1:4,0,0), nrow = 2, byrow = TRUE)
-    layout(layout.mat)
-    max.bw.expr.markers <- test_region_pheno(genoprobs, test.pheno = bw.matched.expr, 
-        manifest, map, region.chr, region.start, allele = test.alleles[a],
-        region.end, trait.label = expr.trait.label, col = CCcolors[a])
-    max.allele.expr.effect[a,] <- sapply(max.bw.expr.markers[[2]], function(x) x[1])
-    #The same allele has a slight negative effect on body weight too.
-    #quartz(width = 4, height = 6)
-    #par(mfrow = c(2,1))
-    test.bw <- list(apply(matched.bw[[1]][,"mouse.weight.val",drop=FALSE], 2, as.numeric))
-    rownames(test.bw[[1]]) <- rownames(matched.bw[[1]])
-
-    max.bw.markers <- test_region_pheno(genoprobs, test.pheno = test.bw, 
-        manifest, map, region.chr, region.start, allele = test.alleles[a], 
-        region.end, plot.results = TRUE, trait.label = "Final Body Weight", 
-        col = CCcolors[a])
-    #take the additive effect, since this is what we are comparing to in 
-
-    max.allele.bw.effect[a,] <- sapply(max.bw.markers[[2]], function(x) x[1])
-    cat("\n\n")
-}
-colnames(max.allele.expr.effect) <- names(tissue.expr)
-
-```
-
-### Body Weight Allele Effects Summary
-
-The following plots show the allele effects on expression
-in each tissue type. This is an aggregation of the correlations
-shown above.
-
-```{r plot_allele_effects, fig.width = 9, fig.height = 6}
-ylim <- c(min(max.allele.expr.effect, na.rm = TRUE), max(max.allele.expr.effect, na.rm = TRUE))
-par(mfrow = c(2,3))
-for(i in 1:length(tissue.expr)){
-    allele.order <- order(max.allele.expr.effect[,i])
-    barplot(max.allele.expr.effect[allele.order,i], col = CCcolors[allele.order], las = 2,
-    ylab = "Maximum Allele Effect on Expression", main = names(tissue.expr)[i])
-    abline(h = 0)
-}
-bw.effect.order <- order(max.allele.bw.effect[,1])
-barplot(max.allele.bw.effect[bw.effect.order,1], col = CCcolors[bw.effect.order],
-ylab = "Maximum Allele Effect on Weight", main = "Body Weight", las = 2)
-
-```
-
-
-The following plot shows the maximum allele effects in the region on body weight
-
-### Allele effects on blood chemistries {.tabset .tabset-fade .tabset-pills}
-
-Allele effects on blood chemistries are shown below. 
-Effects on expression are not recapitulated here, because they are
-the same as above. Instead we focus on showing all blood chemistries.
-
-```{r allele_effects_chem, results = "asis", fig.width = 9, fig.height = 6, message = FALSE, warning = FALSE, error = FALSE}
-max.allele.chem.effect <- matrix(NA, nrow = length(test.alleles), ncol = 10)
-rownames(max.allele.chem.effect) <- names(test.alleles)
-
-for(a in 1:length(test.alleles)){
-    cat("####", names(test.alleles)[a], "\n")
-    #quartz(width = 9, height = 6)
-    
-    #quartz(width = 4, height = 6)
-    #par(mfrow = c(2,1))
-    test.chem <- list(apply(matched.chem[[1]][,5:14,drop=FALSE], 2, as.numeric))
-    rownames(test.chem[[1]]) <- rownames(matched.chem[[1]])
-
-    layout.mat <- matrix(c(1:6), nrow = 2, byrow = FALSE)
-    layout(layout.mat)
-    for(ch in 1:ncol(test.chem[[1]])){
-        one.chem <- list(test.chem[[1]][,ch,drop=FALSE])
-        max.chem.markers <- test_region_pheno(genoprobs, test.pheno = one.chem, 
-            manifest, map, region.chr, region.start, allele = test.alleles[a], 
-            region.end, plot.results = TRUE, trait.label = colnames(test.chem[[1]])[ch],
-            col = CCcolors[a])
-        max.allele.chem.effect[a,ch] <- sapply(max.chem.markers[[2]], function(x) x[1])
-    }
-    cat("\n\n")
-}
-colnames(max.allele.chem.effect) <- colnames(test.chem[[1]])
-```
-
-### Blood Chemistry Allele Effects Summary
-
-```{r plot_chem_summary, fig.width = 9, fig.height = 9}
-#quartz(width = 9, height = 9)
-par(mfrow = c(3,3))
-for(i in 1:ncol(max.allele.chem.effect)){
-    allele.order <- order(max.allele.chem.effect[,i])
-    barplot(max.allele.chem.effect[allele.order,i], 
-    col = CCcolors[allele.order], las = 2, ylab = "r", 
-    ylim = c(min(max.allele.chem.effect, na.rm = TRUE), max(max.allele.chem.effect, na.rm = TRUE)),
-    main = colnames(max.allele.chem.effect)[i])
-    abline(h = 0)
-}
-
-```
-
-
-The following plot is a heatmap of the allele effects above to condense 
-the figure even more.
-
-```{r chem_effect_heat, fig.height = 4.5, fig.width = 5}
-pheatmap(max.allele.chem.effect, cluster_rows = FALSE, cluster_cols = FALSE,
-display_numbers = TRUE)
 ```
