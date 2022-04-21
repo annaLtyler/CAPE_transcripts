@@ -17,7 +17,7 @@ This has yet to be adapted for the CC-RIX. Just copied from DO so far.
 
 ```{r get_args}
 args <- commandArgs(trailingOnly = T)
-contrast_by <- as.logical(args[1])
+contrast_by <- args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(delete_previous)){
