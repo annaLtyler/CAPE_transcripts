@@ -17,8 +17,9 @@ This has yet to be adapted for the CC-RIX. Just copied from DO so far.
 
 ```{r get_args}
 args <- commandArgs(trailingOnly = T)
-contrast_by <- args[1]
-delete_previous <- as.logical(args[2])
+tissue.name <- args[1]
+contrast_by <- args[2]
+delete_previous <- as.logical(args[3])
 
 if(is.na(delete_previous)){
   contrast_by <- "Diet"
@@ -71,19 +72,18 @@ If we are contrasting by Treatment, also adjust for Diet.
 If we are contrasting by Diet, also adjust for Treatment.
 
 ```{r adjust}
-adj.expr <- vector(mode = "list", length = length(tissue.expr))
-names(adj.expr) <- names(tissue.expr)
-for(i in 1:length(tissue.expr)){
-  orsam.id <- names(rownames(tissue.expr[[i]]))
-  orsam.idx <- match(orsam.id, rownames(covar))
-  if(contrast_by == "Diet"){
-    bin.covar <- dummy_covar(covar[orsam.idx,c("Sex", "Age", "RNAseq_Batch", "Treatment")])
-  }
-  if(contrast_by == "Treatment"){
-    bin.covar <- dummy_covar(covar[orsam.idx,c("Sex", "Age", "RNAseq_Batch", "Diet")])
-  }
-  adj.expr[[i]] <- adjust(tissue.expr[[i]], bin.covar)
+tissue.locale <- which(names(tissue.expr) == tissue.name)
+
+orsam.id <- names(rownames(tissue.expr[[tissue.locale]]))
+orsam.idx <- match(orsam.id, rownames(covar))
+if(contrast_by == "Diet"){
+  bin.covar <- dummy_covar(covar[orsam.idx,c("Sex", "Age", "RNAseq_Batch", "Treatment")])
 }
+if(contrast_by == "Treatment"){
+  bin.covar <- dummy_covar(covar[orsam.idx,c("Sex", "Age", "RNAseq_Batch", "Diet")])
+}
+adj.expr <- adjust(tissue.expr[[tissue.locale]], bin.covar)
+
 
 mouse.info <- unique(t(sapply(rownames(covar), function(x) get_mouse_info(x, manifest, "User.Inputs"))))
 rownames(mouse.info) <- mouse.info[,1]
@@ -104,31 +104,31 @@ adj.bw <- adjust(bw, bin.covar)
 Run the SOM.
 
 ```{r som}
-for(i in 1:length(tissue.expr)){
-  tissue.name <- names(tissue.expr)[i]
-  tissue.info <- unique(t(sapply(rownames(adj.expr[[i]]), 
-    function(x) get_mouse_info(x, manifest, "Barcode.1"))))
 
-  som.result.file <- here("Documents", "1.Setup_Data", 
-    paste0("CC-RIX_", tissue.name, "_by_", contrast_by, ".RData"))
 
-  if(delete_previous){
-    unlink(som.result.file)
-  }
+tissue.info <- unique(t(sapply(rownames(adj.expr), 
+  function(x) get_mouse_info(x, manifest, "Barcode.1"))))
 
-  if(!file.exists(som.result.file)){
-    exp.name <- gsub(".RData", "", basename(som.result.file))
-    env <- opossom.new(list(dataset.name = exp.name))
-    env$indata <- t(adj.expr[[i]])
-    if(contrast_by == "Diet"){
-      env$group.labels <- tissue.info[,"Diet"]
-    }
-    if(contrast_by == "Treatment"){
-      env$group.labels <- tissue.info[,"Treatment"]
-    }
-    opossom.run(env)
-  }
+som.result.file <- here("Documents", "1.Setup_Data", 
+  paste0("CC-RIX_", tissue.name, "_by_", contrast_by, ".RData"))
+
+if(delete_previous){
+  unlink(som.result.file)
 }
+
+if(!file.exists(som.result.file)){
+  exp.name <- gsub(".RData", "", basename(som.result.file))
+  env <- opossom.new(list(dataset.name = exp.name))
+  env$indata <- t(adj.expr)
+  if(contrast_by == "Diet"){
+    env$group.labels <- tissue.info[,"Diet"]
+  }
+  if(contrast_by == "Treatment"){
+    env$group.labels <- tissue.info[,"Treatment"]
+  }
+  opossom.run(env)
+}
+
 
 load(som.result.file)
 ```
