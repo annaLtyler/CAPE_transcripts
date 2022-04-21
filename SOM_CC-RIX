@@ -14,4 +14,4 @@ cd $SLURM_SUBMIT_DIR
 
 module load singularity
 
-singularity exec /projects/carter-lab/atyler/Containers/som.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "SOM.Rmd"))' --args "$contrast_by" "$delete_previous"
+singularity exec /projects/carter-lab/atyler/Containers/som.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "SOM_CC-RIX.Rmd"))' --args "$contrast_by" "$delete_previous"
