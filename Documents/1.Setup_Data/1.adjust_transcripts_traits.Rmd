@@ -183,8 +183,8 @@ if(!file.exists(adj.expr.file)){
     adj.expr <- lapply(tissue.fil.expr, function(x) adjust(x, all.covar, TRUE))
     saveRDS(adj.expr, adj.expr.file)
 }else{
-adj.expr <- readRDS(adj.expr.file)
-names(adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
+    adj.expr <- readRDS(adj.expr.file)
+    names(adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
 }
 ```
 

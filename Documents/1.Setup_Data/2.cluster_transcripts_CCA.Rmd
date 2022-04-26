@@ -637,7 +637,8 @@ all_one_side <- function(estimate.mat){
 sig_loadings <- function(estimate.mat, fdr = 0.05, plot.sample = FALSE){ 
     has.vals <- which(rowSums(estimate.mat) != 0)
     
-    all.p <- apply(estimate.mat[has.vals,], 1, function(x) t.test(x, mu = 0)$p.value)
+    all.p <- apply(estimate.mat[has.vals,,drop=FALSE], 1, function(x) try(t.test(x, mu = 0)$p.value, silent = TRUE))
+    all.p[which(is.na(as.numeric(all.p)))] <- 0
     adj.p <- p.adjust(all.p, "fdr")
     sig.tests <- which(adj.p <= fdr)
     
