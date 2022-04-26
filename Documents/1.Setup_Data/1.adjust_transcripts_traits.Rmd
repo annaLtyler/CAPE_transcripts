@@ -24,7 +24,7 @@ delete_previous <- as.logical(args[2])
 
 if(is.na(delete_previous)){
     #exp.name = "weight_adjusted"
-    exp.name = "all_traits"
+    exp.name = "imputed"
     delete_previous <- FALSE
 }
 
@@ -47,7 +47,7 @@ if(is.na(delete_previous)){
 #    keep.traits <- c("HOMA_IR_0min", "HOMA_B_0min", "Glu_tAUC", "Ins_tAUC")
 #    adj.traits <- NULL
 
-if(exp.name == "all_traits"){
+if(exp.name == "all_traits" || exp.name == "imputed"){
     keep.traits <- 1:20 #all traits;
     adj.traits <- NULL #traits to adjust for, set to NULL to not adjust
 }
@@ -154,8 +154,8 @@ saveRDS(all.covar, covar.file)
 
 ## Filter Expression
 Filter the expression matrices to include only genes that have at least
-a minimum amount of expression. Also regress out covariates using the 
-same covariate matrix generated above.
+a minimum amount of expression (unless we are using imputed transcripts). 
+Also regress out covariates using the same covariate matrix generated above.
 
 Here we use the raw expression matrix to select transcripts from the rank Z
 normalized expression matrix. 
@@ -163,16 +163,28 @@ normalized expression matrix.
 ```{r adjust_covar}
 min.mean = 5
 
-adj.expr.file <- here("Data", "Adjusted_Expression.RDS")
+if(exp.name == "imputed"){
+    adj.expr.file <- here("Data", "imputed", "Adjusted_Expression.RDS")
+    imp.expr.files <- get.files(here("Data", "imputed"), want = "RDS", 
+        dont.want = "adjusted", full.names = TRUE)
+    tissue.norm <- lapply(imp.expr.files, readRDS)
+}else{
+    adj.expr.file <- here("Data", "Adjusted_Expression.RDS")
+}
 if(!file.exists(adj.expr.file)){
-    tissue.fil.expr <- lapply(tissue.norm, 
-        function(x) x[,which(colMeans(x, na.rm = TRUE) > min.mean)])
+    if(exp.name != "imputed"){
+        tissue.fil.expr <- lapply(tissue.norm, 
+            function(x) x[,which(colMeans(x, na.rm = TRUE) > min.mean)])
+    }else{
+        tissue.fil.expr <- tissue.norm
+    }
 
     #adjust expression for covarates
     adj.expr <- lapply(tissue.fil.expr, function(x) adjust(x, all.covar, TRUE))
     saveRDS(adj.expr, adj.expr.file)
 }else{
 adj.expr <- readRDS(adj.expr.file)
+names(adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
 }
 ```
 
@@ -316,100 +328,100 @@ for genes that influence traits in a way that we can trace back to
 genotype through gene expression.
 
 ```{r eqtl, fig.width = 10, fig.height = 6, results = "asis"}
-get_max_eqtl <- function(gene.id){
-    gene.locale <- which(tissue.eqtl[[1]] == gene.id)
-    if(length(gene.locale) == 0){return(NA)}
-    max.lod <- max(tissue.eqtl[[3]][gene.locale])
-    return(max.lod)
-}
-cor.thresh = 0.4
-top.n <- 20
-
-for(i in 1:length(tissue.names)){
-    cat("###", tissue.names[i], "\n")
-    if(is.interactive){quartz(width = 10, height = 6)}
-    layout.mat <- matrix(c(1:5, 0), nrow = 2, byrow = TRUE)
-    layout(layout.mat)
-    expr.trait.cor.file <- here("Results", "General", paste0("Trait.", tissue.names[i], ".Expr.Cor.RDS"))
-    tissue.expr <- adj.expr[[i]]
-    tissue.data <- get(paste0("dataset.DO.Cube.", tissue.names[i]))
-    tissue.eqtl <- tissue.data$lod.peaks$additive
-    common.ind <- intersect(rownames(cca.pheno), rownames(tissue.expr))
-    expr.locale <- match(common.ind, rownames(tissue.expr))
-    pheno.locale <- match(common.ind, rownames(cca.pheno))
-
-    if(!file.exists(expr.trait.cor.file)){
-        trait.cor <- apply(cca.pheno[pheno.locale,], 2, function(y) apply(tissue.expr[expr.locale,], 2, function(x) cor(x, y, use = "pairwise.complete.obs")))
-        saveRDS(trait.cor, expr.trait.cor.file)
-    }else{
-        trait.cor <- readRDS(expr.trait.cor.file)
+if(exp.name != "imputed"){
+    get_max_eqtl <- function(gene.id){
+        gene.locale <- which(tissue.eqtl[[1]] == gene.id)
+        if(length(gene.locale) == 0){return(NA)}
+        max.lod <- max(tissue.eqtl[[3]][gene.locale])
+        return(max.lod)
     }
-    
-    cor.mean <- apply(trait.cor, 2, function(x) mean(abs(x)))
-    par(mar = c(4,8,2,2))
-    boxplot(abs(trait.cor[,order(cor.mean)]), las = 2, horizontal = TRUE, 
-        main = "Trait-Expression Correlation")
+    cor.thresh = 0.4
+    top.n <- 20
 
-    par(mar = c(4,8,2,2))
-    #plot.decomp(t(trait.cor), label.points = TRUE, main = "Decomposition of Trait-Expression Correlation")
+    for(i in 1:length(tissue.names)){
+        cat("###", tissue.names[i], "\n")
+        if(is.interactive){quartz(width = 10, height = 6)}
+        layout.mat <- matrix(c(1:5, 0), nrow = 2, byrow = TRUE)
+        layout(layout.mat)
+        expr.trait.cor.file <- here("Results", "General", paste0("Trait.", tissue.names[i], ".Expr.Cor.RDS"))
+        tissue.expr <- adj.expr[[i]]
+        tissue.data <- get(paste0("dataset.DO.Cube.", tissue.names[i]))
+        tissue.eqtl <- tissue.data$lod.peaks$additive
+        common.ind <- intersect(rownames(cca.pheno), rownames(tissue.expr))
+        expr.locale <- match(common.ind, rownames(tissue.expr))
+        pheno.locale <- match(common.ind, rownames(cca.pheno))
 
-    max.eqtl.file <- here("Results", "General", paste0("max.eQTL.LOD.", tissue.names[i], ".RDS"))
-    if(!file.exists(max.eqtl.file)){
-        max.eqtl <- sapply(colnames(tissue.expr), get_max_eqtl)
-        saveRDS(max.eqtl, max.eqtl.file)
-    }else{
-        max.eqtl <- readRDS(max.eqtl.file)
+        if(!file.exists(expr.trait.cor.file)){
+            trait.cor <- apply(cca.pheno[pheno.locale,], 2, function(y) apply(tissue.expr[expr.locale,], 2, function(x) cor(x, y, use = "pairwise.complete.obs")))
+            saveRDS(trait.cor, expr.trait.cor.file)
+        }else{
+            trait.cor <- readRDS(expr.trait.cor.file)
+        }
+        
+        cor.mean <- apply(trait.cor, 2, function(x) mean(abs(x)))
+        par(mar = c(4,8,2,2))
+        boxplot(abs(trait.cor[,order(cor.mean)]), las = 2, horizontal = TRUE, 
+            main = "Trait-Expression Correlation")
+
+        par(mar = c(4,8,2,2))
+        #plot.decomp(t(trait.cor), label.points = TRUE, main = "Decomposition of Trait-Expression Correlation")
+
+        max.eqtl.file <- here("Results", "General", paste0("max.eQTL.LOD.", tissue.names[i], ".RDS"))
+        if(!file.exists(max.eqtl.file)){
+            max.eqtl <- sapply(colnames(tissue.expr), get_max_eqtl)
+            saveRDS(max.eqtl, max.eqtl.file)
+        }else{
+            max.eqtl <- readRDS(max.eqtl.file)
+        }
+        
+        max.cor <- apply(abs(trait.cor), 1, max)
+        plot.with.model(max.eqtl, max.cor, report = "cor.test")
+        abline(h = cor.thresh, col = "red")
+
+        #ID genes with correlations > 0.4 and relatively high LOD scores
+        high.cor <- which(max.cor >= cor.thresh)
+        high.table <- cbind(max.cor[high.cor], max.eqtl[high.cor])
+        no.na <- which(!is.na(high.table[,2])) #take out genes with LOD scores < 6
+        high.table <- high.table[no.na,]
+        gene.ranks <- rank.2D(high.table)
+        ranked.genes <- high.table[order(gene.ranks[,1], decreasing = FALSE),]
+        top.genes <- ranked.genes[1:min(c(top.n, nrow(high.table))),]
+        #plot names for the top 10 genes
+        gene.names <- tissue.data$annot.mrna[[2]][match(rownames(top.genes), tissue.data$annot.mrna[[1]])]
+        rownames(top.genes) <- gene.names
+        colnames(top.genes) <- c("Max.Trait.Cor", "Max.LOD.Score")
+        #cat(gene.names, sep = "\n")    
+
+        gene.text <- paste(rownames(top.genes), collapse = "\n")
+        cor.text <- paste(round(top.genes[,1], 2), collapse = "\n")
+        lod.text <- paste(round(top.genes[,2], 1), collapse = "\n")
+        par(mar = c(0,0,0,0))
+        plot.text(paste("Top", top.n, "genes\n\n", gene.text), x = 0.35, add = FALSE)
+        plot.text(paste("Corr\n\n", cor.text), x = 0.5, add = TRUE)
+        plot.text(paste("LOD\n\n", lod.text), x = 0.6, add = TRUE)
+
+        trait.eqtl.cor <- apply(abs(trait.cor), 2, 
+            function(x) cor(max.eqtl, x, use = "pairwise.complete.obs"))
+        
+        #par(mfrow = c(4,5), mar = c(1,1,4,1))
+        #for(tr in 1:ncol(trait.cor)){
+        #    plot(max.eqtl, abs(trait.cor[,tr]), main = colnames(trait.cor)[tr])
+        #}
+
+        par(mar = c(8,4,2,2))
+        barplot(trait.eqtl.cor, las = 2, main = "Correlation between LOD\nscore and trait correlation")
+        
+        #plot(max.eqtl, abs(trait.cor[,3]), main = tissue.names[i], xlab = "Maximum eQTL", ylab = "Trait Correlation Magnitude")
+        expr.var <- apply(tissue.expr, 2, var)
+        
+        trait.var.cor <- apply(abs(trait.cor), 2, function(x) cor(expr.var, x, use = "pairwise.complete.obs"))
+        #plot.with.model(expr.var, abs(trait.cor[,1]), main = tissue.names[i], xlab = "Expression Variance", ylab = "Trait Correlation Magnitude", report = "cor.test")
+        #plot(expr.var, trait.cor[,1], xlab = "Maximum eQTL", ylab = "Variation in Expression", main = tissue.names[i])
+        par(mar = c(8,4,2,2))
+        barplot(trait.var.cor, las = 2, main = "Correlation between expression\nvariance and trait correlation")
+
+        mtext(tissue.names[i], side = 3, outer = TRUE, line = -1)
+        cat("\n\n")
     }
-    
-    max.cor <- apply(abs(trait.cor), 1, max)
-    plot.with.model(max.eqtl, max.cor, report = "cor.test")
-    abline(h = cor.thresh, col = "red")
-
-    #ID genes with correlations > 0.4 and relatively high LOD scores
-    high.cor <- which(max.cor >= cor.thresh)
-    high.table <- cbind(max.cor[high.cor], max.eqtl[high.cor])
-    no.na <- which(!is.na(high.table[,2])) #take out genes with LOD scores < 6
-    high.table <- high.table[no.na,]
-    gene.ranks <- rank.2D(high.table)
-    ranked.genes <- high.table[order(gene.ranks[,1], decreasing = FALSE),]
-    top.genes <- ranked.genes[1:min(c(top.n, nrow(high.table))),]
-    #plot names for the top 10 genes
-    gene.names <- tissue.data$annot.mrna[[2]][match(rownames(top.genes), tissue.data$annot.mrna[[1]])]
-    rownames(top.genes) <- gene.names
-    colnames(top.genes) <- c("Max.Trait.Cor", "Max.LOD.Score")
-    #cat(gene.names, sep = "\n")    
-
-    gene.text <- paste(rownames(top.genes), collapse = "\n")
-    cor.text <- paste(round(top.genes[,1], 2), collapse = "\n")
-    lod.text <- paste(round(top.genes[,2], 1), collapse = "\n")
-    par(mar = c(0,0,0,0))
-    plot.text(paste("Top", top.n, "genes\n\n", gene.text), x = 0.35, add = FALSE)
-    plot.text(paste("Corr\n\n", cor.text), x = 0.5, add = TRUE)
-    plot.text(paste("LOD\n\n", lod.text), x = 0.6, add = TRUE)
-
-    trait.eqtl.cor <- apply(abs(trait.cor), 2, 
-        function(x) cor(max.eqtl, x, use = "pairwise.complete.obs"))
-    
-    #par(mfrow = c(4,5), mar = c(1,1,4,1))
-    #for(tr in 1:ncol(trait.cor)){
-    #    plot(max.eqtl, abs(trait.cor[,tr]), main = colnames(trait.cor)[tr])
-    #}
-
-    par(mar = c(8,4,2,2))
-    barplot(trait.eqtl.cor, las = 2, main = "Correlation between LOD\nscore and trait correlation")
-    
-    #plot(max.eqtl, abs(trait.cor[,3]), main = tissue.names[i], xlab = "Maximum eQTL", ylab = "Trait Correlation Magnitude")
-    expr.var <- apply(tissue.expr, 2, var)
-    
-    trait.var.cor <- apply(abs(trait.cor), 2, function(x) cor(expr.var, x, use = "pairwise.complete.obs"))
-    #plot.with.model(expr.var, abs(trait.cor[,1]), main = tissue.names[i], xlab = "Expression Variance", ylab = "Trait Correlation Magnitude", report = "cor.test")
-    #plot(expr.var, trait.cor[,1], xlab = "Maximum eQTL", ylab = "Variation in Expression", main = tissue.names[i])
-    par(mar = c(8,4,2,2))
-    barplot(trait.var.cor, las = 2, main = "Correlation between expression\nvariance and trait correlation")
-
-    mtext(tissue.names[i], side = 3, outer = TRUE, line = -1)
-    cat("\n\n")
 }
-
-
 ```

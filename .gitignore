@@ -6,5 +6,6 @@
 *.pdf
 *.jpg
 /Results
-*.key
+/Figures
+*.csv
 

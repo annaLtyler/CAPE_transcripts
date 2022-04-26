@@ -24,7 +24,7 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    exp.name <- "all_traits"
+    exp.name <- "imputed"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE
     delete_previous <- FALSE
@@ -70,15 +70,23 @@ Read in pre-filtered and pre-adjusted transcript data from
 adjust_transcripts_traits.Rmd
 
 ```{r read_data}
-tissue.adj.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
 pheno.file <- here("Data", "Adjusted_Phenotypes.RDS")
 cca.pheno <- readRDS(pheno.file)
+
+if(exp.name == "imputed"){
+    tissue.adj.expr <- readRDS(here("Data", "imputed", "Adjusted_Expression.RDS"))
+    names(tissue.adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
+}else{   
+    tissue.adj.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
+}
+
 tissue.names <- names(tissue.adj.expr)
 
 tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
 data.set.names <- lapply(1:length(tissue.names), 
 function(x) paste0("dataset.DO.Cube.", tissue.names[x]))
-gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, function(x) get(x)$annot.mrna))))
+gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, 
+    function(x) get(x)$annot.mrna))))
 ```
 
 ## Transcript PCA
