@@ -549,14 +549,15 @@ names(tissue.CCA.results) <- tissue.names
 
 for(i in 1:length(tissue.names)){
     num.components = ncol(matched.mats[[i]]$Z)
-    if(length(tissue.trait.penalty[[i]]) > 1){
+    penaltyx <- as.numeric(tissue.trait.penalty[[i]]$x)
+    penaltyz <- as.numeric(tissue.trait.penalty[[i]]$z)
+    if(length(tissue.trait.penalty[[i]]) > 1 && length(penaltyx) > 0 && length(penaltyz) > 0){
         CCA.file <- file.path(results.dir, paste0(tissue.names[i], 
         ".", file.text, ".CCA.RDS"))
         if(!file.exists(CCA.file) || delete_previous){            
             cca.results <- CCA(matched.mats[[i]]$X, matched.mats[[i]]$Z, 
             typex = "standard", typez = "standard", K = num.components, 
-            penaltyx = as.numeric(tissue.trait.penalty[[i]]$x), 
-            penaltyz = as.numeric(tissue.trait.penalty[[i]]$z), trace = FALSE)
+            penaltyx = penaltyx, penaltyz = penaltyz, trace = FALSE)
             saveRDS(cca.results, CCA.file)
         }else{
             cca.results <- readRDS(CCA.file)
@@ -594,20 +595,22 @@ if(!file.exists(boot.trans.file) || delete_previous){
 
     for(i in 1:length(tissue.names)){
         penalties <- unlist(tissue.trait.penalty[[i]])
-        all.transcript.loadings <- vector(mode = "list", length = n.bootstraps)
-        all.trait.loadings <- vector(mode = "list", length = n.bootstraps)
-        for(b in 1:n.bootstraps){
-            sample.set <- sample(1:nrow(matched.mats[[i]]$X), replace = TRUE)
-            cca.results.train <- CCA(matched.mats[[i]]$X[sample.set,], 
-            matched.mats[[i]]$Z[sample.set,], 
-            typex = "standard", typez = "standard", K = 20, 
-            penaltyx = penalties[1], penaltyz = penalties[2], 
-            trace = FALSE)
-            all.transcript.loadings[[b]] <- cca.results.train$u
-            all.trait.loadings[[b]] <- cca.results.train$v
+        if(length(penalties) > 0){
+            all.transcript.loadings <- vector(mode = "list", length = n.bootstraps)
+            all.trait.loadings <- vector(mode = "list", length = n.bootstraps)
+            for(b in 1:n.bootstraps){
+                sample.set <- sample(1:nrow(matched.mats[[i]]$X), replace = TRUE)
+                cca.results.train <- CCA(matched.mats[[i]]$X[sample.set,], 
+                matched.mats[[i]]$Z[sample.set,], 
+                typex = "standard", typez = "standard", K = 20, 
+                penaltyx = penalties[1], penaltyz = penalties[2], 
+                trace = FALSE)
+                all.transcript.loadings[[b]] <- cca.results.train$u
+                all.trait.loadings[[b]] <- cca.results.train$v
+            }
+            tissue.transcript.boots[[i]] <- all.transcript.loadings
+            tissue.trait.boots[[i]] <- all.trait.loadings
         }
-        tissue.transcript.boots[[i]] <- all.transcript.loadings
-        tissue.trait.boots[[i]] <- all.trait.loadings
     }
     saveRDS(tissue.transcript.boots, boot.trans.file)
     saveRDS(tissue.trait.boots, boot.trait.file)
