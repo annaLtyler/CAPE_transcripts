@@ -7,7 +7,7 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
     pass.cor <- which(cor.diff > cor.diff.thresh)
     
     if(return.top.only){
-        best.penalty.idx <- intersect(which.max(perm_grid$Cor), pass.p)
+        best.penalty.idx <- intersect(which.max(cor.diff), pass.p)
     }else{
         best.penalty.idx <- intersect(pass.p, pass.cor)
     }
