@@ -602,7 +602,8 @@ if(!file.exists(boot.trans.file) || delete_previous){
                 sample.set <- sample(1:nrow(matched.mats[[i]]$X), replace = TRUE)
                 cca.results.train <- CCA(matched.mats[[i]]$X[sample.set,], 
                 matched.mats[[i]]$Z[sample.set,], 
-                typex = "standard", typez = "standard", K = 20, 
+                typex = "standard", typez = "standard", 
+                K = ncol(matched.mats[[i]]$Z[sample.set,]), 
                 penaltyx = penalties[1], penaltyz = penalties[2], 
                 trace = FALSE)
                 all.transcript.loadings[[b]] <- cca.results.train$u
