@@ -72,7 +72,7 @@ adjust_transcripts_traits.Rmd
 ```{r read_data}
 pheno.file <- here("Data", "Adjusted_Phenotypes.RDS")
 cca.pheno <- readRDS(pheno.file)
-cca.pheno <- adjust(cca.pheno[,2:ncol(cca.pheno), cca.pheno[,1,drop=FALSE]) #regress out diet days
+cca.pheno <- adjust(cca.pheno[,2:ncol(cca.pheno)], cca.pheno[,1,drop=FALSE]) #regress out diet days
 
 if(exp.name == "imputed"){
     tissue.adj.expr <- readRDS(here("Data", "imputed", "Adjusted_Expression.RDS"))
