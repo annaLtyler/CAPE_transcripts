@@ -73,6 +73,7 @@ adjust_transcripts_traits.Rmd
 pheno.file <- here("Data", "Adjusted_Phenotypes.RDS")
 cca.pheno <- readRDS(pheno.file)
 cca.pheno <- adjust(cca.pheno[,2:ncol(cca.pheno)], cca.pheno[,1,drop=FALSE]) #regress out diet days
+num.components <- ncol(cca.pheno)
 
 if(exp.name == "imputed"){
     tissue.adj.expr <- readRDS(here("Data", "imputed", "Adjusted_Expression.RDS"))
@@ -603,7 +604,7 @@ if(!file.exists(boot.trans.file) || delete_previous){
                 cca.results.train <- CCA(matched.mats[[i]]$X[sample.set,], 
                 matched.mats[[i]]$Z[sample.set,], 
                 typex = "standard", typez = "standard", 
-                K = ncol(matched.mats[[i]]$Z[sample.set,]), 
+                K = num.components, 
                 penaltyx = penalties[1], penaltyz = penalties[2], 
                 trace = FALSE)
                 all.transcript.loadings[[b]] <- cca.results.train$u
@@ -653,8 +654,8 @@ sig_loadings <- function(estimate.mat, fdr = 0.05, plot.sample = FALSE){
     }
 
     if(plot.sample){
-        non.zero.sample <- sample(has.vals[sig.tests], 20)
-        zero.sample  <- sample(setdiff(1:nrow(estimate.mat), has.vals[sig.tests]), 20)
+        non.zero.sample <- sample(has.vals[sig.tests], num.components)
+        zero.sample  <- sample(setdiff(1:nrow(estimate.mat), has.vals[sig.tests]), num.components)
         mean.order <- order(estimate.means[non.zero.sample])
         all.example.idx <- c(non.zero.sample[mean.order], zero.sample)
         boxplot(t(estimate.mat[all.example.idx,]), ylim = c(-0.2, 0.2), axes = FALSE);abline(h = 0);axis(2)
