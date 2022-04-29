@@ -40,6 +40,8 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
     }
     
     best.penalty.row.col <- idx_to_row_col(best.penalty.idx, nrow(cor.diff))
+    best.penalty.x <- best.penalty.row.col[1,1]
+    best.penalty.z <- best.penalty.row.col[1,2]
     
     best.penalty <- list("x" = as.numeric(rownames(cor.diff)[best.penalty.row.col[,1]]),
         "z" = as.numeric(colnames(cor.diff)[best.penalty.row.col[,2]]))
