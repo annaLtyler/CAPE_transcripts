@@ -37,7 +37,7 @@ pval.thresh = 0.05 #maximum p value for selecting useful penalty combinations
 cor.diff.thresh = 0.4 #minimum difference in canonical correlation between data and null for selecting useful penalty combinations
 
 #qtl overlap parameters
-lodthresh = 5 #Minimum LOD score for a QTL we will examine
+lodthresh = 4 #Minimum LOD score for a QTL we will examine
 peak.dist <- 2 #maximum distance in MB for overlapping QTL
 perc.drop.thresh = 0.75 #fraction of full LOD score mediated LOD score needs to be to be investigated further
 
