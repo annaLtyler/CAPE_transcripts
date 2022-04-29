@@ -456,28 +456,39 @@ pos.cor <- TRUE
 for(tx in 1:length(all.tissue.cor)){
     for(tr in 1:ncol(all.tissue.cor[[tx]])){
         test.seq <- seq(10, 2000, 10)
-        all.cor <- rep(NA, length(test.seq))
+        all.cor <- matrix(NA, nrow = length(test.seq), ncol = 2)
         for(ts in 1:length(test.seq)){
             report.progress(ts, length(test.seq))
             pos.trans <- rownames(all.tissue.cor[[tx]])[order(abs(all.tissue.cor[[tx]][,tr]), decreasing = pos.cor)[1:test.seq[ts]]]
             tr.decomp <- plot.decomp(matched.mats[[tx]]$X[,pos.trans], plot.results = FALSE)
             #plot.with.model(matched.mats[[tx]]$Z[,tr], matched.mats[[tx]]$X[,neg.trans[1]])
-            all.cor[ts] <- plot.with.model(matched.mats[[tx]]$Z[,tr], tr.decomp$u[,1], plot.results = FALSE)[1]
+            all.cor[ts,1] <- cor(matched.mats[[tx]]$Z[,tr], tr.decomp$u[,1])
+            all.cor[ts,2] <- cor(matched.mats[[tx]]$Z[,tr], tr.decomp$u[,2])
         }
-        plot(test.seq, all.cor, type = "l")       
-        max.idx <- test.seq[which.max(all.cor)]
+        plot(test.seq, all.cor[,1], type = "l", ylim = c(min(all.cor), max(all.cor)))
+        points(test.seq, all.cor[,2], type = "l", col = "blue")
+
+        max.idx <- test.seq[which.max(all.cor[,1])]
         test.trans <- rownames(all.tissue.cor[[tx]])[order(all.tissue.cor[[tx]][,tr], decreasing = TRUE)[1:max.idx]]
         trait.col <- colors.from.values(matched.mats[[tx]]$Z[,tr], use.pheatmap.colors = TRUE)
         test.decomp <- plot.decomp(matched.mats[[tx]]$X[,test.trans], cols = trait.col)
-        test.pc <- test.decomp$u[,1,drop=FALSE]
+        test.pc <- test.decomp$u
         rownames(test.pc) <- rownames(matched.mats[[tx]]$Z)
         test.scan <- scan1(genoprobs, test.pc)
-        plot(test.scan, map = map)
+        
+        par(mfrow = c(2,1))
+        plot(test.scan, map = map, lodcol = 1, main = "PC1")
+        plot(test.scan, map = map, lodcol = 2, main = "PC2")
+
         test.enrich <- gost(test.trans, organism = "mmusculus", sources = c("GO", "KEGG", "REACTOME"))        
         plot.enrichment(test.enrich, num.terms = 30)
         pos.info <- gene.info[[tx]][match(test.trans, gene.info[[tx]][,1]),]
 
-        plot.with.model(test.pc, matched.mats[[tx]]$Z[,tr], report = "cor.test")
+        par(mfrow = c(1,2))
+        plot.with.model(test.pc1, matched.mats[[tx]]$Z[,tr], report = "cor.test",
+            xlab = "Imputed Transcript PC1", ylab = colnames(cca.pheno)[tr])
+        plot.with.model(test.pc2, matched.mats[[tx]]$Z[,tr], report = "cor.test",
+            xlab = "Imputed Transcript PC2", ylab = colnames(cca.pheno)[tr])
     }
 
 }

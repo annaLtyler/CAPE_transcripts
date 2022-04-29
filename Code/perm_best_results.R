@@ -19,10 +19,10 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
 
     pass.p <- which(perm_grid$p <= pval.thresh)
     cor.diff <- perm_grid$Cor - perm_grid$Perm.Cor
-    max.cor.diff <- floor(max(cor.diff)*100)/100
-    pass.cor <- which(cor.diff >= max.cor.diff)
+    max.cor.diff <- floor(max(cor.diff[pass.p])*100)/100
+    pass.cor <- which(cor.diff[pass.p] >= max.cor.diff)
 
-    best.penalty.idx <- intersect(pass.p, pass.cor)
+    best.penalty.idx <- pass.p[pass.cor]
 
     if(length(best.penalty.idx) > 1 && return.top.only){ #pick the best penalty skewing toward harsher or more lenient depending on skew.toward.x and skew.toward.z
         penalty.row.col <- idx_to_row_col(best.penalty.idx, nrow(cor.diff))
