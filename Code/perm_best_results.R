@@ -40,8 +40,6 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
     }
     
     best.penalty.row.col <- idx_to_row_col(best.penalty.idx, nrow(cor.diff))
-    best.penalty.x <- best.penalty.row.col[1,1]
-    best.penalty.z <- best.penalty.row.col[1,2]
     
     best.penalty <- list("x" = as.numeric(rownames(cor.diff)[best.penalty.row.col[,1]]),
         "z" = as.numeric(colnames(cor.diff)[best.penalty.row.col[,2]]))
@@ -49,6 +47,11 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
     star.nudge = 0.3
 
     if(plot.results){
+        best.penalty.x <- best.penalty.row.col[1,1]
+        best.penalty.z <- best.penalty.row.col[1,2]
+        nx <- nrow(cor.diff)
+        nz <- ncol(cor.diff)
+
         par(mfrow = c(2,2), mar = c(1,2,2,1))
         imageWithText(round(perm_grid$Cor, 2), col.scale = "blue", 
         main = "Correlations of Identified Components", 
