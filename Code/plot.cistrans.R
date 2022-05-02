@@ -3,7 +3,7 @@
 #eQTL plot
 
 plot.cistrans <- function(scan1.result, map, gene.info, lod.threshold = 3, 
-id.type = "ensembl_gene_id"){
+id.col = "ensembl_gene_id", chr.column = "chromosome_name", pos.column = "start_position"){
 	
 	#find max lod scores for pt colors
 	max.lod <- max(as.vector(scan1.result))
@@ -20,13 +20,13 @@ id.type = "ensembl_gene_id"){
 	snp.pos.table <- Reduce("c", rel.snp)
 
 	rel.transcript.pos <- function(transcript.id){
-		chr <- unique(gene.info[which(gene.info[,id.type] == transcript.id),"chromosome_name"])
+		chr <- unique(gene.info[which(gene.info[,id.col] == transcript.id),chr.column])
 		if(length(chr) == 0){
 			return(NA)
 		}else{
 			chr.locale <- which(names(chr.max) == chr)
 			chr.size <- chr.max[chr.locale]
-			trans.loc <- as.numeric(gene.info[which(gene.info[,id.type] == transcript.id),"start_position"])/1e6
+			trans.loc <- as.numeric(gene.info[which(gene.info[,id.col] == transcript.id),pos.column])/1e6
 			rel.loc <- (trans.loc/chr.size) + chr.locale
 			return(rel.loc[1])
 		}

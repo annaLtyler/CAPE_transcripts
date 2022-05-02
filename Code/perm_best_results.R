@@ -18,8 +18,8 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
     skew.toward.x = 0, skew.toward.z = 0){
 
     pass.p <- which(perm_grid$p <= pval.thresh)
-    cor.diff <- perm_grid$Cor - perm_grid$Perm.Cor
-    max.cor.diff <- floor(max(cor.diff[pass.p])*100)/100
+    cor.diff <- round(perm_grid$Cor - perm_grid$Perm.Cor, 2)
+    max.cor.diff <- floor(max(cor.diff[pass.p])*10000)/10000
     pass.cor <- which(cor.diff[pass.p] >= max.cor.diff)
 
     best.penalty.idx <- pass.p[pass.cor]
@@ -27,16 +27,18 @@ perm_best_results <- function(perm_grid, pval.thresh = 0.05,
     if(length(best.penalty.idx) > 1 && return.top.only){ #pick the best penalty skewing toward harsher or more lenient depending on skew.toward.x and skew.toward.z
         penalty.row.col <- idx_to_row_col(best.penalty.idx, nrow(cor.diff))
         if(length(unique(penalty.row.col[,1])) > 1){
-            best.row.idx <- get.nearest.pt(penalty.row.col[,1]/nrow(cor.diff), skew.toward.x)
+            best.row.idx <- get.nearest.pt(as.numeric(rownames(cor.diff)[penalty.row.col[,1]]), skew.toward.x)
         }else{
             best.row.idx <- 1
         }
         if(length(unique(penalty.row.col[,2])) > 1){
-            best.col.idx <- get.nearest.pt(penalty.row.col[,2]/ncol(cor.diff), skew.toward.z)
+            best.col.idx <- get.nearest.pt(as.numeric(colnames(cor.diff)[penalty.row.col[,2]]), skew.toward.z)
         }else{
             best.col.idx <- 1
         }
-        best.penalty.idx <- row_col_to_idx(penalty.row.col[best.row.idx, 1], penalty.row.col[best.col.idx,2], nrow(cor.diff))
+        #pick an allowable best at random
+        all.best <- sample(unique(c(best.row.idx, best.col.idx)), 1)
+        best.penalty.idx <- row_col_to_idx(penalty.row.col[all.best, 1], penalty.row.col[all.best,2], nrow(cor.diff))
     }
     
     best.penalty.row.col <- idx_to_row_col(best.penalty.idx, nrow(cor.diff))
