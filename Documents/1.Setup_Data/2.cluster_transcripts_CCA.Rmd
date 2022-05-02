@@ -601,7 +601,7 @@ for(i in 1:length(matched.mats)){
     tissue.trait.penalty[[i]] <- perm_best_results(perm.results, 
         pval.thresh = pval.thresh, col.text.shift = 0.1, 
         row.text.shift = 0.1, return.top.only = TRUE,
-        skew.toward.x = 0, skew.toward.z = 0.5)
+        skew.toward.x = 0.5, skew.toward.z = 0.5)
     cat("\n\n")
 }
 #par(mar = c(2,2,2,2));imageWithTextColorbar(matrix(seq(0, 0.8, 0.01), nrow = 1), col.scale = "blue", axis.line = 0, cex = 1, global.color.scale = TRUE, global.min = 0, global.max = 0.8)
