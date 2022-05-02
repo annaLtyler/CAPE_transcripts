@@ -24,7 +24,8 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    exp.name <- "imputed"
+    #exp.name <- "imputed"
+    exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE
     delete_previous <- FALSE
@@ -1001,13 +1002,17 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
         has.loading <- which(rowSums(tissue.results$u) != 0)
         has.trait <- which(colSums(tissue.results$u) != 0)
         effect.mat <- tissue.results$u[has.loading,has.trait]
-        cor.effect <- cor(effect.mat)
-        rownames(cor.effect) <- colnames(cor.effect) <- gsub("Trait", "Transcript", trait.description[has.trait])
-        diag(cor.effect) <- 0
-        if(length(unique(cor.effect[upper.tri(cor.effect, diag = FALSE)])) > 1){
-            pheatmap(cor.effect)
-        }else{
+        if(sum(dim(effect.mat)) > 2){
+            cor.effect <- cor(effect.mat)
+            rownames(cor.effect) <- colnames(cor.effect) <- gsub("Trait", "Transcript", trait.description[has.trait])
+            diag(cor.effect) <- 0
+            if(length(unique(cor.effect[upper.tri(cor.effect, diag = FALSE)])) > 1){
+                pheatmap(cor.effect)
+            }else{
             print("Too few correlations to show.")
+            }
+        }else{
+            print("No correlations to show.")
         }
 
         trans.list <- apply(tissue.results$u, 2, function(x) colnames(tissue.mats$X)[which(x != 0)])
