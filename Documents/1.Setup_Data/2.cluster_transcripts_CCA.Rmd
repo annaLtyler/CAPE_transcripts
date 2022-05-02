@@ -32,7 +32,7 @@ if(is.na(exp.name)){
 }
 
 #cca parameters
-nperms = 10 #number of permutations to do in penalized CCA to determine optimal penalties
+nperms = 100 #number of permutations to do in penalized CCA to determine optimal penalties
 n.bootstraps = 100 #number of bootstraps to perform to stabilize CCA estimates
 pval.thresh = 0.05 #maximum p value for selecting useful penalty combinations
 cor.diff.thresh = 0.4 #minimum difference in canonical correlation between data and null for selecting useful penalty combinations
@@ -74,7 +74,7 @@ adjust_transcripts_traits.Rmd
 pheno.file <- here("Data", "Adjusted_Phenotypes.RDS")
 cca.pheno <- readRDS(pheno.file)
 cca.pheno <- adjust(cca.pheno[,2:ncol(cca.pheno)], cca.pheno[,1,drop=FALSE]) #regress out diet days
-#rankZ normalize?
+#rankZ normalize
 cca.pheno <- apply(cca.pheno, 2, rankZ)
 num.components <- ncol(cca.pheno)
 
@@ -83,11 +83,6 @@ if(exp.name == "imputed"){
     names(tissue.adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
 }else{   
     tissue.adj.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
-}
-
-#rankZ normalize expression
-for(i in 1:length(tissue.adj.expr)){
-    tissue.adj.expr[[i]] <- apply(tissue.adj.expr[[i]], 2, rankZ)
 }
 
 tissue.names <- names(tissue.adj.expr)
