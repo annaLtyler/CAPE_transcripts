@@ -1,10 +1,11 @@
 #This function takes results from get_perm_grid()
 #and returns the best CCA penalty based on p 
-#values and the difference in canonical correlation
-#between the experimental canonical correlations
-#and the null canonical correlations. The penalties
-#with the maximum difference in correlations are 
-#returned. 
+#values and canonical correlations. If use.score is
+#set to "cor.diff", the maximum difference between 
+#the true and null canonical correlations is used.
+#if use.score is set to "cor", the maximum canonical
+#correlation is used, as long as it passes the p value
+#threshold.
 #the skew.toward parameters indicate whether to skew 
 #toward harsher penalties (0), or more lenient penalties (1)
 #if there are multiple best penalty pairs. The x and z
@@ -12,13 +13,19 @@
 #These parameters are only implemented if return.top.only
 #is TRUE. Otherwise all best penalties are returned.
 
-perm_best_results <- function(perm_grid, pval.thresh = 0.05, 
-    return.top.only = FALSE, 
-    plot.results = TRUE, row.text.shift = -0.25, col.text.shift = 0,
+perm_best_results <- function(perm_grid, use.score = c("cor.diff", "cor"),
+    pval.thresh = 0.05, return.top.only = FALSE, plot.results = TRUE, 
+    row.text.shift = -0.25, col.text.shift = 0,
     skew.toward.x = 0, skew.toward.z = 0){
 
+    use.score = use.score[1]
     pass.p <- which(perm_grid$p <= pval.thresh)
-    cor.diff <- round(perm_grid$Cor - perm_grid$Perm.Cor, 2)
+    if(use.score == "cor.diff"){
+        cor.diff <- round(perm_grid$Cor - perm_grid$Perm.Cor, 2)
+    }
+    if(use.score == "cor"){
+        cor.diff <- round(perm_grid$Cor, 2)
+    }
     max.cor.diff <- floor(max(cor.diff[pass.p])*10000)/10000
     pass.cor <- which(cor.diff[pass.p] >= max.cor.diff)
 

@@ -586,7 +586,7 @@ for(i in 1:length(matched.mats)){
         tissue.perm <- CCA_permute_components(
         X = matched.mats[[i]]$X[,ordered.transcripts[[i]]], 
         Z = matched.mats[[i]]$Z, filename = perm.file, 
-        search_grid = TRUE, nperms = nperms, 
+        search_grid = TRUE, nperms = nperms,
         x_penalty = seq(0, 1, 0.1), z_penalty = seq(0, 1, 0.1),
         verbose = TRUE, plot.results = TRUE)
     }
@@ -595,7 +595,7 @@ for(i in 1:length(matched.mats)){
     perm.results <- get_perm_grid(tissue.perm)
     if(is.interactive){quartz()}
     tissue.trait.penalty[[i]] <- perm_best_results(perm.results, 
-        pval.thresh = pval.thresh, col.text.shift = 0.1, 
+        use.score = "cor", pval.thresh = pval.thresh, col.text.shift = 0.1, 
         row.text.shift = 0.1, return.top.only = TRUE,
         skew.toward.x = 0.5, skew.toward.z = 0.5)
     cat("\n\n")
@@ -825,6 +825,10 @@ for(i in 1:length(tissue.names)){
     trait.loadings  <- tissue.CCA.results[[i]]$v
     trans.boot  <- boot.CCA.results[[i]]$u
     trait.boot  <- boot.CCA.results[[i]]$v
+
+    test <- unlist(apply(trans.loadings, 2, function(x) colnames(matched.mats[[i]]$X)[which(x < 0)]))
+    test <- unlist(apply(trans.loadings, 2, function(x) colnames(matched.mats[[i]]$X)[which(x > 0)]))
+    cat(test, sep = "\n")
 
     num.neg <- apply(trans.loadings, 2, function(x) length(which(x < 0)))
     num.pos <- apply(trans.loadings, 2, function(x) length(which(x > 0)))
@@ -1159,7 +1163,7 @@ for(i in 1:length(tissue.names)){
     tissue.gene.list <- get_transcript_list(tissue.mats = matched.mats[[i]], 
     tissue.results = boot.CCA.results[[i]])
     assoc.transcripts <- unique(names(Reduce("c", tissue.gene.list)))
-    assoc.transcript.table <- gene.table[match(assoc.transcripts, gene.table[,1]),]
+    assoc.transcript.table <- gene.table[match(assoc.transcripts, gene.table[,1]),,drop=FALSE]
     write.table(assoc.transcript.table, 
         file.path(results.dir, paste0("Transcripts.Associated.", tissue.names[i], ".csv")),
         quote = FALSE, sep = ",", row.names = FALSE)
@@ -1987,7 +1991,7 @@ pair.
 
 ```{r all_together_fun}
 plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary,
-    tissue.qtl, tissue.gene.list, tissue.expr, tissue.info, separate.windows = FALSE){
+    tissue.qtl, tissue.gene.list, tissue.expr, tissue.info){
 
     trait.loadings <- tissue.results$v
     transcript.loadings <- tissue.results$u
@@ -2002,7 +2006,6 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
     for(ct in has.vals){
         cat("#### CT", ct, "\n")
         
-        if(separate.windows){quartz(width = 11, height = 6)}
         layout.mat <- matrix(c(1,7,2,3,5,5,5,4,6,6,6,4), nrow = 3, byrow = TRUE)
         layout(layout.mat, heights = c(1, 0.7, 0.7), widths = c(0.7, 1, 1))
         
@@ -2147,8 +2150,7 @@ for(i in 1:length(tissue.names)){
         tissue.results = boot.CCA.results[[i]], 
         tissue.enrich.summary = tissue.enrich[[i]],
         tissue.qtl = qtl.results[[i]], tissue.gene.list = tissue.gene.list, 
-        tissue.expr = tissue.adj.expr[[i]], tissue.info = gene.info[[i]],
-        separate.windows = is.interactive)
+        tissue.expr = tissue.adj.expr[[i]], tissue.info = gene.info[[i]])
     if(is.interactive){
         dev.off()
     }else{
