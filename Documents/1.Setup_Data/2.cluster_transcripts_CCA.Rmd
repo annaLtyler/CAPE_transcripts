@@ -44,6 +44,7 @@ perc.drop.thresh = 0.75 #fraction of full LOD score mediated LOD score needs to 
 
 ```
 
+The results shown here pertain to `r exp.name`.
 
 ```{r load_code}
 is.interactive = FALSE
