@@ -800,10 +800,6 @@ for(i in 1:length(tissue.names)){
     trans.boot  <- boot.CCA.results[[i]]$u
     trait.boot  <- boot.CCA.results[[i]]$v
 
-    test <- unlist(apply(trans.loadings, 2, function(x) colnames(matched.mats[[i]]$X)[which(x < 0)]))
-    test <- unlist(apply(trans.loadings, 2, function(x) colnames(matched.mats[[i]]$X)[which(x > 0)]))
-    cat(test, sep = "\n")
-
     num.neg <- apply(trans.loadings, 2, function(x) length(which(x < 0)))
     num.pos <- apply(trans.loadings, 2, function(x) length(which(x > 0)))
     num.neg.boot <- apply(trans.boot, 2, function(x) length(which(x < 0)))
@@ -935,15 +931,19 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
         transcript.loadings <- tissue.results$u
         trait.description <- get_trait_description(tissue.mats, tissue.results, 
         short_version = TRUE)
+        cat("\n\n")
         
-        print("Trait Contributions to Composite Trait")
+        cat("#### Trait Contributions to Composite Trait\n")
         rownames(trait.loadings) <- colnames(tissue.mats$Z)
         colnames(trait.loadings) <- trait.description
         pheatmap(t(trait.loadings), cluster_rows = FALSE, cluster_cols = FALSE)
+        cat("\n\n")
 
-        print("Trait Contributions Clustered")
+        cat("#### Trait Contributions Clustered\n")
         pheatmap(trait.loadings)
+        cat("\n\n")
 
+        cat("#### Summary of Trait Contributions\n")
         par(mar = c(10, 4, 4, 4))
         boxplot(t(trait.loadings), las = 2, 
         main = "Summary of Trait Contributions Across All Composite Traits")
@@ -955,14 +955,18 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
         trait.specific <- which(apply(tissue.results$u, 1, function(x) length(which(x != 0))) == 1)
         pos.trans <- apply(tissue.results$u, 2, function(x) length(which(x > 0)))
         neg.trans <- apply(tissue.results$u, 2, function(x) length(which(x < 0)))
-        
+        cat("\n\n")
+
+        cat("#### Transcript Counts\n")
         cols <- brewer.pal(8, "Accent")
         par(mar = c(4,8, 4, 4))
         barplot(t(cbind(pos.trans, neg.trans)), beside = TRUE, 
         names = trait.description, las = 2, cex.names = 0.8, 
         col = cols[1:2], main = "Number of Transcripts Associated with Each Composite Trait")
         legend("topleft", c("Positive", "Negative"), fill = cols[1:2])
+        cat("\n\n")
 
+        cat("#### Transcript Specificity\n")
         num.traits  <- apply(tissue.results$u, 1, function(x) length(which(x != 0)))
         num.totals <- table(num.traits)
         #num.totals <- c(num.totals, sum(num.totals[2:length(num.totals)]))
@@ -970,9 +974,10 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
         a <- barplot(num.totals, ylim = c(0, max(num.totals)*1.1),
         main = "Number of Transcripts Associated with Different Numbers of Traits")
         text(a[,1], (num.totals+(max(num.totals)*0.02)), labels = num.totals)
+        cat("\n\n")
 
         #This plot shows how similar the composite transcripts are
-        print("Heatmap of correlations between transcript loadings for pairs of traits")
+        cat("#### Heatmap of correlations between transcript loadings for pairs of traits\n")
         has.loading <- which(rowSums(tissue.results$u) != 0)
         has.trait <- which(colSums(tissue.results$u) != 0)
         effect.mat <- tissue.results$u[has.loading,has.trait]
@@ -1010,9 +1015,13 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
             }else{
                 e.col = "gray"
             }
+            cat("\n\n")
+
+            cat("#### Trait Network\n")
             plot(trait_graph, edge.color = e.col, layout = layout_nicely, 
             main = "Trait Relatedness By Associated Transcripts", 
             edge.width = E(trait_graph)$weight*3)
+            cat("\n\n")
         }
         
         #I tried making a network of transcripts based on similarity trait contributions
