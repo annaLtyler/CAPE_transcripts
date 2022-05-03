@@ -24,8 +24,8 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    #exp.name <- "imputed"
-    exp.name = "all_traits"
+    exp.name <- "imputed"
+    #exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE
     delete_previous <- FALSE
@@ -600,6 +600,7 @@ for(i in 1:length(matched.mats)){
         skew.toward.x = 0.5, skew.toward.z = 0.5)
     cat("\n\n")
 }
+
 #par(mar = c(2,2,2,2));imageWithTextColorbar(matrix(seq(0, 0.8, 0.01), nrow = 1), col.scale = "blue", axis.line = 0, cex = 1, global.color.scale = TRUE, global.min = 0, global.max = 0.8)
 ```
 
