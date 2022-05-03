@@ -265,8 +265,8 @@ cat("\n\n")
 
 ## Transcript Correlation
 
-The following plot shows the distribution of transcript i in one tissue 
-with transcript i in another tissue.
+The following plot shows the distribution of transcript $i$ in one tissue 
+with transcript $i$ in another tissue.
 
 ```{r plot_transcript_cor, fig.height = 10, fig.width = 3.5}
 tissue.pairs <- pair.matrix(1:length(tissue.names))
@@ -534,34 +534,6 @@ get_latent_var <- function(tissue.mats, tissue.results){
     return(result) 
 }
 
-get_best_penalty  <- function(tissue.grid.results){
-    penalty.labels <- apply(tissue.grid.results[[1]], 1, function(x) paste(x, collapse = "-"))
-    tissue.grid.avg <- apply(tissue.grid.results[[2]], 1, max)
-    penalties <- tissue.grid.results[[1]]
-
-    median.penalty.mat <- matrix(NA, nrow = length(unique(penalties[,1])), 
-    ncol = length(unique(penalties[,2])))
-    x.pen <- sort(unique(penalties[,1]))
-    z.pen <- sort(unique(penalties[,2]))
-    rownames(median.penalty.mat) <- paste("Trait_Penalty", z.pen, sep = "_")
-    colnames(median.penalty.mat) <- paste("Transcript_Penalty", x.pen, sep = "_")
-    for(i in 1:nrow(penalties)){
-        x.idx <- which(x.pen == penalties[i,1])
-        z.idx <- which(z.pen == penalties[i,2])
-        median.penalty.mat[z.idx, x.idx] <- tissue.grid.avg[i]
-    }
-    pheatmap(median.penalty.mat, cluster_rows = FALSE, cluster_cols = FALSE,
-    display_numbers = TRUE)
-
-    best.tissue.idx <- which.max(tissue.grid.avg)
-    best.tissue.penalty <- tissue.grid.results[[1]][best.tissue.idx,]
-    #box.col <- rep("gray", length(tissue.grid.avg))
-    #box.col[best.islet.idx] <- "red"
-    #boxplot(t(tissue.grid.results[[2]]), 
-    #names = penalty.labels,
-    #las = 2, cex.axis = 0.8, col = box.col)
-    return(best.tissue.penalty)
-}
 ```
 
 For each set of transcripts, we performed sparse CCA over a series of penalties
