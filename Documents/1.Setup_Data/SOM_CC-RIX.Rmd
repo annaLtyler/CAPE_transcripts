@@ -98,17 +98,15 @@ the specified contrast. If we are looking at the effects
 of metformin, we will look at male and female mice with
 the high- and low-fat diets separately.
 
-```{r groups}
-group.mat <- tissue.info[,c("Sex", "Diet", "Treatment")]
-contrast.idx <- which(colnames(group.mat) == contrast_by)
-no_contrast_groups <- unique(group.mat[,-contrast.idx])
-```
-
 Run the SOM.
 
 ```{r som}
 tissue.info <- unique(t(sapply(rownames(adj.expr), 
   function(x) get_mouse_info(x, manifest, "Barcode.1"))))
+
+group.mat <- tissue.info[,c("Sex", "Diet", "Treatment")]
+contrast.idx <- which(colnames(group.mat) == contrast_by)
+no_contrast_groups <- unique(group.mat[,-contrast.idx])
 
 for(g in 1:nrow(no_contrast_groups)){
   factor1 <- no_contrast_groups[g,1]
