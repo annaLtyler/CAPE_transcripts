@@ -24,8 +24,8 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    exp.name <- "imputed"
-    #exp.name = "all_traits"
+    #exp.name <- "imputed"
+    exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE
     delete_previous <- FALSE
@@ -1018,9 +1018,12 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
             cat("\n\n")
 
             cat("#### Trait Network\n")
+            layout(matrix(c(1,1,2,0), ncol = 2, byrow = FALSE), widths = c(1, 0.2))
             plot(trait_graph, edge.color = e.col, layout = layout_nicely, 
             main = "Trait Relatedness By Associated Transcripts", 
             edge.width = E(trait_graph)$weight*3)
+            imageWithTextColorbar(matrix(E(trait_graph)$weight*edge_sign, ncol = 1), 
+                use.pheatmap.colors = TRUE, cex = 1)
             cat("\n\n")
         }
         
@@ -1036,7 +1039,7 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
 
 ```{r plot_agg, results = "asis"}
 for(i in 1:length(tissue.names)){
-    cat("###", tissue.names[i], "\n")
+    cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
     if(is.interactive){
         filename = file.path(results.dir, paste0("Boot.Results.", tissue.names[i], ".pdf"))
         }else{
@@ -1968,9 +1971,9 @@ for(i in 1:length(shared.peaks)){
 
 In this analysis we care about the confluence of good QTL, good functional 
 enrichments, and good trait contributions. So far we don't have a way of 
-really showing those all together. I am going to attempt to build a graphic
-that will show us everything together for a single composite trait-transcript
-pair. 
+really showing those all together. The following code attempts to put all
+this information into a single page. The results are saved to pdfs in the
+appropriate results folder. They are called All.Together.TissueName.pdf.
 
 ```{r all_together_fun}
 plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary,
@@ -2122,11 +2125,7 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
 
 ```{r plot_all, results = "asis", fig.width = 12, fig.height = 9}
 for(i in 1:length(tissue.names)){
-    if(is.interactive){
-        pdf(file.path(results.dir, paste0("All.together.", tissue.names[i], ".pdf")), width = 12, height = 7)
-    }else{
-        cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
-    }
+    pdf(file.path(results.dir, paste0("All.together.", tissue.names[i], ".pdf")), width = 12, height = 7)
     tissue.gene.list <- get_transcript_list(tissue.mats = matched.mats[[i]], 
         tissue.results = boot.CCA.results[[i]])
     plot.all.together(tissue.mats = matched.mats[[i]], 
@@ -2134,11 +2133,7 @@ for(i in 1:length(tissue.names)){
         tissue.enrich.summary = tissue.enrich[[i]],
         tissue.qtl = qtl.results[[i]], tissue.gene.list = tissue.gene.list, 
         tissue.expr = tissue.adj.expr[[i]], tissue.info = gene.info[[i]])
-    if(is.interactive){
         dev.off()
-    }else{
-        cat("\n\n")
-    }
 }
 ```
 

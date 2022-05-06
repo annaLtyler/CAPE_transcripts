@@ -118,13 +118,9 @@ if(manual.or.CT == "CT"){
     #doing this by hand now, but maybe can automate later.
 
     #tissue.name <- "Adipose"; CT <- 1
-    #tissue.name <- "Adipose"; CT <- 20
     #tissue.name <- "Islet"; CT <- 1
-    #tissue.name <- "Liver"; CT <- 1
-    #tissue.name <- "Liver"; CT <- 5 #only a few genes, but highly correlated with traits
-    #tissue.name <- "Liver"; CT <- 4 #QTLs on Chr 11
-    #tissue.name <- "SkeletalMuscle"; CT <- 1
-    tissue.name <- "SkeletalMuscle"; CT <- 8
+    #tissue.name <- "Liver"; CT <- 4
+    tissue.name <- "SkeletalMuscle"; CT <- 1
 
     #read expression data to get transcript names
     do.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
@@ -816,4 +812,65 @@ if(length(qtl.file) > 0){
         display_numbers = TRUE)
     }
 }
+```
+
+## Effects of Treatment on Expression
+
+We looked to see if the expression of the gene or CT was affected
+by either diet or metformin.
+
+```{r treat_effect}
+treat_effect <- function(contrast = c("Diet", "Treatment")){
+    contrast.locale <- which(colnames(groups) == contrast)
+    no_contrast_groups <- unique(groups[,-contrast.locale])
+    test.factors <- colnames(no_contrast_groups)
+    results <- vector(mode = "list", length = length(matched.chem))
+    names(results) <- names(matched.chem)
+
+    for(tx in 1:length(chem.matched.expr)){
+        cat("####", names(chem.matched.expr)[tx], "\n")
+        results.table <- matrix(NA, nrow = nrow(no_contrast_groups), ncol = 3)
+        colnames(results.table) <- c(sort(unique(groups[,contrast])), "p")
+        if(is.interactive){quartz()}
+        tx.expr <- chem.matched.expr[[tx]]
+        par(mfrow = c(2,2))
+        for(g in 1:nrow(no_contrast_groups)){
+            factor1.idx <- which(matched.chem[[tx]][,test.factors[1]] == no_contrast_groups[g,test.factors[1]])
+            factor2.idx <- which(matched.chem[[tx]][,test.factors[2]] == no_contrast_groups[g,test.factors[2]])
+            group.idx <- intersect(factor1.idx, factor2.idx)
+            model <- lm(tx.expr[group.idx]~matched.chem[[tx]][group.idx,contrast])
+            f <- summary(model)$fstatistic
+            p <- pf(f[1],f[2],f[3],lower.tail=F)
+            a <- boxplot(tx.expr[group.idx]~matched.chem[[tx]][group.idx,contrast],
+            ylab = "Expression", xlab = "", 
+            main = paste0(paste(no_contrast_groups[g,], collapse = " "), " (p = ", signif(p, 2), ")"))
+            group.means <- colMeans(a[[1]])
+            names(group.means) <- a$names
+            results.table[g,] <- c(group.means, p)
+        }
+        mtext(names(chem.matched.expr)[tx], side = 3, outer = TRUE, line = -1.5)
+        results.table <- cbind(no_contrast_groups, results.table)
+        rownames(results.table) <- NULL    
+        results[[tx]] <- results.table
+        cat("\n\n")
+    }
+    return(results)
+}
+
+```
+
+### Effects of Diet on Expression {.tabset .tabset-fade .tabset-pills}
+
+The following figures show the effect of Diet on expression.
+
+```{r diet_effect, fig.height = 8, fig.width = 8, results = "asis"}
+diet.effect.tables <- treat_effect("Diet")
+```
+
+### Effects of Metformin Treatment on Expression {.tabset .tabset-fade .tabset-pills}
+
+The following figures show the effect of Metforming treatment on expression
+
+```{r met_effect, fig.height = 8, fig.width = 8, results = "asis"}
+met.effect.tables <- treat_effect("Treatment")
 ```
