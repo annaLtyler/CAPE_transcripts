@@ -13,7 +13,6 @@ output:
 The purpose of this workflow is examine the use of self-organizing maps 
 to analyze transcriptome data for the CC-RIX.
 
-This has yet to be adapted for the CC-RIX. Just copied from DO so far.
 
 ```{r get_args}
 args <- commandArgs(trailingOnly = T)
@@ -100,7 +99,29 @@ the high- and low-fat diets separately.
 
 Run the SOM.
 
-```{r som}
+```{r som_all_groups}
+tissue.info <- unique(t(sapply(rownames(adj.expr), 
+  function(x) get_mouse_info(x, manifest, "Barcode.1"))))
+all.groups <- apply(tissue.info, 1, function(x) paste(x[3:5], collapse = "_"))
+som.result.file <- here("Documents", "1.Setup_Data", 
+  paste0("CC-RIX_", tissue.name, ".RData"))
+
+if(delete_previous){
+  unlink(som.result.file)
+}
+
+if(!file.exists(som.result.file)){
+  exp.name <- gsub(".RData", "", basename(som.result.file))
+  env <- opossom.new(list(dataset.name = exp.name))
+  env$indata <- t(adj.expr)
+  env$group.labels <- all.groups
+  opossom.run(env)
+}
+
+
+```
+
+```{r som, eval = FALSE}
 tissue.info <- unique(t(sapply(rownames(adj.expr), 
   function(x) get_mouse_info(x, manifest, "Barcode.1"))))
 
