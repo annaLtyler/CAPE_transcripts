@@ -17,13 +17,10 @@ to analyze transcriptome data for the CC-RIX.
 ```{r get_args}
 args <- commandArgs(trailingOnly = T)
 tissue.name <- args[1]
-contrast_by <- args[2]
 delete_previous <- as.logical(args[3])
 
 if(is.na(delete_previous)){
-  contrast_by <- "Diet"
   tissue.name = "adipose"
-  #contrast_by <- "Treatment"
   delete_previous <- FALSE
 }
   is.interactive <- FALSE
@@ -68,9 +65,9 @@ if(!data.loaded){
 Adjust expression for RNASeq_Batch and Age.
 Adjust phenotypes for Age.
 
-We will split out the other groups and look at them
-individually. We will only compare animals within a
-group defined by treatment, diet, and sex.
+We will also compare animals within a
+group defined by treatment, diet, and sex using the
+contrasts available in oposSOM.
 
 ```{r adjust}
 tissue.locale <- which(names(tissue.expr) == tissue.name)
@@ -140,44 +137,5 @@ if(!file.exists(som.result.file)){
   #define specific comparisons
   env$preferences$pairwise.comparison.list <- comp.list
   opossom.run(env)
-}
-```
-
-```{r som, eval = FALSE}
-tissue.info <- unique(t(sapply(rownames(adj.expr), 
-  function(x) get_mouse_info(x, manifest, "Barcode.1"))))
-
-group.mat <- tissue.info[,c("Sex", "Diet", "Treatment")]
-contrast.idx <- which(colnames(group.mat) == contrast_by)
-no_contrast_groups <- unique(group.mat[,-contrast.idx])
-
-for(g in 1:nrow(no_contrast_groups)){
-  factor1 <- no_contrast_groups[g,1]
-  factor2 <- no_contrast_groups[g,2]
-  group.label <- paste(factor1, factor2, sep = "_")
-
-  group1.idx <- which(tissue.info[,colnames(no_contrast_groups)[1]] == factor1)
-  group2.idx <- which(tissue.info[,colnames(no_contrast_groups)[2]] == factor2)
-  group.idx <- intersect(group1.idx, group2.idx)
-  
-  contrast_factor <- tissue.info[group.idx,contrast_by]
-
-  som.result.file <- here("Documents", "1.Setup_Data", 
-    paste0("CC-RIX_", tissue.name, "_", group.label, "_by_", contrast_by, ".RData"))
-
-  if(delete_previous){
-    unlink(som.result.file)
-  }
-
-  if(!file.exists(som.result.file)){
-    exp.name <- gsub(".RData", "", basename(som.result.file))
-    env <- opossom.new(list(dataset.name = exp.name))
-    env$indata <- t(adj.expr[group.idx,])
-    env$group.labels <- contrast_factor
-    opossom.run(env)
-  }
-
-
-  #load(som.result.file)
 }
 ```
