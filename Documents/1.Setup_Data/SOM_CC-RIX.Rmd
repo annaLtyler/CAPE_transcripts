@@ -147,7 +147,7 @@ if(!file.exists(som.result.file)){
   env <- opossom.new(list(dataset.name = exp.name))
   env$indata <- t(adj.expr)
   env$group.labels <- all.groups
-  env$group.colors <- ind.colors
+  env$group.colors <- ind.cols
   #define specific comparisons
   env$preferences$pairwise.comparison.list <- comp.list
   opossom.run(env)
