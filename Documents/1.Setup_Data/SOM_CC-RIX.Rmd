@@ -84,7 +84,6 @@ adj.expr <- adjust(tissue.expr[[tissue.locale]], rnaseq.covar)
 mouse.info <- unique(t(sapply(rownames(covar), function(x) get_mouse_info(x, manifest, "User.Inputs"))))
 rownames(mouse.info) <- mouse.info[,1]
 
-
 pheno.covar <- dummy_covar(mouse.info[,"Timepoint",drop=FALSE])
 num.chem <- apply(as.matrix(chem.mat[,5:ncol(chem.mat)]), 2, as.numeric)
 rownames(num.chem) <- rownames(chem.mat)
@@ -110,11 +109,36 @@ if(delete_previous){
   unlink(som.result.file)
 }
 
+#generate groups for comparison
+comparison.lists <- list(
+    "met_vs_none" = list(
+    "met" = c("Female_HFD_Metformin", "Female_LFD_Metformin", "Male_LFD_Metformin", "Male_HFD_Metformin"),
+    "none" = c("Female_HFD_None", "Female_LFD_None", "Male_LFD_None", "Male_HFD_None")),
+    "sex" = list(
+      "female" = c("Female_HFD_None", "Female_HFD_Metformin", "Female_LFD_None", "Female_LFD_Metformin"),
+      "male" = c("Male_LFD_None", "Male_HFD_None", "Male_LFD_Metformin", "Male_HFD_Metformin")),
+    "diet" = list(
+      "LFD" = c("Male_LFD_None", "Female_LFD_None", "Female_LFD_Metformin", "Male_LFD_Metformin"),
+      "HFD" = c("Female_HFD_None", "Female_HFD_Metformin", "Male_HFD_None", "Male_HFD_Metformin")))
+
+comp.list <- vector(mode = "list", length = length(comparison.lists))
+names(comp.list) <- names(comparison.lists)
+for(i in 1:length(comparison.lists)){
+  one.comp <- vector(mode = "list", length = 2)
+  names(one.comp) <- names(comparison.lists[[i]])
+  for(j in 1:2){
+    one.comp[[j]] <- rownames(adj.expr)[which(all.groups %in% comparison.lists[[i]][[j]])]
+  }
+  comp.list[[i]] <- one.comp
+}
+
 if(!file.exists(som.result.file)){
   exp.name <- gsub(".RData", "", basename(som.result.file))
   env <- opossom.new(list(dataset.name = exp.name))
   env$indata <- t(adj.expr)
   env$group.labels <- all.groups
+  #define specific comparisons
+  env$preferences$pairwise.comparison.list <- comp.list
   opossom.run(env)
 }
 
