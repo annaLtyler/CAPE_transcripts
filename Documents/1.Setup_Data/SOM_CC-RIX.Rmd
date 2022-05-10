@@ -20,7 +20,7 @@ tissue.name <- args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(tissue.name)){
-  tissue.name = "liver"
+  tissue.name = "adipose"
   delete_previous <- FALSE
 }
   is.interactive <- FALSE
@@ -37,7 +37,8 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2", "grid", "stringr")
+needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2", "grid", "stringr",
+  "RColorBrewer")
 load_libraries(needed.packages, personal.library = TRUE)
 ```
 
@@ -102,9 +103,18 @@ Run the SOM.
 tissue.info <- unique(t(sapply(rownames(adj.expr), 
   function(x) get_mouse_info(x, manifest, "Barcode.1"))))
 all.groups <- apply(tissue.info, 1, function(x) paste(x[3:5], collapse = "_"))
+
+#assign different colors to the groups
+u_groups <- unique(all.groups)
+group.colors <- brewer.pal(8, "Dark2")
+ind.cols <- rep(NA, length(all.groups))
+for(i in 1:length(u_groups)){
+  ind.cols[which(all.groups == u_groups[i])] <- group.colors[i]
+}
+
 som.result.file <- here("Documents", "1.Setup_Data", 
   paste0("CC-RIX_", tissue.name, ".RData"))
-
+stop()
 if(delete_previous){
   unlink(som.result.file)
 }
@@ -137,6 +147,7 @@ if(!file.exists(som.result.file)){
   env <- opossom.new(list(dataset.name = exp.name))
   env$indata <- t(adj.expr)
   env$group.labels <- all.groups
+  env$group.colors <- ind.colors
   #define specific comparisons
   env$preferences$pairwise.comparison.list <- comp.list
   opossom.run(env)

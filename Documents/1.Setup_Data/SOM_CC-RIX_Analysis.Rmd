@@ -13,7 +13,7 @@ output:
 ## Introduction
 
 ```{r get_args}
-tissue.name <- "liver"
+tissue.name <- "adipose"
 is.interactive <- FALSE
 #is.interactive <- TRUE
 ```
@@ -114,7 +114,7 @@ mean.chem <- pheno.by.group(adj.chem)
 ### Mean by group
 
 ```{r mean_chem, fig.width = 6, fig.height = 6}
-pheatmap(t(mean.chem), scale = "row", display_numbers = TRUE)
+pheatmap(t(mean.chem), scale = "row")
 ```
 
 ## Metagenes
