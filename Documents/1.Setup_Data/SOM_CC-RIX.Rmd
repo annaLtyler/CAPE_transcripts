@@ -17,10 +17,10 @@ to analyze transcriptome data for the CC-RIX.
 ```{r get_args}
 args <- commandArgs(trailingOnly = T)
 tissue.name <- args[1]
-delete_previous <- as.logical(args[3])
+delete_previous <- as.logical(args[2])
 
-if(is.na(delete_previous)){
-  tissue.name = "adipose"
+if(is.na(tissue.name)){
+  tissue.name = "liver"
   delete_previous <- FALSE
 }
   is.interactive <- FALSE
@@ -77,6 +77,7 @@ orsam.idx <- match(orsam.id, rownames(covar))
 
 rnaseq.covar <- dummy_covar(covar[orsam.idx,c("Age", "RNAseq_Batch")])
 adj.expr <- adjust(tissue.expr[[tissue.locale]], rnaseq.covar)
+saveRDS(adj.expr, here("Results", "SOM", paste0("Adjusted.Expression.", tissue.name, ".RDS")))
 
 mouse.info <- unique(t(sapply(rownames(covar), function(x) get_mouse_info(x, manifest, "User.Inputs"))))
 rownames(mouse.info) <- mouse.info[,1]
@@ -85,7 +86,9 @@ pheno.covar <- dummy_covar(mouse.info[,"Timepoint",drop=FALSE])
 num.chem <- apply(as.matrix(chem.mat[,5:ncol(chem.mat)]), 2, as.numeric)
 rownames(num.chem) <- rownames(chem.mat)
 adj.chem <- adjust(num.chem, pheno.covar)
+saveRDS(adj.chem, here("Results", "SOM", "Adjusted.Chem.RDS"))
 adj.bw <- adjust(bw, pheno.covar)
+saveRDS(adj.bw, here("Results", "SOM", "Adjusted.BW.RDS"))
 ```
 
 Divide the animals into the groups we will use to study

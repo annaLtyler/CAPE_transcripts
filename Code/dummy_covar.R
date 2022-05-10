@@ -13,7 +13,7 @@ dummy_covar <- function(covar.mat){
     
     new.covar <- vector(mode = "list", length = length(new.names))
     for(i in 1:length(new.names)){
-        factor.locale <- lapply(new.names[[i]], function(x) which(covar.mat[,i] == x))
+        factor.locale <- lapply(u_factors[[i]], function(x) which(covar.mat[,i] == x))
         new.mat <- matrix(0, ncol = length(new.names[[i]]), nrow = nrow(covar.mat))
         colnames(new.mat) <- new.names[[i]]
         for(j in 1:ncol(new.mat)){
