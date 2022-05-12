@@ -20,7 +20,7 @@ tissue.name <- args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(tissue.name)){
-  tissue.name = "adipose"
+  tissue.name = "liver"
   delete_previous <- FALSE
 }
   is.interactive <- FALSE
@@ -97,7 +97,7 @@ the specified contrast. If we are looking at the effects
 of metformin, we will look at male and female mice with
 the high- and low-fat diets separately.
 
-Run the SOM.
+Set up parameters for the SOM.
 
 ```{r som_all_groups}
 tissue.info <- unique(t(sapply(rownames(adj.expr), 
@@ -119,15 +119,17 @@ if(delete_previous){
   unlink(som.result.file)
 }
 
-#generate groups for comparison
+#generate general groups for comparison
+#all individual group comparisons are done automatically
+#these groups define overall effects of sex, diet, and metformin
 comparison.lists <- list(
     "met_vs_none" = list(
     "met" = c("Female_HFD_Metformin", "Female_LFD_Metformin", "Male_LFD_Metformin", "Male_HFD_Metformin"),
     "none" = c("Female_HFD_None", "Female_LFD_None", "Male_LFD_None", "Male_HFD_None")),
-    "sex" = list(
+    "female_vs_male" = list(
       "female" = c("Female_HFD_None", "Female_HFD_Metformin", "Female_LFD_None", "Female_LFD_Metformin"),
       "male" = c("Male_LFD_None", "Male_HFD_None", "Male_LFD_Metformin", "Male_HFD_Metformin")),
-    "diet" = list(
+    "LFD_vs_HFD" = list(
       "LFD" = c("Male_LFD_None", "Female_LFD_None", "Female_LFD_Metformin", "Male_LFD_Metformin"),
       "HFD" = c("Female_HFD_None", "Female_HFD_Metformin", "Male_HFD_None", "Male_HFD_Metformin")))
 
@@ -141,7 +143,73 @@ for(i in 1:length(comparison.lists)){
   }
   comp.list[[i]] <- one.comp
 }
+```
 
+```{r responders, eval = FALSE}
+trait.pairs <- cbind(seq(1, (ncol(adj.chem)-1), 2), seq(2, ncol(adj.chem), 2))
+all.trait.diff <- vector(mode = "list", length = nrow(trait.pairs))
+for(tp in 1:nrow(trait.pairs)){
+  quartz()
+  trait1 <- trait.pairs[tp,1]
+  trait2 <- trait.pairs[tp,2]
+  plot.new()
+  xlim <- c(min(adj.chem[,trait1], na.rm = TRUE), max(adj.chem[,trait1], na.rm = TRUE))
+  ylim <- c(min(adj.chem[,trait2], na.rm = TRUE), max(adj.chem[,trait2], na.rm = TRUE))
+  plot.window(xlim = xlim, ylim = ylim)
+  axis(1);axis(2)
+  trait.diff <- vector(mode = "list", length = length(u_groups))
+  for(g in 1:length(u_groups)){
+    group.idx <- which(all.groups == u_groups[g])
+    group.ind <- tissue.info[group.idx,1]
+    ind.idx <- match(group.ind, rownames(adj.chem))
+    ind.idx <- ind.idx[which(!is.na(ind.idx))]
+    points(adj.chem[ind.idx,trait1], adj.chem[ind.idx,trait2],
+      xlab = colnames(adj.chem)[trait1], ylab = colnames(adj.chem)[trait2], 
+      col = g, pch = 16)
+    abline(0,1)
+    mtext(colnames(adj.chem)[trait1], side = 1, line = 2.5)
+    mtext(colnames(adj.chem)[trait2], side = 2, line = 2.5)
+    trait.diff[[g]] <- adj.chem[ind.idx,trait2] - adj.chem[ind.idx,trait1]
+  }
+  all.trait.diff[[tp]]  <- trait.diff
+}
+
+for(tp in 1:nrow(trait.pairs)){
+  quartz()
+  par(mar = c(10, 4, 4, 4))
+  boxplot(all.trait.diff[[tp]], names = u_groups, las = 2, 
+    main = paste(colnames(adj.chem)[trait.pairs[tp,2]], "-", 
+    colnames(adj.chem)[trait.pairs[tp,1]]))
+  abline(h = 0)
+}
+
+gene.name = "Slc2a2";gene.id <- "ENSMUSG00000027690"
+gene.name = "Slc22a3"; gene.id <- "ENSMUSG00000023828"
+gene.name = "MATE1"; gene.id <- "ENSMUSG00000010122"
+gene.name = "Prkaa1"; gene.id = "ENSMUSG00000050697"
+gene.name = "Prkaa2"; gene.id = "ENSMUSG00000028518"
+#gene.name = "Il10"; gene.id = "ENSMUSG00000016529"
+gene.idx <- which(colnames(adj.expr) == gene.id)
+group.grid <- unique(tissue.info[,c("Sex", "Diet")])
+group.expr <- vector(mode = "list", length = length(u_groups))
+for(g in 1:nrow(group.grid)){
+  quartz()
+  sex.idx <- which(tissue.info[,"Sex"] == group.grid[g, "Sex"])
+  diet.idx <- which(tissue.info[,"Diet"] == group.grid[g,"Diet"])
+  group.idx <- intersect(sex.idx, diet.idx)
+  group.treat <- tissue.info[group.idx,"Treatment"]
+  group.ind <- tissue.info[group.idx,1]
+  boxplot(adj.expr[group.idx, gene.idx]~group.treat, 
+    main = paste(group.grid[g,], collapse = ", "), xlab = "",
+    ylab = paste(gene.name, "expression"))
+}
+
+```
+
+
+Run the SOM.
+
+```{r run_som}
 if(!file.exists(som.result.file)){
   exp.name <- gsub(".RData", "", basename(som.result.file))
   env <- opossom.new(list(dataset.name = exp.name))

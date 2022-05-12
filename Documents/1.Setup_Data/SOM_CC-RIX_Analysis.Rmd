@@ -457,12 +457,15 @@ chem.eig.gene <- eig_genes(adj.chem, adj.expr)
 pheatmap(chem.eig.gene$k.cor, display_numbers = TRUE)
 ```
 
-## Contrasts
+## Discriminating Processes
 
-Here we look for metagenes that vary by group status,
-for example, sex, diet, or treatment.
+Here we look for genes and processes that discriminate
+among the groups. We are particularly interested in 
+genes/processes that discriminate between metformin-treated
+and untreated animals. How do we do that with SOM data?
 
-```{r contrasts}
+
+```{r contrasts, eval = FALSE}
 group.mat <- t(sapply(strsplit(groups, "_"), function(x) x))
 colnames(group.mat) <- c("Sex", "Diet", "Treatment")
 
