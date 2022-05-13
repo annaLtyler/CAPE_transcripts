@@ -422,8 +422,8 @@ We want to use a LASSO penalty to sparsify the transcriptome in each
 tissue for ease of interpretation.
 
 ```{r tissue_xz}
-matched.mats <- lapply(1:length(tissue.adj.expr), 
-    function(x) get.xz(tissue.adj.expr[[x]], cca.pheno))
+for(i in 1:length(group))
+plot_portrait(mean.vals)
 file.text <- "trait"
 names(matched.mats) <- tissue.names
 #saveRDS(matched.mats, file.path(results.dir, "Trait.Expression.Matched.RDS"))

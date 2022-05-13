@@ -1,0 +1,229 @@
+---
+title: "SOM to the DO"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+The purpose of this workflow export the metagene profiles 
+calculated in Explore_SOM.Rmd to the DO mice. 
+
+We want to see whether mice with gene expression
+profiles more highly correlated with the LFD CC-RIX
+have lower body weight than those more highly correlated
+with the HFD CC-RIX. If this is the case, we can map
+with that correlation to see if there are any loci 
+that generate LFD-like expression profiles even 
+when exposed to HFD.
+
+
+```{r get_args}
+tissue.name = "muscle"
+```
+
+The results shown here are for `r tissue.name`.
+
+## SOM Results
+
+```{r source_code}
+library("here")
+all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
+for(j in 1:length(all.fun)){source(all.fun[j])}
+```
+
+
+```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
+needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2", "grid", "stringr",
+  "RColorBrewer")
+load_libraries(needed.packages, personal.library = TRUE)
+```
+
+
+```{r read_data}
+#metagene data from CC-RIX 
+metagenes <- readRDS(here("Results", "SOM", paste0("Group.Metagenes.", tissue.name, ".RDS")))
+groups <- read.csv(here("Data", "CC-RIX", "Groups.csv"), row.names = 1)
+group.def <- colnames(groups)
+
+all.var <- ls()
+data.loaded <- as.logical(length(which(all.var == "dataset.DO.Cube.Adipose")))
+if(!data.loaded){
+    do.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+}
+
+tissue.idx <- grep(tissue.name, do.data, ignore.case = TRUE)
+tissue.data <- get(do.data[tissue.idx])
+
+tissue.expr <- tissue.data$data$rz
+tissue.covar <- tissue.data$covar.matrix
+
+#match gene expression and covariates along individuals
+matched.mats <- get.xz(tissue.expr, tissue.covar)
+matched.expr <- matched.mats[[1]]
+matched.covar <- matched.mats[[2]]
+
+gene.info <- tissue.data$annot.mrna
+
+pheno <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsAsFactors = FALSE))
+num.pheno <- apply(pheno[,11:(ncol(pheno)-1)], 2, as.numeric)
+rownames(num.pheno) <- pheno[,1]
+```
+
+We will look at males and females separately as we did 
+with the CC-RIX, so we won't adjust out sex. Just adjust
+for Generation.
+
+```{r adjust}
+gen.locale <- grep("generation", colnames(matched.covar), ignore.case = TRUE)
+adj.expr <- adjust(matched.expr, matched.covar[,gen.locale])
+f.locale <- which(matched.covar[,1] == 0)
+m.locale <- which(matched.covar[,1] == 1)
+
+#regress out diet days
+num.pheno <- adjust(num.pheno[,2:ncol(num.pheno)], num.pheno[,1,drop=FALSE]) 
+adj.pheno <- adjust(num.pheno, matched.covar[,gen.locale])
+```
+
+## Calculate DO Metagenes
+
+Pull out metagenes for this tissue.
+
+```{r do_metagenes}
+get.do.metagene <- function(gene.names, group.expr){
+    gene.idx <- match(gene.names, colnames(group.expr))
+    gene.idx <- gene.idx[which(!is.na(gene.idx))]
+    return(group.expr[,gene.idx,drop=FALSE])
+}
+
+groups <- names(metagenes)
+do.metagenes <- vector(mode = "list", length = length(groups))
+names(do.metagenes) <- groups
+for(g in 1:length(groups)){
+    group.factors <- strsplit(groups[g], "_")[[1]]
+    if(group.factors[1] == "Male"){
+        sub.expr <- adj.expr[m.locale,,drop=FALSE]  
+    }else{
+        sub.expr <- adj.expr[f.locale,,drop=FALSE]  
+    }
+    do.metagenes[[g]] <- lapply(metagenes[[g]], 
+        function(x) get.do.metagene(names(x), sub.expr))
+}
+```
+
+Calculate the correlations between the metagene profiles from the CC-RIX
+and the do metagenes.
+
+The following boxplot shows the distribution of correlations between
+DO metagenes and CC-RIX metagenes for each group.
+
+Each animal gets a score based on how correlated its metagene profile
+is to the CC-RIX in a particular group. So each correlation says that
+a mouse looks more or less like a LFD-fed mouse with no metformin 
+treatment, for example.
+
+```{r metagene_cor}
+do.metagene.cor <- vector(mode = "list", length = length(groups))
+names(do.metagene.cor) <- groups
+for(g in 1:length(groups)){
+    cc.profile <- sapply(metagenes[[g]], mean)
+    do.profile <- sapply(do.metagenes[[g]], rowMeans)
+    do.metagene.cor[[g]] <- apply(do.profile, 1, 
+        function(x) cor(x, cc.profile, use = "pairwise.complete.obs"))
+}
+
+par(mar = c(10, 4, 4, 4))
+boxplot(do.metagene.cor, las = 2)
+abline(h = 0)
+```
+
+## Score and Weight Correlations  {.tabset .tabset-fade .tabset-pills}
+
+See if any of these metagene profile correlations are related
+to the clinical traits in the DO.
+
+The heatmap below shows the correlation between the DO metagene
+and body weight for each group metagene. 
+
+In the adipose tissue, the HFD metagenes are positively correlated 
+with weight in the DO, and the LFD metagenes are negatively correlated 
+with weight, particularly at the latest time point. 
+
+Interestingly, though, this is mostly true for the males. The female
+HFD metagene profiles were only weakly correlated with body weight.
+
+Also interestingly in adipose tissue, HOMA_IR is pretty highly correlated
+as well. It is the most highly correlated non-weight phenotype.
+
+The other tissues do not really have any correlation to anything
+in the DO. 
+
+```{r cor_weight, fig.width = 8, fig.height = 5}
+score.cor.mat <- matrix(NA, nrow = length(groups), ncol = ncol(adj.pheno))
+rownames(score.cor.mat) <- groups
+colnames(score.cor.mat) <- colnames(adj.pheno)
+for(g in 1:length(groups)){
+    do.scores <- do.metagene.cor[[g]]
+    common.ind <- intersect(names(do.scores), rownames(adj.pheno))
+    scores.idx <- match(common.ind, names(do.scores))
+    pheno.idx <- match(common.ind, rownames(adj.pheno))
+    score.cor.mat[g,] <- apply(adj.pheno[pheno.idx,], 2, function(x) cor(x, do.scores[scores.idx], use = "pairwise.complete.obs"))
+}
+
+pheatmap(score.cor.mat, display_numbers = TRUE)
+#colnames(adj.pheno)
+```
+
+## Mapping Metagenes {.tabset .tabset-fade .tabset-pills}
+
+I would like to try to map some of the metagene correlations 
+that have higher correlations with traits in the DO. 
+
+The following plot shows the mapping for one group. The 
+phenotype is correlation of the mouse's transcript profile
+to that of the mice in the CC-RIX group.
+
+The Male_LFD_None and Male_HFD_Metformin groups map to Chr 11, 70 Mb, 
+which is the same place that the brown, yellow, and violet modules 
+map in Keller et al. 2018. These modules all co-map with HOMA-IR.
+
+So what have we learned from that? It's not a new locus.
+But somehow it connects what we are seeing in the 
+
+```{r map_meta, fig.width = 10, fig.height = 5, results = "asis"}
+for(g in 1:length(do.metagene.cor)){
+    group.name <- names(do.metagene.cor)[g]
+    cat("###", group.name, "\n")
+    group.scores <- do.metagene.cor[[g]]
+
+    #group.scores <- c(do.metagene.cor$Female_HFD_None, do.metagene.cor$Male_HFD_None); map_group = "All_HFD"
+    #group.scores <- c(do.metagene.cor$Female_LFD_None, do.metagene.cor$Male_LFD_None); map_group = "All_LFD"
+
+    group.scan <- scan1(genoprobs, group.scores, kinship = K, cores = 4)
+    plot(group.scan, map = map, main = group.name)
+    cat("\n\n")
+}
+```
+
+```{r mapping_extra, eval = FALSE}
+find_peaks(group.scan, map = map, threshold = 6)
+
+coef.scan <- scan1coef(genoprobs[,"X"], group.scores, kinship = K[[20]])
+plot_coefCC(coef.scan, map = map, main = paste(map_group, "Chr X"))
+
+coef.scan <- scan1coef(genoprobs[,"11"], group.scores, kinship = K[[11]])
+plot_coefCC(coef.scan, map = map, main = paste(map_group, "Chr X"))
+
+```
+
+```{r DO_portraits, eval = FALSE}
+test <- sapply(do.metagenes[[group.locale]], rowMeans)
+par(mfrow = c(5,5), mar = c(1,1,1,1))
+for(i in 26:50){
+    plot_portrait(test[i,])
+}
+```

@@ -158,21 +158,6 @@ xlab = "Number of Genes")
 The following boxplot show the absolute value of the correlations
 between phenotypes and metagenes.
 
-```{r plot_portrait_fun}
-plot_portrait <- function(portraitV, global.min = NULL, global.max = NULL){
-  if(is.interactive){quartz()}
-  portraitV[which(is.na(portraitV))] <- 0
-  map.dim <- sqrt(length(portraitV))
-  map.mat <- rotate.mat(rotate.mat(rotate.mat(matrix(portraitV, nrow = map.dim, ncol = map.dim, byrow = FALSE))))
-  if(!is.null(global.min)){
-    imageWithText(map.mat, show.text = FALSE, use.pheatmap.colors = TRUE, 
-      global.color.scale = TRUE, global.min = global.min, global.max = global.max)  
-  }else{
-    imageWithText(map.mat, show.text = FALSE, use.pheatmap.colors = TRUE)
-  }
-}
-```
-
 ```{r spot_cor}
 kmeta <- env$spot.list.kmeans$spots
 metagenes <- env$metadata

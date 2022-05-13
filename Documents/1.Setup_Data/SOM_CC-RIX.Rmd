@@ -20,7 +20,7 @@ tissue.name <- args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(tissue.name)){
-  tissue.name = "liver"
+  tissue.name = "muscle"
   delete_previous <- FALSE
 }
   is.interactive <- FALSE
