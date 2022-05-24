@@ -119,7 +119,7 @@ if(manual.or.CT == "CT"){
 
     #tissue.name <- "Adipose"; CT <- 1
     #tissue.name <- "Islet"; CT <- 1
-    #tissue.name <- "Liver"; CT <- 4
+    #tissue.name <- "Liver"; CT <- 1
     tissue.name <- "SkeletalMuscle"; CT <- 1
 
     #read expression data to get transcript names
@@ -857,6 +857,60 @@ treat_effect <- function(contrast = c("Diet", "Treatment")){
     return(results)
 }
 
+treat_int <- function(int.factors = c("Diet", "Treatment")){
+    int.locale <- match(int.factors, colnames(groups))
+    no_int_groups <- unique(groups[,-int.locale,drop=FALSE])
+    int_groups <- unique(groups[,int.locale,drop=FALSE])
+    
+    test.factors <- colnames(no_int_groups)
+    results <- vector(mode = "list", length = length(matched.chem))
+    names(results) <- names(matched.chem)
+
+    for(tx in 1:length(chem.matched.expr)){
+        cat("####", names(chem.matched.expr)[tx], "\n")
+        interaction.p <- rep(NA, nrow(no_int_groups))
+        names(interaction.p) <- no_int_groups[,1]
+        
+        if(is.interactive){quartz(width = 8, height = 4)}
+        tx.expr <- chem.matched.expr[[tx]]
+        par(mfrow = c(1,2))
+        for(g in 1:nrow(no_int_groups)){
+            group.idx <- which(matched.chem[[tx]][,test.factors] == no_int_groups[g,test.factors])
+            
+            expr <- tx.expr[group.idx]
+            factor1 <- matched.chem[[tx]][group.idx,int.factors[1]]
+            factor2 <- matched.chem[[tx]][group.idx,int.factors[2]]
+            model <- lm(expr~as.factor(factor1)*as.factor(factor2))
+            #summary(model)
+
+            comp.idx <- apply(int_groups, 1, 
+                function(x) intersect(which(matched.chem[[tx]][group.idx,colnames(int_groups)[1]] == x[1]), 
+                which(matched.chem[[tx]][group.idx,colnames(int_groups)[2]] == x[2])))
+            group.names <- apply(int_groups, 1, function(x) paste(x, collapse = "_"))
+            group.vals <- lapply(comp.idx, function(x) expr[x])
+            group.means <- sapply(group.vals, mean)
+            group.se  <- sapply(group.vals, function(x) sd(x))
+            names(group.vals) <- names(group.means) <- names(group.se) <- group.names
+
+            ylim <- c(min(group.means-group.se), max(group.means+group.se))
+
+            int.p <- summary(model)$coefficients[4,"Pr(>|t|)"] 
+            interaction.p[g] <- int.p
+
+            interaction.plot(factor1, factor2, expr, 
+                main = paste0(no_int_groups[g,1], " (p = ", signif(int.p, 2), ")"),
+                ylim = ylim)
+            segments(2:1, group.means[1:2]-group.se[1:2], 2:1, group.means[1:2]+group.se[1:2])
+            segments(1:2, group.means[3:4]-group.se[3:4], 1:2, group.means[3:4]+group.se[3:4])
+            
+            #interaction.plot(as.factor(factor2), as.factor(factor1), expr)   
+        }
+        mtext(names(chem.matched.expr)[tx], side = 3, outer = TRUE, line = -1.5)
+        results[[tx]] <- interaction.p
+        cat("\n\n")
+    }
+    invisible(results)
+}
 ```
 
 ### Effects of Diet on Expression {.tabset .tabset-fade .tabset-pills}
@@ -873,4 +927,23 @@ The following figures show the effect of Metforming treatment on expression
 
 ```{r met_effect, fig.height = 8, fig.width = 8, results = "asis"}
 met.effect.tables <- treat_effect("Treatment")
+```
+
+### Interaction Effects of Metformin and Diet {.tabset .tabset-fade .tabset-pills}
+
+```{r diet_met_int, fig.height = 4, fig.width = 8, results = "asis"}
+treat_int(c("Diet", "Treatment"))
+```
+
+
+### Interaction Effects of Sex and Diet {.tabset .tabset-fade .tabset-pills}
+
+```{r sex_diet_int, fig.height = 4, fig.width = 8, results = "asis"}
+treat_int(int.factors = c("Sex", "Diet"))
+```
+
+### Interaction Effects of Sex and Metformin {.tabset .tabset-fade .tabset-pills}
+
+```{r sex_met_int, fig.height = 4, fig.width = 8, results = "asis"}
+treat_int(int.factors = c("Sex", "Treatment"))
 ```

@@ -25,7 +25,7 @@ adjust <- function(matX, adj.mat, retain.intercept = TRUE){
 
 	adj.na <- which(is.na(adj.mat), arr.ind = TRUE)
 	adj.na.idx <- unique(adj.na[,1])
-	
+
 	new.mat <- matrix(NA, nrow = nrow(matX), ncol = ncol(matX))
 	for(i in 1:ncol(new.mat)){
 		na.locale <- union(which(is.na(matX[,i])), adj.na.idx)

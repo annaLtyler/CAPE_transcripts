@@ -1,9 +1,12 @@
 multilod.plot <- function(scan1.results, map, lod.thresh = 0, 
 color.scheme = c("blue", "green", "purple", "red", "orange", "brown", "yellow", "gray"),
 border.col = "darkgray", border.lwd = 3, row.names = NULL, row.name.shift = 0,
-row.text.cex = 1, color.bar.cex = 1, color.bar.axis.lin = -2, color.fun = c("linear", "exponential"),
-steepness = 1, mar = c(2, 6, 2, 0), chr.label.y = -0.5, chr.label.cex = 1, global.color.scale = FALSE,
-global.min = 6, global.max = ceiling(max(scan1.results)), use.pheatmap.colors = FALSE){
+row.text.cex = 1, color.bar.cex = 1, color.bar.axis.lin = -2, 
+color.fun = c("linear", "exponential"),
+steepness = 1, mar = c(2, 6, 2, 0), chr.label.y = -0.5, chr.label.cex = 1, 
+global.color.scale = FALSE,
+global.min = lod.thresh, global.max = ceiling(max(scan1.results)), 
+use.pheatmap.colors = FALSE){
 
     val.mat <- as.matrix(scan1.results)
     low.lod <- which(val.mat < lod.thresh)
@@ -37,7 +40,8 @@ global.min = 6, global.max = ceiling(max(scan1.results)), use.pheatmap.colors = 
     }
 
     par(mar = c(2,2,2,2))
-    imageWithTextColorbar(val.mat, col.scale = col.scale, cex = color.bar.cex,
+    bar.mat <- matrix(segment.region(min(val.mat, na.rm = TRUE), max(val.mat, na.rm = TRUE), 100), ncol = 1)
+    imageWithTextColorbar(bar.mat, col.scale = col.scale, cex = color.bar.cex,
     axis.line = color.bar.axis.lin, color.fun = "exponential", exp.steepness = steepness,
     global.color.scale = TRUE, global.min = global.min, global.max = global.max, 
     use.pheatmap.colors = use.pheatmap.colors)

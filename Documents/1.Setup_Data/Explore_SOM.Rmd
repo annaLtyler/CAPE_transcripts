@@ -16,7 +16,9 @@ or HFD-like.
 
 
 ```{r get_args}
-tissue.name = "muscle"
+tissue.name = "adipose"
+exp.type = "Groups"
+#exp.type = "Differences"
 ```
 
 ## SOM Results
@@ -47,8 +49,30 @@ group.def <- colnames(groups)
 ```
 
 ```{r load_som_results}
+load(here("Results", "SOM", paste0("CC-RIX_", tissue.name, ".RData")))
+
 group.files <- list.files(here("Results", "SOM", paste0("CC-RIX_", tissue.name, " - Results"), 
-  "Summary Sheets - Groups", "CSV Sheets", "Gene Lists - Global"), full.names = TRUE)
+  paste0("Summary Sheets - ", exp.type), "CSV Sheets", "Gene Lists - Global"), full.names = TRUE)
+
+#only compare meaningful differences. Those with one change between conditions.
+if(exp.type == "Differences"){
+  to.keep <- NULL
+  file.grid <- t(sapply(strsplit(basename(group.files), ".", fixed = TRUE), function(x) c(x[1], x[3])))
+  for(i in 1:nrow(file.grid)){
+    if(is.na(file.grid[i,2])){
+      to.keep <- c(to.keep, i)
+    }else{
+      split.group1 <- strsplit(file.grid[i,2], "_")[[1]]
+      split.group2 <- strsplit(file.grid[i,1], "_")[[1]]
+      n.diffs <- length(which(sapply(1:length(split.group1), function(x) split.group1[x] != split.group2[x])))
+      if(n.diffs == 1){
+        to.keep <- c(to.keep, i)
+      }
+    }
+  }
+group.files <- group.files[to.keep]
+}
+
 group.gene.lists <- lapply(group.files, function(x) read.csv(x, skip = 17))
 names(group.gene.lists) <- gsub(".csv", "", basename(group.files))
 ```
@@ -75,11 +99,15 @@ get_metagene_vals <- function(gene.list, profile.dim = 50, value.name = "logFC")
   idx <- 1
   for(x in profile.dim:1){
       for(y in profile.dim:1){
+          metagene.idx <- row_col_to_idx(x,y, n.row = profile.dim)
           metagene <- paste(x, "x", y)
-          metagene.names[idx] <- metagene  
           metagene.locale <- which(gene.list[,"Metagene"] == metagene)
           metagene.vals[[idx]] <- gene.list[metagene.locale, value.name]
+          spot <- spot.assig.mat[which(spot.assig.mat[,2] == metagene.idx),1]
+          #spot.locale <- which(names(env$spot.list.kmeans$spots) == spot)
+          #plot_portrait(env$spot.list.kmeans$spots[[spot.locale]]$mask)
           names(metagene.vals[[idx]]) <- gene.list[metagene.locale,"ID"]
+          metagene.names[idx] <- paste(metagene, spot)
           idx <- idx + 1
       }
   }
@@ -87,10 +115,13 @@ get_metagene_vals <- function(gene.list, profile.dim = 50, value.name = "logFC")
   return(metagene.vals)
 }
 
+spot.assignments <- lapply(1:length(env$spot.list.kmeans$spots), 
+  function(x) cbind(names(env$spot.list.kmeans$spots)[x], env$spot.list.kmeans$spots[[x]]$metagenes))
+spot.assig.mat <- Reduce("rbind", spot.assignments)
 
 group.metagenes <- lapply(group.gene.lists, 
   function(x) get_metagene_vals(x, value.name = "logFC"))
-saveRDS(group.metagenes, here("Results", "SOM", paste0("Group.Metagenes.", tissue.name, ".RDS")))
+saveRDS(group.metagenes, here("Results", "SOM", paste0(exp.type, ".Metagenes.", tissue.name, ".RDS")))
 
 #boxplot(group.metagenes[[1]][1:15])
 group.profiles <- lapply(group.metagenes, function(x) 
@@ -111,6 +142,21 @@ for(i in 1:length(group.profiles)){
 }
 ```
 
+## Metagene PC
+
+The following plot shows that in PC space, the HFD has
+the following strange effects:
+
+* HFD makes females more like males in the first PC.
+* HFD makes males more like females in the second PC.
+* Metformin pushes all groups a little bit higher along PC2. 
+
+```{r metagene_pc}
+metagene.mat <- Reduce("cbind", group.profiles)
+colnames(metagene.mat) <- names(group.profiles)
+meta.decomp <- plot.decomp(t(metagene.mat), label.points = TRUE, xlim = c(-0.5, 1))
+```
+
 ## Metagene Correlation
 
 For each individual mouse, use the group metagene
@@ -128,6 +174,26 @@ mouse.metagenes <- lapply(metagene.list, function(x) adj.expr[,x,drop=FALSE])
 mean.mouse.metagenes <- sapply(mouse.metagenes, rowMeans)
 ```
 
+The following plot shows the first four PCs of the mice
+in metagene space.
+
+```{r all_pc}
+group.cols <- brewer.pal(8, "Paired")
+names(group.cols)  <- names(group.metagenes)
+mouse.col <- rep(NA, length = nrow(mean.mouse.metagenes))
+mouse.class <- apply(tissue.info, 1, function(x) paste(x[3], x[4], x[5], sep = "_"))
+for(i in 1:length(names(group.metagenes))){
+  mouse.col[which(mouse.class == names(group.metagenes)[i])] <- group.cols[i]
+}
+
+not.na <- which(apply(mean.mouse.metagenes, 2, function(x) !all(is.na(x))))
+
+mouse.decomp <- plot.decomp(mean.mouse.metagenes[,not.na], pc = 4, cols = mouse.col)
+plot.new()
+plot.window(xlim = c(0,1), ylim = c(0,1))
+legend(0, 1, col = group.cols, pch = 16, legend = names(group.metagenes))
+```
+
 ## Correlations to metagenes {.tabset .tabset-fade .tabset-pills}
 
 Get correlations of each mouse's average metagene to the 
@@ -141,6 +207,9 @@ are low, but the plots clearly show that the mice
 in the named group are more highly correlated to the
 metagene profile that represents their group than to 
 other group profiles.
+
+If we are looking at differences, rather than groups,
+there won't be any red bars.
 
 ```{r group-like, results = "asis", fig.width = 10, fig.height = 5}
 for(g in 1:length(group.profiles)){
