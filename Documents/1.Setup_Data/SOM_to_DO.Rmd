@@ -10,22 +10,28 @@ output:
     toc_float: yes
 ---
 
-The purpose of this workflow export the metagene profiles 
-calculated in Explore_SOM.Rmd to the DO mice. 
+The purpose of this workflow calculate the metagene profiles 
+calculated in Explore_SOM.Rmd in the DO mice. 
 
-We want to see whether mice with gene expression
-profiles more highly correlated with the LFD CC-RIX
-have lower body weight than those more highly correlated
-with the HFD CC-RIX. If this is the case, we can map
-with that correlation to see if there are any loci 
-that generate LFD-like expression profiles even 
-when exposed to HFD.
+We first look for correlations between metagenes identified
+in the CC-RIX and traits in the DO.
 
+We then investigate whether these metagenes mediate 
+any trait QTLs in the DO. 
+
+The metagenes from the CC-RIX are identified using a 
+specific group of animals with a particular contrast
+in mind. For example, the metagenes might contrast 
+HFD and LFD in the female animals with no metformin 
+treatment. The tissue and groups used in the CC are 
+specified below.
 
 ```{r get_args}
 tissue.name = "adipose"
-exp.type = "Groups"
-#exp.type = "Differences"
+group.class1 = "Male"
+group.class2 = "None"
+contrast = "Diet"
+
 is.interactive = FALSE
 #is.interactive = TRUE
 ```
@@ -50,7 +56,48 @@ load_libraries(needed.packages, personal.library = TRUE)
 
 ```{r read_data}
 #metagene data from CC-RIX 
-cc.metagenes <- readRDS(here("Results", "SOM", paste0(exp.type, ".Metagenes.", tissue.name, ".RDS")))
+all.files <- list.files(here("Results", "SOM"))
+som.files <- all.files[Reduce("intersect", sapply(c(tissue.name, group.class1, group.class2, contrast), function(x) grep(x, all.files)))]
+results.file.idx <- grep("RData", som.files)
+results.file <- som.files[results.file.idx]
+results.dir <- som.files[-results.file.idx]
+
+#get all results from the SOM environment
+load(here("Results", "SOM", results.file))
+```
+
+Get the metagene assignments.
+
+```{r metagene_assignments}
+som.result <- env$som.result
+som.coord <- som.result[[1]]
+som.bmu <- som.result[[2]]
+som.dim <- sqrt(nrow(som.coord))
+
+
+#k.means.spots <- env$spot.list.kmeans
+#test <- k.means.spots$overview.map
+#we need to rotate the matrix three times to make it look like
+#the portraits in the oposSOM output.
+#x goes from 1 to n left to right.
+#y goes from 1 to n bottom to top
+#This is different than R matrices, which start counting from the
+#top left, so we need to account for this.
+#imageWithText(rotate.mat(rotate.mat(rotate.mat(test))), col.scale = "blue")
+
+
+#use the best matching units to assign genes to positions
+cc.metagenes <- lapply(1:(som.dim^2), function(x) names(som.bmu)[which(som.bmu == x)])
+names(cc.metagenes) <- apply(som.coord, 1, function(x) paste(x[1:2], collapse = "_"))
+
+cc.expr <- env$indata #expression data from CC-RIX. Input data to SOM
+cc.groups <- env$group.labels #individual assignments to groups
+u_groups <- unique(cc.groups)
+
+group.expr <- lapply(u_groups, function(x) lapply(cc.metagenes, function(y) cc.expr[match(y, rownames(cc.expr)), which(cc.groups == x),drop=FALSE]))
+cc.profiles <- lapply(group.expr, function(x) sapply(x, colMeans))
+names(cc.profiles) <- u_groups
+
 group.grid <- read.csv(here("Data", "CC-RIX", "Groups.csv"), row.names = 1)
 group.def <- colnames(group.grid)
 
@@ -93,7 +140,7 @@ num.pheno <- adjust(num.pheno[,2:ncol(num.pheno)], num.pheno[,1,drop=FALSE])
 adj.pheno <- adjust(num.pheno, matched.covar[,gen.locale])
 ```
 
-## Calculate DO Metagenes and Spots
+## Calculate DO Metagenes
 
 Pull out metagenes and spots for this tissue.
 
@@ -112,17 +159,7 @@ get.do.metagene <- function(gene.names, group.expr){
     return(group.expr[,gene.idx,drop=FALSE])
 }
 
-get.do.spots <- function(group.metagenes, group.expr){
-    spots <- sapply(lapply(names(group.metagenes), function(x) strsplit(x, " ")), function(y) y[[1]][4])
-    u_spots <- sort(unique(spots))
-    spot.genes <- lapply(u_spots, function(x) unlist(lapply(group.metagenes[which(spots == x)], names)))
-    spot.expr <- lapply(spot.genes, function(x) get.do.metagene(x, group.expr))
-    names(spot.expr) <- u_spots
-    return(spot.expr)
-}
-
-
-groups <- names(cc.metagenes)
+groups <- names(cc.profiles)
 
 #get DO metagene values for males and females separately
 #the metagenes contain the same genes across all groups
@@ -131,13 +168,12 @@ groups <- names(cc.metagenes)
 sub.expr <- lapply(c(0,1), function(x) adj.expr[which(matched.covar[,1] == x),])
 names(sub.expr) <- c("Female", "Male")
 
-do.metagenes <- lapply(sub.expr, function(y) lapply(cc.metagenes[[1]], 
-    function(x) get.do.metagene(names(x), y)))
-do.spots <- lapply(sub.expr, function(x) get.do.spots(cc.metagenes[[1]], x))
+do.metagenes <- lapply(sub.expr, function(y) lapply(cc.metagenes, 
+    function(x) get.do.metagene(x, y)))
 ```
 
-Calculate the correlations between the metagene profiles from the CC-RIX
-and the do metagenes.
+Calculate the correlations between the metagene profiles from the 
+CC-RIX and the do metagenes.
 
 The following portraits show the CC-RIX metagenes compared 
 with the mean DO metagenes for the groups that are most 
@@ -154,28 +190,25 @@ do.profile <- lapply(do.metagenes, function(x) sapply(x, rowMeans))
 #plot.decomp(do.profile[[1]][,has.genes], pc = 4)
 #plot.decomp(do.profile[[2]][,has.genes], pc = 4)
 
-for(g in 1:length(groups)){
-    cc.profile <- sapply(cc.metagenes[[g]], mean)    
-    if(g == 1){
-        if(is.interactive){quartz(width = 8, height = 4)}
-        par(mfrow = c(1,2))
-        plot_portrait(colMeans(do.profile[[1]]), main = paste("DO", names(do.profile)[1]))
-        plot_portrait(colMeans(do.profile[[2]]), main = paste("DO", names(do.profile)[2]))
-    }
-    do.metagene.cor[[g]] <- lapply(do.profile, function(y) apply(y, 1, function(x) cor(x, cc.profile, use = "pairwise.complete.obs")))
-}
+if(is.interactive){quartz(width = 8, height = 4)}
+par(mfrow = c(1,2))
+plot_portrait(colMeans(do.profile[[1]]), main = paste("DO", names(do.profile)[1]), rotate = 3)
+plot_portrait(colMeans(do.profile[[2]]), main = paste("DO", names(do.profile)[2]), rotate = 3)
+
+mean.cc.profiles <- lapply(cc.profiles, colMeans)
+do.metagene.cor <- lapply(do.profile, 
+    function(y) apply(y, 1, function(x) sapply(mean.cc.profiles, 
+    function(y) cor(x, y, use = "pairwise.complete.obs"))))
+
 ```
 
 The following boxplot shows the distribution of correlations between
-DO metagenes and CC-RIX metagenes for each group.
-
-If we are looking at group differences, the correlations below tell
-us how ...
+DO metagenes and CC-RIX metagenes for males and females.
 
 ```{r, similarity_dist, fig.width = 9, fig.height = 6}
-par(mfrow = c(2,4))
 for(g in 1:length(do.metagene.cor)){
-    boxplot(do.metagene.cor[[g]], main = groups[g], ylim = c(-0.8, 0.8))
+    if(is.interactive){quartz()}
+    boxplot(t(do.metagene.cor[[g]]), ylim = c(-0.8, 0.8), main = names(do.metagene.cor)[g])
     abline(h = 0)
 }
 ```
@@ -209,7 +242,7 @@ boxplot(abs(metagene.cor.mat[[2]]), las = 2, main = names(do.profile)[2])
 
 ### Correlation Portraits {.tabset .tabset-fade .tabset-pills}
 
-The following plots show the correlation portraits for all groups.
+The following plots show the correlation portraits for males and females.
 
 ```{r cor_profiles, results = "asis"}
 for(g in 1:length(do.profile)){
@@ -231,58 +264,57 @@ for(g in 1:length(do.profile)){
 
 Below we look for metagenes that mediate trait QTLs. 
 
+```{r map_traits}
+#scan the physiological traits
+trait.map <- lapply(c(0,1), 
+    function(x) scan1(genoprobs, adj.pheno[which(matched.covar[,1] == x),], cores = 4))
+```
+
 ```{r map_meta, fig.width = 10, fig.height = 7, results = "asis"}
 cor.thresh = 0.6
 qtl.thresh <- 6
-lod.drop.thresh = 5
-
-trait.map <- lapply(c(0,1), 
-    function(x) scan1(genoprobs, adj.pheno[which(matched.covar[,1] == x),], cores = 4))
+lod.drop.thresh = 4
 
 #par(mfrow = c(2,1))
 #lodcol = 5
 #plot(trait.map[[1]], map = map, lodcol = lodcol, main = colnames(trait.map[[1]])[lodcol])
 #plot(trait.map[[2]], map = map, lodcol = lodcol, main = colnames(trait.map[[1]])[lodcol])
 
+
 for(g in 1:length(do.profile)){
     group.name <- names(do.profile)[g]
     cat("###", group.name, "{.tabset .tabset-fade .tabset-pills}\n")
 
-    #find metagenes with high correlations to any trait
-    high.cor.idx <- which(abs(metagene.cor.mat[[g]]) >= cor.thresh)
-    high.cor.row.col <- idx_to_row_col(high.cor.idx, nrow(metagene.cor.mat[[g]]))
-    high.meta.names <- rownames(metagene.cor.mat[[g]])[unique(high.cor.row.col[,1])]
+    #plot(sort(abs(metagene.cor.mat[[g]])));abline(h = cor.thresh)
+    #find metagenes with high correlations to each trait
+    high.cor.idx <- apply(metagene.cor.mat[[g]], 2, function(x) which(x >= cor.thresh))
+    has.vals <- which(sapply(high.cor.idx, length) > 0)    
 
-    high.metagene.row.col <- t(sapply(strsplit(unique(high.meta.names), " "), 
-        function(x) as.numeric(c(x[1], x[3]))))
-    high.metagenes.idx <- row_col_to_idx(high.metagene.row.col[,1], high.metagene.row.col[,2], 50)
-    high.cor.profile <- rep(0, length = 2500)
-    high.cor.profile[high.metagenes.idx] <- 1
-    #par(mfrow = c(4,5), mar = c(0,0,2,0))
-    #for(i in 1:ncol(adj.pheno)){
-    #    high.cor.profile <- rep(0, length = 2500)
-    #    high.cor.profile[high.metagenes.idx] <- metagene.cor.mat[[g]][high.metagenes.idx,i]
-    #    plot_portrait(high.cor.profile, main = colnames(adj.pheno)[i])
-    #}
+    if(length(has.vals) == 0){next()}
 
-    #kmeans.spots <- sapply(strsplit(high.meta.names, " "), function(x) x[4])
-    #u_spots <- unique(kmeans.spots)
-    meta.spot <- do.profile[[g]][,high.meta.names,drop=FALSE]
-    adj.traits <- adjust(adj.pheno, meta.spot)
-    #boxplot(adj.traits, las = 2)
-    med.scan <- scan1(genoprobs, adj.traits, cores = 4)
+    #loop through traits and do mediation separately for each one
+    for(tr in has.vals){   
+        if(length(high.cor.idx[[tr]]) == 0){next()}
+        spot.mat <- do.profile[[g]][,high.cor.idx[[tr]],drop=FALSE]
+        if(ncol(spot.mat) == 1){
+        meta.spot <- spot.mat
+        }else{
+            meta.spot  <- plot.decomp(spot.mat, plot.results = FALSE)$u[,1,drop=FALSE]
+        }
+        #meta.spot <- matrix(rowMeans(spot.mat), ncol = 1)
+        rownames(meta.spot) <- rownames(do.profile[[g]])
+        adj.traits <- adjust(adj.pheno[,tr,drop=FALSE], meta.spot)
 
-    lod.drop <- trait.map[[g]] - med.scan
-    all.max.min <- t(apply(lod.drop, 2, function(x) c(min(x), max(x))))
-    drop_peaks <- find_peaks(lod.drop, map = map, threshold = lod.drop.thresh)    
-    #nrow(drop_peaks)
-    big.drop.traits <- drop_peaks[,1]
-    big.drop.chr <- drop_peaks[,"chr"]
-    u_drop_traits <- unique(big.drop.traits)
+        med.scan <- scan1(genoprobs, adj.traits, cores = 4)
 
-    for(tr in u_drop_traits){
-        #test each metagene to see if any are responsible for the 
-        #big lod drops seen earlier.
+        lod.drop <- trait.map[[g]][,tr,drop=FALSE] - med.scan
+        all.max.min <- t(apply(lod.drop, 2, function(x) c(min(x), max(x))))
+        colnames(all.max.min) <- c("min_drop", "max_drop")
+    
+        drop_peaks <- find_peaks(lod.drop, map = map, threshold = lod.drop.thresh)
+
+        if(nrow(drop_peaks) == 0){next()}
+
         cat("####", colnames(adj.pheno)[tr], "\n")
         if(is.interactive){quartz(width = 9, height = 7)}
 
@@ -290,56 +322,35 @@ for(g in 1:length(do.profile)){
         #with the mediated scan in red
         par(mfrow = c(2,1), mar = c(4,4,2,4))
         plot(trait.map[[g]], map = map, lodcol = tr, main = colnames(adj.pheno)[tr])
-        plot(med.scan, map = map, lodcol = tr, col = "red", add = TRUE)
+        plot(med.scan, map = map, col = "red", add = TRUE)
         abline(h = qtl.thresh)
         #also plot the lod drops along the genome
-        plot(lod.drop, map = map, lodcol = tr, ylim = all.max.min[tr,]*1.1, main = "LOD Drop")
+        plot(lod.drop, map = map, ylim = all.max.min*1.1, main = "LOD Drop")
         abline(h = lod.drop.thresh)
 
-        #scan individual metagenes for eQTL on the same chromosome
-        meta.scan <- scan1(genoprobs, meta.spot, cores = 4)
-        meta.peaks <- find_peaks(meta.scan, map = map, threshold = qtl.thresh)
-        drop.chr <- big.drop.chr[which(big.drop.traits == tr)]
-        drop.chr.locale <- lapply(drop.chr, function(x) meta.peaks[which(meta.peaks[,"chr"] == x),1])
-        names(drop.chr.locale) <- drop.chr
+        drop.chr <- drop_peaks[,"chr"]
 
-        #remove any elements of length zero i.e. where 
-        #no transcripts have an eQTL > qtl.thresh
-        has.meta <- which(sapply(drop.chr.locale, length) > 0)
-        drop.chr.locale <- drop.chr.locale[has.meta]
-
-        if(length(drop.chr.locale) == 0){next()}
-
-        secondary.adj <- lapply(drop.chr.locale, function(x) adjust(adj.pheno, meta.spot[,x,drop=FALSE]))
-        secondary.med <- lapply(1:length(secondary.adj), function(x) scan1(genoprobs[,drop.chr[x]], secondary.adj[[x]][,tr,drop=FALSE]))
-        med.mats <- lapply(secondary.med, function(x) Reduce("cbind", x))
-
-        if(is.interactive){quartz(width = 9, height = 7)}
-        #plot the original scan for the trait overlayed
-        #with the mediation of just a subset of the original metagenes in red
-        for(sm in 1:length(secondary.med)){
+        for(sm in 1:length(drop.chr)){
             if(is.interactive){quartz(width = 9, height = 7)}
             layout(matrix(c(1,1,2,3), nrow = 2, byrow = TRUE), widths = c(0.4, 0.6))
             plot(trait.map[[g]], map = map, lodcol = tr, chr = drop.chr[[sm]], 
-                main = paste(colnames(adj.pheno)[tr], "Mediation with Chr", names(drop.chr.locale)[sm] ,"subset"))
-            plot(secondary.med[[sm]], map = map, col = "red", add = TRUE)
-            spot.split.idx <- strsplit(colnames(meta.spot)[drop.chr.locale[[sm]]], " ")
-            spot.row.col <- t(sapply(spot.split.idx, function(x) as.numeric(c(x[1], x[3]))))
-            spot.idx <- row_col_to_idx(spot.row.col[,1], spot.row.col[,2], 50)
-            mediator.mask <- rep(0, 2500)
-            mediator.mask[spot.idx] <- 1
-            plot_portrait(mediator.mask)
+                main = paste(colnames(adj.traits), "Mediation with Chr", drop.chr[sm] ,"subset"))
+            plot(med.scan, map = map, col = "red", add = TRUE, chr = drop.chr[[sm]])
+            #spot.row.col <- som.coord[high.cor.idx[[tr]],]
+            #spot.idx <- row_col_to_idx(spot.row.col[,1], spot.row.col[,2], som.dim)
+            spot.idx <- high.cor.idx[[tr]]
+            mediator.mask <- rep(0, som.dim^2)
+            mediator.mask[high.cor.idx[[tr]]] <- 1
+            plot_portrait(mediator.mask, rotate = 3)
             meta.genes <- unlist(lapply(spot.idx, function(x) colnames(do.metagenes[[g]][x][[1]])))
             gene.enrich <- gost(meta.genes, organism = "mmusculus", sources = c("GO", "KEGG", "REACTOME"))
             plot.enrichment(gene.enrich, num.term = 15, max.term.size = 2000, order.by = "p_value")
             #plot.text(paste(colnames(meta.spot)[drop.chr.locale[[sm]]], collapse = "\n"))
-        } #end looping through chromosomes with mediated QTL
+            cat("\n\n")
+        } #end looping through chromosomes with big lod drops
         cat("\n\n")
     } #end looping through traits
 
-    #the spots seem too broad to effectively capture the high-correlation metagenes
-    #spot.scan <- scan1(genoprobs, high.cor.spot.expr, cores = 4)
-    #multilod.plot(spot.scan, map = map, lod.thresh = 6, chr.label.y = 0.5)
     cat("\n\n")
 } #end looping through sexes
 ```

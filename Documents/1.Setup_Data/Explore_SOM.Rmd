@@ -92,7 +92,7 @@ I will use the log FC scale for my profiles.
 
 ```{r gen_profile}
 
-get_metagene_vals <- function(gene.list, profile.dim = 50, value.name = "logFC"){
+get_metagene_FC <- function(gene.list, profile.dim = 50, value.name = "logFC"){
   
   metagene.vals <- vector(mode = "list", length = profile.dim^2)
   metagene.names <- rep(NA, profile.dim^2)
@@ -120,7 +120,7 @@ spot.assignments <- lapply(1:length(env$spot.list.kmeans$spots),
 spot.assig.mat <- Reduce("rbind", spot.assignments)
 
 group.metagenes <- lapply(group.gene.lists, 
-  function(x) get_metagene_vals(x, value.name = "logFC"))
+  function(x) get_metagene_FC(x, value.name = "logFC"))
 saveRDS(group.metagenes, here("Results", "SOM", paste0(exp.type, ".Metagenes.", tissue.name, ".RDS")))
 
 #boxplot(group.metagenes[[1]][1:15])

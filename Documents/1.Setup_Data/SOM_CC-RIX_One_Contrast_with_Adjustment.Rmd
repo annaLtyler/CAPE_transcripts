@@ -1,0 +1,153 @@
+---
+title: "SOM CC-RIX One Contrast With Adjustment"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+The purpose of this workflow is examine the use of self-organizing maps 
+to analyze transcriptome data for the CC-RIX. This workflow looks at 
+a specific contrast, for example high-fat diet vs. low-fat diet, 
+whereas SOM_CC-RIX.Rmd looks at all animals at the same time. 
+
+In contrast to SOM_CC-RIX_One_Contrast.Rmd, this workflow includes
+all animals in each analysis, and adjust for the covariates that
+are not being specifically examined. SOM_CC-RIX_One_Contrast.Rmd
+does not make any adjustments, but looks at each individual group
+separately. For example, if you are looking at transcripts that 
+distinguish the high-fat diet from the low-fat diet, that workflow
+looks separately at females with no metformin treatment, females 
+with metformin treatment, etc. Whereas this workflow combines all
+groups and makes the appropriate adjustments.
+
+
+```{r get_args}
+args <- commandArgs(trailingOnly = T)
+tissue.name <- args[1]
+contrast <- args[2]
+delete_previous <- as.logical(args[3])
+
+if(is.na(tissue.name)){
+    tissue.name = "adipose"
+    contrast <- "Diet"
+    delete_previous <- FALSE
+}
+  is.interactive <- FALSE
+  #is.interactive <- TRUE
+```
+
+## SOM Results
+
+```{r source_code}
+library("here")
+all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
+for(j in 1:length(all.fun)){source(all.fun[j])}
+```
+
+
+```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
+needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2", "grid", "stringr",
+  "RColorBrewer")
+load_libraries(needed.packages, personal.library = TRUE)
+```
+
+
+Get the expression for the specified tissue.
+
+
+```{r read_data}
+all.var <- ls()
+data.loaded <- as.logical(length(which(all.var == "expr")))
+data.dir <- here("Data", "CC-RIX")
+
+if(!data.loaded){
+    annot <- read.csv(file.path(data.dir, "final_sample_annotations.csv"))
+    tissue.expr <- readRDS(file.path(data.dir, "Expression.by.Tissue.RDS"))
+    manifest <- as.matrix(read.csv(file.path(data.dir, "Original_Samples_Manifest.csv")))
+    covar <- as.matrix(read.csv(file.path(data.dir, "Covar.csv"), row.names = 1))
+    bw <- as.matrix(read.csv(file.path(data.dir, "Weight.Summarized.csv"), header = TRUE, row.names = 1))
+    chem.mat <- read.csv(file.path(data.dir, "Blood.Chemistries.Summarized.csv"), row.names = 1)
+    groups <- read.csv(file.path(data.dir, "Groups.csv"), row.names = 1)
+    group.def <- colnames(groups)
+}
+```
+
+Adjust expression for RNASeq_Batch, Age, and the covariates
+that are not specified by contrast. Adjust phenotypes for 
+the same covariates.
+
+
+```{r adjust}
+tissue.locale <- which(names(tissue.expr) == tissue.name)
+
+orsam.id <- names(rownames(tissue.expr[[tissue.locale]]))
+orsam.idx <- match(orsam.id, rownames(covar))
+
+tissue.info <- unique(t(sapply(rownames(tissue.expr[[tissue.locale]]), 
+  function(x) get_mouse_info(x, manifest, "Barcode.1"))))
+
+group.mat <- tissue.info[,group.def]
+contrast.col <- which(colnames(group.mat) == contrast)
+
+rnaseq.covar <- dummy_covar(covar[orsam.idx,c("Age", "RNAseq_Batch", colnames(group.mat)[-contrast.col])])
+
+adj.expr.file <- here("Results", "SOM", paste0("Adjusted.Expression.", tissue.name, ".Full.RDS"))
+if(!file.exists(adj.expr.file)){
+  adj.expr <- adjust(tissue.expr[[tissue.locale]], rnaseq.covar)
+  saveRDS(adj.expr, adj.expr.file)
+}else{
+  adj.expr <- readRDS(adj.expr.file)
+}
+
+mouse.info <- unique(t(sapply(rownames(covar), function(x) get_mouse_info(x, manifest, "User.Inputs"))))
+rownames(mouse.info) <- mouse.info[,1]
+
+pheno.covar <- dummy_covar(mouse.info[,c("Timepoint", colnames(group.mat)[-contrast.col])])
+num.chem <- apply(as.matrix(chem.mat[,5:ncol(chem.mat)]), 2, as.numeric)
+rownames(num.chem) <- rownames(chem.mat)
+
+adj.chem.file <- here("Results", "SOM", "Adjusted.Chem.Full.RDS")
+if(!file.exists(adj.chem.file)){
+  adj.chem <- adjust(num.chem, pheno.covar)
+  saveRDS(adj.chem, adj.chem.file)
+}else{
+  adj.chem <- readRDS(adj.chem.file)
+}
+
+adj.bw.file <- here("Results", "SOM", "Adjusted.BW.Full.RDS")
+if(!file.exists(adj.bw.file)){
+  adj.bw <- adjust(bw, pheno.covar)
+  saveRDS(adj.bw, adj.bw.file)
+}else{
+  adj.bw <- adj.bw.file
+}
+```
+
+
+Set up parameters for the SOM.
+
+```{r som}
+som.result.file <- here("Documents", "1.Setup_Data", 
+    paste0("CC-RIX_", tissue.name, "_by_", contrast, ".RData"))
+
+if(delete_previous){
+unlink(som.result.file)
+}
+
+group.labels <- tissue.info[,which(colnames(tissue.info) == contrast)]
+
+if(!file.exists(som.result.file)){
+exp.name <- gsub(".RData", "", basename(som.result.file))
+env <- opossom.new(list(dataset.name = exp.name))
+env$indata <- t(adj.expr)
+env$group.labels <- group.labels
+opossom.run(env)
+}
+
+```
+
