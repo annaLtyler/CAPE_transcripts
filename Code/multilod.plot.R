@@ -3,7 +3,7 @@ color.scheme = c("blue", "green", "purple", "red", "orange", "brown", "yellow", 
 border.col = "darkgray", border.lwd = 3, row.names = NULL, row.name.shift = 0,
 row.text.cex = 1, color.bar.cex = 1, color.bar.axis.lin = -2, 
 color.fun = c("linear", "exponential"),
-steepness = 1, mar = c(2, 6, 2, 0), chr.label.y = -0.5, chr.label.cex = 1, 
+steepness = 1, mar = c(2, 6, 2, 0), chr.label.y = 0.5, chr.label.cex = 1, 
 global.color.scale = FALSE,
 global.min = lod.thresh, global.max = ceiling(max(scan1.results)), 
 use.pheatmap.colors = FALSE){
@@ -25,7 +25,7 @@ use.pheatmap.colors = FALSE){
     row.text.cex = row.text.cex, global.color.scale = global.color.scale, 
     global.min = global.min, global.max = global.max, use.pheatmap.colors = use.pheatmap.colors)
     
-    #demarcate the chromosomes on the plot
+    #label the chromosomes on the plot
     markers <- rownames(val.mat)
     all.markers <- lapply(map, names)
     
