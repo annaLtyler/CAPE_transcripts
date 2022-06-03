@@ -194,6 +194,7 @@ pheatmap(adj.expr[,sig.idx], show_rownames = FALSE, show_colnames = FALSE)
 
 library(biomaRt)
 mus <- useEnsembl(biomart = "ensembl", dataset = "mmusculus_gene_ensembl") 
+
 test.info <- getBM(filters = "ensembl_gene_id", attributes = c("external_gene_name",
   "chromosome_name", "start_position", "end_position"), 
   values = sig.genes, mart = mus)
@@ -228,9 +229,10 @@ load(som.result.file)
 
 ## Look for phenotype variation among clusters of individuals
 
-As part of the SOM, the individual mice are clustered according to their
-overall gene expression patterns. We look here to ask whether the groupings
-correlate with any of the traits. 
+Look for trait differences based on grouping. This will be more 
+interesting if unsupervised clustering is used. It will show 
+more dramatic differences if supervised clustering is used.
+
 
 ```{r pheno_clusters}
 groups <- env$group.labels
