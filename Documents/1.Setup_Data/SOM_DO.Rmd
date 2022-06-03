@@ -19,7 +19,7 @@ tissue.name <- args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(tissue.name)){
-  tissue.name <- "Islet"
+  tissue.name <- "Liver"
   delete_previous <- FALSE
 }
   is.interactive <- FALSE
@@ -74,10 +74,12 @@ adj.expr <- adjust(expr, covar)
 ```
 
 I'd like to try using the SOM to classify the expression differences
-between animals separated by QTLs. I will start with the Ins_tAUC.
-There is a large QTL on chromosome 11, and a 4-4 split in the haplotype
-effects. We will try to split the animals along those effects, and 
-classify the differences.
+between animals separated by QTLs. I will start with the Ins_tAUC QTL
+on chromosome 11, since this is the largest and narrower than the 
+overlapping QTL for HOMA_B.
+
+This QTL has a 4-4 split in the haplotype effects. We will try to divide
+the animals along those effects, and classify the differences.
 
 ```{r map_traits}
 #data(CCcolors)
@@ -85,6 +87,16 @@ classify the differences.
 
 trait.name <- "Ins_tAUC"; chr = 11
 trait_map <- scan1(genoprobs, adj.pheno[,trait.name])
+
+#pheno.decomp <- plot.decomp(adj.pheno, pc = 20)
+#pheno.pc <- pheno.decomp$u
+#rownames(pheno.pc) <- rownames(adj.pheno)[pheno.decomp$rows.used]
+#trait_map <- scan1(genoprobs, pheno.pc)
+#multilod.plot(trait_map, map = map, lod.thresh = 6)
+#plot(trait_map, map = map, lodcol = 6, chr = 5)
+#chr_map <- scan1coef(genoprobs[,5], pheno.pc[,6])
+#plot_coefCC(chr_map, map = map)
+#trait_map  <- scan1(genoprobs, pheno.pc[,6])
 plot(trait_map, map = map, main = trait.name)
 chr_map <- scan1coef(genoprobs[,chr], adj.pheno[,trait.name])
 #quartz()
@@ -151,14 +163,15 @@ ind.groups <- lapply(rownames(adj.expr),
 group.ind <- sapply(1:length(geno.groups), 
   function(y) sapply(ind.groups, function(x) length(which(x == y))))
 colnames(group.ind) <- names(geno.groups)
-#barplot(t(group.ind), col = c("red", "blue"))
+#group.order <- order(group.ind[,1])
+#quartz(width = 11, height = 5);barplot(t(group.ind[group.order,]), col = c("red", "blue"), border = NA);abline(h = length(qtl.markers)/2)
 pheatmap(group.ind)
 ```
 
 We then use voting to assign each animal to a bin based on
 its genotypes across all markers. 
 
-This results in three distinct bins for the animals with no overlaps,
+This results in two distinct bins for the animals with no overlaps,
 as shown below.
 
 ```{r bin_vote}
@@ -171,12 +184,28 @@ group.labels <- rep(NA, nrow(adj.expr))
 for(i in 1:length(assigned.groups)){
   group.labels[assigned.groups[[i]]] <- names(geno.groups)[i]
 }
+```
+
+The following boxplots show trait distributions by our allele grouping.
+The trait we selected, `r trait.name`, should have at least a slight
+difference based on these groups.
+
+```{r pheno_diff, fig.width = 12, fig.height = 12}
 #make sure everyone is assigned to a group
 #which(is.na(group.labels))
+
+par(mfrow = c(4,5), mar = c(2,2,2,2))
+for(i in 2:ncol(adj.pheno)){
+  plot(rankZ(adj.pheno[match(rownames(adj.expr), rownames(adj.pheno)),i])~as.factor(group.labels),
+  main = colnames(adj.pheno)[i], xlab = "", ylab = colnames(adj.pheno)[i])
+}
 ```
 
 
 ```{r quick_test, eval = FALSE}
+#quick test of expression differences by group using a t test.
+#we expect most of these to be in the QTL that we picked, but
+#hopefully there are some others too that are interesting.
 
 test <- apply(adj.expr, 2, function(x) t.test(x~as.factor(group.labels)))
 all.p <- sapply(test, function(x) x$p.value)
@@ -204,18 +233,34 @@ enrichment <- gost(sig.genes, organism = "mmusculus")
 plot.enrichment(enrichment, num.terms = 30)
 ```
 
-We will use these groups as classes in the SOM.
+```{r mediate, eval = FALSE}
+chr.scan <- scan1(genoprobs[,11], adj.pheno[,trait.name])
+all.drop <- vector(mode = "list", length = length(sig.idx))
+names(all.drop) <- sig.genes
+for(i in 1:length(sig.idx)){
+  med.pheno <- adjust(adj.pheno, adj.expr[,sig.idx[i],drop=FALSE])
+  med.scan <- scan1(genoprobs[,11], med.pheno[,trait.name])
+  all.drop[[i]] <- chr.scan - med.scan
+  #quartz()
+  #plot(trait_map, chr = 11, map = map)
+  #plot(med.scan, map = map, chr = 11, add = TRUE, col = "red")
+}
+max.drops <- sapply(all.drop, max)
+barplot(max.drops)
+max.drops[which.max(max.drops)]
+```
 
-Run the SOM.
+Run the SOM using these groups as the classes to distinguish.
 
 ```{r som}
-som.result.file <- here("Documents", "1.Setup_Data", paste0("DO_", tissue.name, ".RData"))
+som.result.file1 <- here("Documents", "1.Setup_Data", paste0("DO_", tissue.name, ".RData"))
+som.result.file2 <- here("Results", "SOM", paste0("DO_", tissue.name, ".RData"))
 
 if(delete_previous){
   unlink(som.result.file)
 }
 
-if(!file.exists(som.result.file)){
+if(!file.exists(som.result.file1) && !file.exists(som.result.file2)){
   exp.name <- gsub(".RData", "", basename(som.result.file))
   env <- opossom.new(list(dataset.name = exp.name))
   env$indata <- t(adj.expr)
@@ -223,7 +268,13 @@ if(!file.exists(som.result.file)){
   opossom.run(env)
 }
 
-load(som.result.file)
+if(file.exists(som.result.file1)){
+  load(som.result.file1)
+}
+if(file.exists(som.result.file2)){
+  load(som.result.file2)
+}
+
 ```
 
 
@@ -347,7 +398,6 @@ The following histogram shows the distribution of correlations between
 all metagenes and all traits for `r tissue.name`.
 
 ```{r cor_dist}
-if(is.interactive){quartz()}
 hist(unlist(pheno.metagene.cor), main = "Trait-Metagene Correlations",
 xlab = "Pearson Correlation", breaks = 100)
 ```
