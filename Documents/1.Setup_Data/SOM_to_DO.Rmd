@@ -98,17 +98,26 @@ u_groups <- unique(cc.groups)
 #performs svd and returns the first PC of the 
 #group to use as a portrait representative of the
 #full group.
-group_profile <- function(profile.group){
+group_profile <- function(profile.group, type = c("PC", "mean")){
     if(ncol(profile.group) == 0){
         return(NULL)
     }
     if(ncol(profile.group) == 1){
         return(profile.group)
     }
-    decomp <- plot.decomp(t(profile.group), plot.results = FALSE)
-    profile.pc <- rep(NA, som.dim^2)
-    profile.pc[decomp$rows.used] <- decomp$u[,1]
-    return(profile.pc)
+    type <- type[1]
+
+    if(type == "PC"){
+        no.na <- which(apply(profile.group, 2, function(x) !all(is.na(x))))
+        decomp <- plot.decomp(cor(profile.group[,no.na]), plot.results = FALSE)
+        profile.pc <- rep(NA, som.dim^2)
+        profile.pc[no.na] <- decomp$u[,1]
+        return(profile.pc)
+    }else{
+        scaled.expr <- t(apply(profile.group, 1, scale))
+        profile.mean <- colMeans(scaled.expr)
+        return(profile.mean)
+    }
 }
 ```
 
@@ -159,6 +168,7 @@ adj.expr <- adjust(matched.expr, matched.covar)
 #in addition, regress out diet days from the traits
 num.pheno <- adjust(num.pheno[,2:ncol(num.pheno)], num.pheno[,1,drop=FALSE]) 
 adj.pheno <- adjust(num.pheno, matched.covar)
+pheno.pc <- plot.decomp(adj.pheno, plot.results = FALSE)
 ```
 
 The following portraits show the profile for each group
@@ -166,7 +176,7 @@ in the CC-RIX.
 
 ```{r cc_group_portraits, fig.width = 8, fig.height = 4}
 #PC profiles better match the profiles from oposSOM thans means
-cc.pc.profiles <- sapply(cc.metagene.profiles, group_profile)
+cc.pc.profiles <- sapply(cc.metagene.profiles, function(x) group_profile(x, "mean"))
 
 global.max <- max(unlist(cc.pc.profiles), na.rm = TRUE)
 global.min <- min(unlist(cc.pc.profiles), na.rm = TRUE)
@@ -202,20 +212,20 @@ get.do.metagene <- function(gene.names, group.expr){
 #in the DO. We adjusted for sex and generation.
 do.metagenes <- lapply(cc.metagenes, function(x) get.do.metagene(x, adj.expr))
 do.profiles <- sapply(do.metagenes, rowMeans)
-do.pc.profile <- group_profile(do.profiles)
+do.pc.profile <- group_profile(do.profiles, "mean")
 if(is.interactive){quartz()}
 plot_portrait(do.pc.profile, rotate = 3, main = "Overall DO Profile")
+
 ```
 
 Calculate the correlations between profiles of the DO and CC-RIX groups.
 The following boxplot shows the distribution of correlations between the 
-DO metagene profiles and the CC metagene profiles. 
-We use the absolute value because we are calculating group profiles using
-PCs, and the 
+DO metagene profiles and the CC metagene profiles. The DO animals were
+more positively correlated to the CC-RIX HFD profile than to the LFD 
+profile. Since they were all on the HFD, this makes sense.
 
-There is no obvious 
-trend. I expected the DO animals to have profiles close to those of the 
-HFD CC-RIX, but that doesn't seem to be true overall.
+There are, of course, some resistant individuals that have LFD-like
+profiles despite being on the HFD.
 
 ```{r metagene_profile_comparison}
 do.metagene.cor <- lapply(1:ncol(cc.pc.profiles), 
@@ -224,7 +234,32 @@ do.metagene.cor <- lapply(1:ncol(cc.pc.profiles),
 names(do.metagene.cor) <- u_groups
 
 par(mar = c(10, 4, 4, 4))
-boxplot(lapply(do.metagene.cor, abs), las = 2)
+boxplot(do.metagene.cor, las = 2, notch = TRUE, ylab = "Correlation")
+abline(h = 0)
+```
+
+The dot plot below shows the correlation of each DO to each CC-RIX
+LFD/HFD profile. Dots are colored by the 10-week body weight of the
+DO animal. Red is on the high end, blue is on the low end. DO 
+animals that had a high correlation to the HFD CC-RIX profile, 
+had a low correlation to the LFD profile. This is by design. 
+The DO animals that were most highly correlated to the HFD 
+profile had the lowest body weight. What?
+
+```{r profile_cor}
+trait.col <- rep(NA, nrow(adj.pheno))
+trait.pc.col <- colors.from.values(pheno.pc$u[,1], use.pheatmap.colors = TRUE)
+trait.col[pheno.pc$rows.used] <- trait.pc.col
+weight.col <- colors.from.values(adj.pheno[,"weight_10wk"], use.pheatmap.colors = TRUE)
+#plot(rankZ(adj.pheno[,"weight_10wk"]), col = weight.col)
+
+plot(do.metagene.cor[[1]], do.metagene.cor[[2]], 
+    xlab = paste("DO correlation to", colnames(cc.pc.profiles)[1]),
+    ylab = paste("DO correlation to", colnames(cc.pc.profiles)[2]),
+    col = weight.col, pch = 16)
+
+abline(0,-1)
+abline(h = 0, v = 0)
 ```
 
 
@@ -243,7 +278,6 @@ pheno.idx <- match(common.ind, rownames(adj.pheno))
 metagene.trait.cor <- apply(adj.pheno[pheno.idx,], 2, 
     function(x) apply(do.profiles[do.idx,], 2, 
     function(y) cor(rankZ(x),rankZ(y), use = "pairwise.complete.obs")))
-
 
 if(is.interactive){quartz(width = 9, height = 6)}
 par(mar = c(8, 4, 4, 4))
@@ -278,28 +312,63 @@ trait.map <- scan1(genoprobs, adj.pheno, cores = 4)
 ```
 
 ```{r map_meta, fig.width = 10, fig.height = 7, results = "asis"}
+#map all metagenes
 qtl.thresh <- 6
 lod.drop.thresh = 4
 
-#map all metagenes
 metagene.eqtl.file <- here("Results", "SOM", paste0("DO.", tissue.name, ".Metagene.eQTL.RDS"))
 no.na <- which(apply(do.profiles, 2, function(x) all(!is.na(x))))
-metagene.bins <- bin.sequence(no.na, 100)
 if(!file.exists(metagene.eqtl.file)){
-    metagene.eqtl <- NULL
-    for(i in 1:length(metagene.bins)){
-        report.progress(i, length(metagene.bins))
-        metagene.map <- scan1(genoprobs, do.profiles[,metagene.bins[[i]]], cores = 4)
-        metagene.eqtl <- rbind(metagene.eqtl, find_peaks(metagene.map, map = map, threshold = qtl.thresh))
-    }
+    norm.profiles <- apply(do.profiles[,no.na], 2, rankZ)
+    metagene.map <- scan1(genoprobs, norm.profiles, cores = 4)
+    metagene.eqtl <- find_peaks(metagene.map, map = map, threshold = qtl.thresh)
     saveRDS(metagene.eqtl, metagene.eqtl.file)
 }else{
     metagene.eqtl <- readRDS(metagene.eqtl.file)
 }
+```
 
-#find metagenes with high correlations to each trait
-#high.cor.idx <- apply(metagene.trait.cor, 2, function(x) which(x >= cor.thresh))
-#has.vals <- which(sapply(high.cor.idx, length) > 0)    
+The plot below shows eQTL counts (LOD > 6) in sliding windows across 
+the genome. 
+
+```{r metagene_mapping, fig.width = 12, fig.height = 6}
+u_chr <- sort(unique(metagene.eqtl[,"chr"]))
+chr.tables <- lapply(u_chr, function(x) metagene.eqtl[which(metagene.eqtl[,"chr"] == x),])
+eqtl.counts <- eqtl.pos <- vector(mode = "list", length = length(u_chr))
+names(eqtl.counts) <- names(eqtl.pos) <- u_chr
+for(i in 1:length(chr.tables)){
+    region.bins <- sliding.window.el(1:ceiling(max(chr.tables[[i]][,"pos"])), 
+        window.size = 4, gap.size = 3)
+    eqtl.tally <- lapply(region.bins, function(x) intersect(which(chr.tables[[i]][,"pos"] >= min(x)), which(chr.tables[[i]][,"pos"] < max(x))))
+    eqtl.counts[[i]] <- sapply(eqtl.tally, length)
+    eqtl.pos[[i]] <- sapply(region.bins, mean)
+
+    #peak.idx <- which(eqtl.counts[[i]] > 75)
+    #peak.meta <- chr.tables[[i]][eqtl.tally[[peak.idx]],]
+    #peak.mask <- matrix(0, nrow = som.dim, ncol = som.dim)
+    #peak.row.col <- t(sapply(strsplit(peak.meta[,2], "_"), function(x) as.numeric(x)))
+    #peak.idx <- row_col_to_idx(peak.row.col[,1], peak.row.col[,2], som.dim)
+    #peak.mask[peak.idx] <- metagene.trait.cor[peak.idx,"Ins_tAUC"]
+    #plot_portrait(peak.mask, rotate = 3)
+}
+
+count.max <- max(sapply(eqtl.counts, max))
+
+if(is.interactive){quartz(width = 12, height = 6)}
+layout.mat <- matrix(1:length(u_chr), nrow = 1)
+layout(layout.mat)
+for(i in 1:length(chr.tables)){
+    if(i == 1){par(mar = c(4, 4, 4, 0))}else{par(mar = c(4,0,4,0))}
+    plot(eqtl.pos[[i]], eqtl.counts[[i]], type = "h", axes = FALSE, 
+        xlab = paste("Chr", u_chr[i]), ylab = "", ylim = c(0, count.max))
+    axis.pts <- round(segment.region(min(eqtl.pos[[i]]), max(eqtl.pos[[i]]), 3, "center"))
+    if(i == 1){axis(2)}
+    axis(1, at = axis.pts)
+}
+mtext(side = 2, "eQTL Count", line = -1.5, outer = TRUE)
+```
+
+```{r metagene_mediation, results = "asis"}
 
 #find all traits with QTL LOD scores greater than the specified threshold
 trait.peaks <- find_peaks(trait.map, map = map, threshold = qtl.thresh)
@@ -319,14 +388,13 @@ for(tr in trait.idx){
         function(x) overlapping_peaks(trait.qtls[x,"chr"], trait.qtls[x,"pos"]-5, 
         trait.qtls[x,"pos"]+5, metagene.eqtl))
 
-    meta.row.col <- lapply(overlapping.metagenes, function(x) t(sapply(strsplit(x[,"lodcolumn"], "_"), function(y) as.numeric(y))))
-    meta.idx <- lapply(meta.row.col, function(x) row_col_to_idx(x[,1], x[,2], som.dim))
+    meta.idx <- lapply(overlapping.metagenes, function(x) match(x[,"lodcolumn"], colnames(do.profiles)))
     #check to make sure we indexed the metagenes correction and that they actually map where we think they do
-    #test <- scan1(genoprobs, do.profiles[,meta.idx[[2]],drop=FALSE])
+    #test <- scan1(genoprobs, do.profiles[,meta.idx[[1]],drop=FALSE])
     #multilod.plot(test, map = map, lod.thresh = 6)
 
-    spot.mat <- do.profiles[,sort(unique(unlist(meta.idx)))]
-    #sapply(spot.mat, dim)
+    u_idx <- sort(unique(unlist(meta.idx)))
+    spot.mat <- do.profiles[,u_idx]
     
     #adjust trait for individual metagenes individually
     adj.traits <- sapply(1:ncol(spot.mat), function(x) adjust(adj.pheno[,tr,drop=FALSE], spot.mat[,x,drop=FALSE]))
@@ -350,13 +418,36 @@ for(tr in trait.idx){
 
     cat("###", colnames(adj.pheno)[tr], "{.tabset .tabset-fade .tabset-pills}\n")
 
+    all.med.metagenes <- colnames(adj.traits)[big.drop.idx]
+    #all.med.mask <- matrix(0, nrow = som.dim, ncol = som.dim)
+    #all.med.mask[u_idx[big.drop.idx]] <- 1
+    #plot_portrait(all.med.mask, rotate = 3)
+
+    #trait.df <- data.frame(adj.pheno[,tr,drop=FALSE])
+    #pheatmap(spot.mat[,big.drop.idx], show_rownames = FALSE, annotation_row = trait.df)
+    #trait.order <- order(trait.df[,1])
+    #pheatmap(spot.mat[trait.order,big.drop.idx], cluster_rows = FALSE, show_rownames = FALSE)
+    #pheatmap(cor(t(spot.mat[,big.drop.idx])))
+    #meta.qtl <- scan1(genoprobs, spot.mat[,big.drop.idx])
+    #multilod.plot(meta.qtl, map = map, lod.thresh = 4, row.names = colnames(meta.qtl))
+    #meta.meta <- plot.decomp(spot.mat[,big.drop.idx])$u[,1,drop=FALSE]
+    #rownames(meta.meta) <- rownames(adj.pheno)
+    #meta.scan <- scan1(genoprobs, meta.meta)
+    #chr.scan <- scan1coef(genoprobs[,17], meta.meta)
+    #par(mfrow = c(2,1), mar = c(1,1,1,1))
+    #plot(meta.scan, map = map, chr = 17)
+    #plot_coefCC(chr.scan, map = map)
+    #med.genes <- unlist(lapply(u_idx[big.drop.idx], function(x) colnames(do.metagenes[[x]])))
+    #med.enrich <- gost(med.genes, organism = "mmusculus", sources = c("GO", "REACTOME", "KEGG"))
+    #plot.enrichment(med.enrich)
+
     for(sm in 1:length(big.drop.idx)){
 
         cat("\n\n")
 
         cat("#### Mediation on Chr", drop_peaks[[big.drop.idx[sm]]][,"chr"], "\n")
         if(is.interactive){quartz(width = 9, height = 7)}
-        layout(matrix(c(1,1,2,3), nrow = 2, byrow = TRUE), widths = c(0.4, 0.6))
+        layout(matrix(c(1,1,1,2,3,4), nrow = 2, byrow = TRUE), widths = c(0.4, 0.4, 0.6))
         med.chr <- drop_peaks[[big.drop.idx[sm]]][,"chr"]
 
         plot(trait.map, map = map, lodcol = tr, chr = med.chr, 
@@ -366,35 +457,21 @@ for(tr in trait.idx){
             chr = drop_peaks[[big.drop.idx[sm]]][,"chr"])
         abline(h = qtl.thresh)
 
-        mediator.mask <- rep(0, som.dim^2)
+        
         metagene.name <- colnames(adj.traits)[big.drop.idx[sm]]
+
+        plot.with.model(do.profiles[,metagene.name], adj.pheno[,tr], 
+            xlab = metagene.name, ylab = colnames(adj.pheno)[tr], report = "cor.test")
+        
+        mediator.mask <- rep(0, som.dim^2)
         mediator.mask[unlist(meta.idx)[big.drop.idx[sm]]] <- 1
         plot_portrait(mediator.mask, rotate = 3)
         meta.genes <- colnames(do.metagenes[[which(names(do.metagenes) == metagene.name)]])
         gene.enrich <- gost(meta.genes, organism = "mmusculus", sources = c("GO", "KEGG", "REACTOME"))
         plot.enrichment(gene.enrich, num.term = 15, max.term.size = 2000, order.by = "p_value")
         cat("\n\n")
-    } #end looping through chromosomes with big lod drops
+    } #end looping through metagenes with big lod drops
     cat("\n\n")
 } #end looping through traits
 
-```
-
-```{r mapping_extra, eval = FALSE}
-find_peaks(group.scan, map = map, threshold = 6)
-
-coef.scan <- scan1coef(genoprobs[,"X"], group.scores, kinship = K[[20]])
-plot_coefCC(coef.scan, map = map, main = paste(map_group, "Chr X"))
-
-coef.scan <- scan1coef(genoprobs[,"11"], group.scores, kinship = K[[11]])
-plot_coefCC(coef.scan, map = map, main = paste(map_group, "Chr X"))
-
-```
-
-```{r DO_portraits, eval = FALSE}
-test <- sapply(do.metagenes[[group.locale]], rowMeans)
-par(mfrow = c(5,5), mar = c(1,1,1,1))
-for(i in 26:50){
-    plot_portrait(test[i,])
-}
 ```

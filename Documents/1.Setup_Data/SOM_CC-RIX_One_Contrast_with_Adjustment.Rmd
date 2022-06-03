@@ -124,8 +124,151 @@ if(!file.exists(adj.bw.file)){
   adj.bw <- adjust(bw, pheno.covar)
   saveRDS(adj.bw, adj.bw.file)
 }else{
-  adj.bw <- adj.bw.file
+  adj.bw <- readRDS(adj.bw.file)
 }
+```
+
+## Effects of Treatment on Weight by Genotype {.tabset .tabset-fade .tabset-pills}
+
+The following plots show how the body weight of each genotype responds to the 
+different conditions.
+
+```{r genotype_effects_weight, results = "asis"}
+#Look for effects based on genotype.
+#for each genotype find weights in all treatment groups.
+group.names <- apply(groups, 1, function(x) paste(x, collapse = "_"))
+genotypes <- mouse.info[,"User.Defined.Strain"]
+u_genotypes <- unique(genotypes)
+genotype.idx <- lapply(u_genotypes, function(x) which(genotypes == x))
+group.idx <- apply(groups, 1, function(x) Reduce("intersect", 
+    list(which(mouse.info[,"Diet"] == x["Diet"]),
+          which(mouse.info[,"Sex"] == x["Sex"]), 
+          which(mouse.info[,"Treatment"] == x["Treatment"]))))
+
+grouped.weight = vector(mode = "list", length = length(u_genotypes))
+names(grouped.weight) <- u_genotypes
+for(i in 1:length(genotype.idx)){
+  all.geno.groups <- vector(mode = "list", length = length(group.idx))
+  names(all.geno.groups) <- group.names
+  for(j in 1:length(group.idx)){
+    idx <- intersect(genotype.idx[[i]], group.idx[[j]])
+    idx.names <- mouse.info[idx,1]
+    bw.idx <- match(idx.names, rownames(bw))
+    all.geno.groups[[j]] <- bw[bw.idx]
+  }
+   grouped.weight[[i]] <- all.geno.groups 
+}
+
+for(i in 1:length(u_genotypes)){
+  cat("###", u_genotypes[i], "\n")
+  if(is.interactive){quartz(width = 9, height = 7)}
+  weight.order <- match(sort(names(grouped.weight[[i]])), names(grouped.weight[[i]]))
+  diet.groups <- unlist(sapply(1:length(grouped.weight[[i]]), function(x) rep(groups[x,2], length(grouped.weight[[i]][[x]]))))
+  treatment.groups <- unlist(sapply(1:length(grouped.weight[[i]]), function(x) rep(groups[x,3], length(grouped.weight[[i]][[x]]))))
+  sex.groups <- unlist(sapply(1:length(grouped.weight[[i]]), function(x) rep(groups[x,1], length(grouped.weight[[i]][[x]]))))
+  if(length(unique(diet.groups)) > 1){
+    diet.model <- aov(unlist(grouped.weight[[i]])~as.factor(diet.groups))
+    diet.p <- summary(diet.model)[[1]]$"Pr(>F)"[1]
+  }else{
+    diet.p <- NA
+  }
+  if(length(unique(treatment.groups)) > 1){
+    treatment.model <- aov(unlist(grouped.weight[[i]])~as.factor(treatment.groups))
+    treatment.p <- summary(treatment.model)[[1]]$"Pr(>F)"[1]
+  }else{
+    treatment.p <- NA
+  }
+  if(length(unique(sex.groups)) > 1){
+    sex.model <- aov(unlist(grouped.weight[[i]])~as.factor(sex.groups))
+    sex.p <- summary(sex.model)[[1]]$"Pr(>F)"[1]
+  }else{
+    sex.p <- NA
+  }
+  
+  
+  par(mar = c(12, 4, 4, 4))
+  stripchart(grouped.weight[[i]][weight.order], las = 2, vertical = TRUE, pch = 16,
+    main = paste(names(grouped.weight)[i], "\nDiet p =", signif(diet.p, 2), 
+    ", Treatment p =", signif(treatment.p, 2),
+    ", Sex p =", signif(sex.p, 2)))
+  abline(v = 4.5)
+
+  cat("\n\n")
+}
+
+#pdf("~/Desktop/groups.pdf", width = 20, height = 7)
+#par(mar = c(10, 4, 4, 4))
+#plot.grouped.boxes(grouped.weight, print.vals = NA, label.srt = 45, legend.x = 130, 
+#legend.y = 80)
+#dev.off()
+```
+
+
+## Effects of Treatment on Chemistries by Genotype {.tabset .tabset-fade .tabset-pills}
+
+```{r genotype_effects_chem, results = "asis"}
+
+grouped.chem = vector(mode = "list", length = length(u_genotypes))
+names(grouped.chem) <- u_genotypes
+for(i in 1:length(genotype.idx)){
+  all.geno.groups <- vector(mode = "list", length = length(group.idx))
+  names(all.geno.groups) <- group.names
+  for(j in 1:length(group.idx)){
+    idx <- intersect(genotype.idx[[i]], group.idx[[j]])
+    idx.names <- mouse.info[idx,1]
+    chem.idx <- match(idx.names, rownames(num.chem))
+    all.geno.groups[[j]] <- num.chem[chem.idx,,drop=FALSE]
+  }
+   grouped.chem[[i]] <- all.geno.groups 
+}
+
+for(ch in 1:ncol(num.chem)){
+  cat("###", colnames(num.chem)[ch], "{.tabset .tabset-fade .tabset-pills}\n")
+  for(i in 1:length(u_genotypes)){
+    cat("####", u_genotypes[i], "\n")
+    if(is.interactive){quartz(width = 9, height = 7)}
+    diet.groups <- unlist(sapply(1:length(grouped.chem[[i]]), function(x) rep(groups[x,2], nrow(grouped.chem[[i]][[x]]))))
+    treatment.groups <- unlist(sapply(1:length(grouped.chem[[i]]), function(x) rep(groups[x,3], nrow(grouped.chem[[i]][[x]]))))
+    sex.groups <- unlist(sapply(1:length(grouped.chem[[i]]), function(x) rep(groups[x,1], nrow(grouped.chem[[i]][[x]]))))
+    if(length(unique(diet.groups)) > 1){
+      diet.model <- aov(unlist(lapply(grouped.chem[[i]], function(x) x[,ch]))~as.factor(diet.groups))
+      diet.p <- summary(diet.model)[[1]]$"Pr(>F)"[1]
+    }else{
+      diet.p <- NA
+    }
+    if(length(unique(treatment.groups)) > 1){
+      treatment.model <- aov(unlist(lapply(grouped.chem[[i]], function(x) x[,ch]))~as.factor(treatment.groups))
+      treatment.p <- summary(treatment.model)[[1]]$"Pr(>F)"[1]
+    }else{
+      treatment.p <- NA
+    }
+    if(length(unique(sex.groups)) > 1){
+      sex.model <- aov(unlist(lapply(grouped.chem[[i]], function(x) x[,ch]))~as.factor(sex.groups))
+      sex.p <- summary(sex.model)[[1]]$"Pr(>F)"[1]
+    }else{
+      sex.p <- NA
+    }
+
+    has.vals <- !all(is.na(unlist(grouped.chem[[i]])))
+
+    if(has.vals){
+      par(mar = c(12, 4, 4, 4))
+      stripchart(lapply(grouped.chem[[i]], function(x) x[,ch])[weight.order], las = 2, vertical = TRUE, pch = 16,
+        main = paste(colnames(num.chem)[ch], names(grouped.weight)[i], "\nDiet p =", signif(diet.p, 2), 
+        ", Treatment p =", signif(treatment.p, 2),
+        ", Sex p =", signif(sex.p, 2)))
+      abline(v = 4.5)
+    }
+
+    cat("\n\n")
+  }
+  cat("\n\n")
+}
+#pdf("~/Desktop/groups.pdf", width = 20, height = 7)
+#par(mar = c(10, 4, 4, 4))
+#plot.grouped.boxes(grouped.weight, print.vals = NA, label.srt = 45, legend.x = 130, 
+#legend.y = 80)
+#dev.off()
 ```
 
 

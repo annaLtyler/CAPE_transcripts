@@ -1,6 +1,6 @@
 plot.grouped.boxes <- function(group.list, group.labels = names(group.list), 
 group.cols = c("#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f", "#e5c494", "#b3b3b3"),
-main = "", type = c("list", "matrix"),
+main = "", type = c("list", "matrix"), plot.grouping = c("inner", "outer"),
 plot.type = c("box", "strip"), print.vals = c("mean", "median"), 
 text.cex = 0.7, label.srt = 0, legend.x = NULL, legend.y = NULL, notch = FALSE){
 
@@ -41,11 +41,13 @@ text.cex = 0.7, label.srt = 0, legend.x = NULL, legend.y = NULL, notch = FALSE){
 				}
 						
 			if(plot.type == "box"){
-				boxplot(as.vector(data.vals), at = box.pos, add = TRUE, col = group.cols[l], 
-				axes = FALSE, main = "", notch = notch)
+				boxplot(as.vector(data.vals), at = box.pos, add = TRUE, 
+					col = group.cols[l%%length(group.cols)], 
+					axes = FALSE, main = "", notch = notch)
 			}else{
-				stripchart(as.vector(data.vals), at = box.pos, add = TRUE, col = group.cols[l], axes = FALSE, 
-				main = "", method = "jitter", vertical = TRUE, pch = 16)
+				stripchart(as.vector(data.vals), at = box.pos, add = TRUE, 
+					col = group.cols[l%%length(group.cols)], axes = FALSE, 
+					main = "", method = "jitter", vertical = TRUE, pch = 16)
 			}
 			mtext(main, side = 3, line = 0)
 
@@ -77,6 +79,7 @@ text.cex = 0.7, label.srt = 0, legend.x = NULL, legend.y = NULL, notch = FALSE){
 		text(x = mean(group.pos), y = (ymin - (plot.height*0.15)), labels = label, srt = label.srt)
 		par(xpd = FALSE)
 		} #end looping through group elements
+
 	axis(2)
 
 	par(xpd = NA)

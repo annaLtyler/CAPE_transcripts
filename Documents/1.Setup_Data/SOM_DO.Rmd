@@ -32,7 +32,6 @@ if(is.na(tissue.name)){
 library("here")
 all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
 for(j in 1:length(all.fun)){source(all.fun[j])}
-
 ```
 
 
@@ -73,6 +72,110 @@ adj.pheno <- adjust(num.pheno, covar)
 adj.expr <- adjust(expr, covar)
 ```
 
+I'd like to try using the SOM to classify the expression differences
+between animals separated by QTLs. I will start with the Ins_tAUC.
+There is a large QTL on chromosome 11, and a 4-4 split in the haplotype
+effects. We will try to split the animals along those effects, and 
+classify the differences.
+
+```{r map_traits}
+#data(CCcolors)
+#barplot(rep(1, length(CCcolors)), col = CCcolors, names = names(CCcolors))
+
+trait.name <- "Ins_tAUC"; chr = 11
+trait_map <- scan1(genoprobs, adj.pheno[,trait.name])
+plot(trait_map, map = map, main = trait.name)
+chr_map <- scan1coef(genoprobs[,chr], adj.pheno[,trait.name])
+#quartz()
+plot_coefCC(chr_map, map = map)
+```
+
+NOD (D), 129 (C), B6 (B), A/J (A) are all up.
+PWK (G), CAST (F), WSB (H), NZO (E) are all down.
+I want to divide the DO individuals into two groups, those with the down alleles,
+and those with the up alleles. I'm not sure how possible this is, so we need to 
+do some exploring.
+
+Find the peak marker for the QTL.
+
+```{r peak_qtl}
+peak.table <- find_peaks(trait_map, map = map, threshold = 10, prob = 0.95)
+qtl.markers <- intersect(which(map[[chr]] >= peak.table[,"ci_lo"]), which(map[[chr]] <= peak.table[,"ci_hi"]))
+qtl.geno <- genoprobs[[chr]][,,qtl.markers]
+```
+
+For each marker in the QTL, check to see how well the up and down
+alleles separate animals.
+
+1. We separate each marker into the up and down alleles.
+2. We sum across rows to give each individual a total genotype 
+  score for the number of up alleles and number of down alleles 
+  it has
+3. We bin each individual into one of three groups based on whether 
+  it has mostly up alleles, mostly down alleles, or an even split of both.
+4. Collect the bin assignment for each animal across all markers in the qtl.
+
+The following heatmap shows the bin assigned to each animal across all markers.
+The binning clusters the animals into three groups.
+
+```{r sep_geno}
+
+up.alleles <- c("D", "C", "B", "A")
+down.alleles <- c("G", "F", "H", "E")
+
+all.up <- lapply(1:dim(qtl.geno)[3], function(x) qtl.geno[,up.alleles,x])
+all.down <- lapply(1:dim(qtl.geno)[3], function(x) qtl.geno[,down.alleles,x])
+
+#for each marker find the groups of animals that best split the
+#up alleles from the down alleles. Minimize the number of animals
+#in the middle group.
+
+all.grouped.markers <- vector(mode = "list", length = length(qtl.markers))
+for(i in 1:length(qtl.markers)){
+  geno.groups <- vector(mode = "list", length = 3)
+  names(geno.groups) <- c("up", "mid", "down")
+  marker.up <- bin.vector(rowSums(all.up[[i]]))
+  marker.down <- bin.vector(rowSums(all.down[[i]]))
+  #plot(marker.up, marker.down);abline(v = c(low.thresh, high.thresh), h = c(low.thresh, high.thresh))
+  marker.table <- cbind(marker.up, marker.down)
+  geno.groups[[1]] <- which(apply(marker.table, 1, function(x) x[1] > x[2]))
+  geno.groups[[2]] <- which(apply(marker.table, 1, function(x) x[1] == x[2]))
+  geno.groups[[3]] <- which(apply(marker.table, 1, function(x) x[1] < x[2]))
+  all.grouped.markers[[i]] <- geno.groups
+}
+
+#track the position of each animal over all markers
+ind.groups <- lapply(rownames(adj.pheno), 
+  function(y) sapply(all.grouped.markers, function(x) grep(y, x)))
+group.ind <- sapply(1:3, function(y) sapply(ind.groups, function(x) length(which(x == y))))
+colnames(group.ind) <- names(geno.groups)
+#barplot(t(group.ind), col = c("red", "blue", "green"))
+pheatmap(group.ind)
+```
+
+We then use voting to assign each animal to a bin overall. They 
+are assigne to the bin in which they were placed for more than
+50% of the markers in the qtl. 
+
+This results in three distinct bins for the animals with no overlaps,
+as shown below.
+
+```{r bin_vote}
+#put animals in groups by voting
+assigned.groups <- apply(group.ind, 2, function(x) which(x >= length(qtl.markers)/2))
+plotVenn(assigned.groups)
+
+group.labels <- rep(NA, nrow(adj.pheno))
+for(i in 1:length(assigned.groups)){
+  group.labels[assigned.groups[[i]]] <- names(geno.groups)[i]
+}
+#assign leftovers to the mid group
+#which(is.na(group.labels))
+group.labels[which(is.na(group.labels))] <- "mid"
+```
+
+We will use these groups as classes in the SOM.
+
 Run the SOM.
 
 ```{r som}
@@ -86,6 +189,7 @@ if(!file.exists(som.result.file)){
   exp.name <- gsub(".RData", "", basename(som.result.file))
   env <- opossom.new(list(dataset.name = exp.name))
   env$indata <- t(adj.expr)
+  env$group.labels <- group.labels
   opossom.run(env)
 }
 
