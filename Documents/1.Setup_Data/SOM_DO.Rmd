@@ -66,7 +66,7 @@ num.pheno <- apply(pheno[,11:(ncol(pheno)-1)], 2, as.numeric)
 rownames(num.pheno) <- pheno[,1]
 ```
 
-Adjust phenotypes and expression for covaraites.
+Adjust phenotypes and expression for covariates.
 
 ```{r adjust}
 adj.pheno <- adjust(num.pheno, covar)
@@ -144,9 +144,12 @@ for(i in 1:length(qtl.markers)){
 }
 
 #track the position of each animal over all markers
-ind.groups <- lapply(rownames(adj.pheno), 
+#use the rownames from the expression matrix now, 
+#since we want to index the expression for the SOM
+ind.groups <- lapply(rownames(adj.expr), 
   function(y) sapply(all.grouped.markers, function(x) grep(y, x)))
-group.ind <- sapply(1:length(geno.groups), function(y) sapply(ind.groups, function(x) length(which(x == y))))
+group.ind <- sapply(1:length(geno.groups), 
+  function(y) sapply(ind.groups, function(x) length(which(x == y))))
 colnames(group.ind) <- names(geno.groups)
 #barplot(t(group.ind), col = c("red", "blue"))
 pheatmap(group.ind)
@@ -163,12 +166,41 @@ as shown below.
 assigned.groups <- apply(group.ind, 2, function(x) which(x >= length(qtl.markers)/2))
 plotVenn(assigned.groups)
 
-group.labels <- rep(NA, nrow(adj.pheno))
+#index groups based on expression matrix
+group.labels <- rep(NA, nrow(adj.expr))
 for(i in 1:length(assigned.groups)){
   group.labels[assigned.groups[[i]]] <- names(geno.groups)[i]
 }
-#assign leftovers to the mid group
+#make sure everyone is assigned to a group
 #which(is.na(group.labels))
+```
+
+
+```{r quick_test, eval = FALSE}
+
+test <- apply(adj.expr, 2, function(x) t.test(x~as.factor(group.labels)))
+all.p <- sapply(test, function(x) x$p.value)
+qqunif.plot(all.p)
+
+fdr <- p.adjust(all.p, "fdr")
+sig.idx <- which(fdr <= 0.1)
+#sig.idx <- which(all.p <= 0.005)
+sig.genes <- names(fdr)[sig.idx]
+length(sig.genes)
+
+pheatmap(adj.expr[,sig.idx], show_rownames = FALSE, show_colnames = FALSE)
+#plot.decomp(adj.expr[,sig.idx], main = "individuals by PC")
+#plot.decomp(t(adj.expr[,sig.idx]), main = "genes by PC")
+
+library(biomaRt)
+mus <- useEnsembl(biomart = "ensembl", dataset = "mmusculus_gene_ensembl") 
+test.info <- getBM(filters = "ensembl_gene_id", attributes = c("external_gene_name",
+  "chromosome_name", "start_position", "end_position"), 
+  values = sig.genes, mart = mus)
+test.info
+
+enrichment <- gost(sig.genes, organism = "mmusculus")
+plot.enrichment(enrichment, num.terms = 30)
 ```
 
 We will use these groups as classes in the SOM.
