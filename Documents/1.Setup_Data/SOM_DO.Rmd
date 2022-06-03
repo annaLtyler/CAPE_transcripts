@@ -19,7 +19,7 @@ tissue.name <- args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(tissue.name)){
-  tissue.name <- "Liver"
+  tissue.name <- "SkeletalMuscle"
   delete_previous <- FALSE
 }
   is.interactive <- FALSE
@@ -42,7 +42,7 @@ load_libraries(needed.packages, personal.library = TRUE)
 ```
 
 
-Get the expression for the specified tissue.
+Get the expression for `r tissue.name`.
 
 ```{r read_data}
 vars <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
@@ -190,7 +190,7 @@ The following boxplots show trait distributions by our allele grouping.
 The trait we selected, `r trait.name`, should have at least a slight
 difference based on these groups.
 
-```{r pheno_diff, fig.width = 12, fig.height = 12}
+```{r pheno_diff, fig.width = 12, fig.height = 12, eval = FALSE}
 #make sure everyone is assigned to a group
 #which(is.na(group.labels))
 
@@ -297,7 +297,7 @@ names(ind.groups) <- u_groups
 The plots below show the distribution of phenotypes over each
 group identified by the SOM based on transcriptional clustering.
 
-```{r pheno_by_group, width = 12, height = 8}
+```{r pheno_by_group, width = 12, height = 12}
 pheno.ind <- lapply(ind.groups, function(x) which(rownames(adj.pheno) %in% x))
 mean.pheno <- matrix(NA, nrow = length(pheno.ind), ncol = ncol(adj.pheno))
 rownames(mean.pheno) <- names(pheno.ind)
@@ -580,8 +580,7 @@ if(!file.exists(metagene.scan.file)){
 }
 
 par(xpd = NA)
-multilod.plot(k.gene.scan, map = map, lod.thresh = 4, row.names = colnames(k.gene.scan),
-row.name.shift = -1000)
+multilod.plot(k.gene.scan, map = map, lod.thresh = 4, row.names = colnames(k.gene.scan))
 par(xpd = TRUE)
 ```
 
@@ -738,7 +737,7 @@ for(k in 1:length(kmeta)){
   if(is.interactive){quartz(width = 10, height = 6)}
   layout(layout.matrix, widths = c(0.7, 1), heights = c(1,0.5))
   par(mar = c(0,2,2,0))
-  plot_portrait(kmeta[[k]]$mask)
+  plot_portrait(kmeta[[k]]$mask, rotate = 3)
   enrich <- sort(-log10(kmeta[[k]]$Fisher.p))
   top.enrich <- tail(enrich, 20)
   par(mar = c(4, 18, 4, 4))
