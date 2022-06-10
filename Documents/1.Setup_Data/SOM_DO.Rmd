@@ -19,11 +19,12 @@ tissue.name <- args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(tissue.name)){
-  tissue.name <- "SkeletalMuscle"
+  tissue.name <- "Adipose"
   delete_previous <- FALSE
 }
   is.interactive <- FALSE
   #is.interactive <- TRUE
+  qtl.chr <- 11
 ```
 
 ## SOM Results for `r tissue.name`
@@ -36,7 +37,7 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-needed.packages <- c("oposSOM", "gProfileR", "pheatmap", "qtl2", "grid", "stringr", 
+needed.packages <- c("oposSOM", "gprofiler2", "pheatmap", "qtl2", "grid", "stringr", 
   "VennDiagram")
 load_libraries(needed.packages, personal.library = TRUE)
 ```
@@ -69,8 +70,11 @@ rownames(num.pheno) <- pheno[,1]
 Adjust phenotypes and expression for covariates.
 
 ```{r adjust}
-adj.pheno <- adjust(num.pheno, covar)
-adj.expr <- adjust(expr, covar)
+#adjust for diet days, as well as the other covariates
+matched.mats <- get.xz(num.pheno, covar)
+full.covar <- cbind(matched.mats[[1]][,1], matched.mats[[2]])
+adj.pheno <- adjust(matched.mats[[1]][,-1], full.covar)
+adj.expr <- adjust(expr, full.covar)
 ```
 
 I'd like to try using the SOM to classify the expression differences
@@ -87,6 +91,7 @@ the animals along those effects, and classify the differences.
 
 trait.name <- "Ins_tAUC"; chr = 11
 trait_map <- scan1(genoprobs, adj.pheno[,trait.name])
+qtl_map <- scan1(genoprobs[,qtl.chr], adj.pheno[,trait.name, drop=FALSE])
 
 #pheno.decomp <- plot.decomp(adj.pheno, pc = 20)
 #pheno.pc <- pheno.decomp$u
@@ -113,10 +118,11 @@ Find the peak marker for the QTL.
 
 ```{r peak_qtl}
 peak.table <- find_peaks(trait_map, map = map, threshold = 10, prob = 0.95)
-qtl.markers <- intersect(which(map[[chr]] >= peak.table[,"ci_lo"]), which(map[[chr]] <= peak.table[,"ci_hi"]))
+qtl.markers <- map[[chr]][get.nearest.pt(map[[chr]], peak.table[,"pos"])]
+#qtl.markers <- intersect(which(map[[chr]] >= peak.table[,"ci_lo"]), which(map[[chr]] <= peak.table[,"ci_hi"]))
 ind.locale <- match(rownames(adj.pheno), rownames(genoprobs[[1]]))
-qtl.geno <- genoprobs[[chr]][ind.locale,,qtl.markers]
-allele.effects <- chr_map[qtl.markers,]
+qtl.geno <- genoprobs[[chr]][ind.locale,,qtl.markers,drop=FALSE]
+allele.effects <- chr_map[qtl.markers,,drop=FALSE]
 ```
 
 For each marker in the QTL, check to see how well the up and down
@@ -131,12 +137,16 @@ based on their allele effects.
 4. We collect the bin assignment for each animal across all markers in the qtl
   and use the votes across all markers to determine the bin for the animal.
 
-The following heatmap shows the bin assigned to each animal across all markers.
-The binning clusters the animals into two clear groups with some less clear
-assignments. Should we force these into one of the two groups, or put them
-in a third group? For now let's use two groups.
+The following boxplot shows the bins assigned to each animal across all markers.
+There were some animals consistently binned into one group or another across 
+all markers, while others were assigned to both groups in varying proportions.
 
-```{r sep_geno}
+Rather than defining three groups, we will keep the two, and use voting
+across markers to decide which animal goes into which bin. Those put into
+group 1 at least 50% of the time are assigned to group 1. The horiaontal
+line marks the 50% voting threshold.
+
+```{r sep_geno, fig.width = 11, fig.height = 5}
 
 #for each marker find the groups of animals that best split the
 #up alleles from the down alleles. Minimize the number of animals
@@ -163,9 +173,13 @@ ind.groups <- lapply(rownames(adj.expr),
 group.ind <- sapply(1:length(geno.groups), 
   function(y) sapply(ind.groups, function(x) length(which(x == y))))
 colnames(group.ind) <- names(geno.groups)
-#group.order <- order(group.ind[,1])
-#quartz(width = 11, height = 5);barplot(t(group.ind[group.order,]), col = c("red", "blue"), border = NA);abline(h = length(qtl.markers)/2)
-pheatmap(group.ind)
+group.order <- order(group.ind[,1])
+if(is.interactive){quartz(width = 11, height = 5)}
+barplot(t(group.ind[group.order,]), col = c("red", "blue"), 
+  border = NA, main = "bin assignments across markers", xlab = "Individual",
+  ylab = "Marker")
+abline(h = length(qtl.markers)/2)
+#pheatmap(group.ind)
 ```
 
 We then use voting to assign each animal to a bin based on
@@ -176,7 +190,7 @@ as shown below.
 
 ```{r bin_vote}
 #put animals in groups by voting
-assigned.groups <- apply(group.ind, 2, function(x) which(x >= length(qtl.markers)/2))
+assigned.groups <- apply(group.ind, 2, function(x) which(x > length(qtl.markers)/2))
 plotVenn(assigned.groups)
 
 #index groups based on expression matrix
@@ -275,15 +289,17 @@ if(file.exists(som.result.file2)){
   load(som.result.file2)
 }
 
+som.result <- env$som.result
+som.coord <- som.result[[1]]
+som.bmu <- som.result[[2]]
+som.dim <- sqrt(nrow(som.coord))
 ```
-
 
 ## Look for phenotype variation among clusters of individuals
 
 Look for trait differences based on grouping. This will be more 
 interesting if unsupervised clustering is used. It will show 
 more dramatic differences if supervised clustering is used.
-
 
 ```{r pheno_clusters}
 groups <- env$group.labels
@@ -309,20 +325,33 @@ layout(layout.mat)
 par(mar = c(4,2,2,2))
 for(i in 1:ncol(adj.pheno)){  
   group.pheno <- lapply(pheno.ind, function(x) adj.pheno[x,i])
-  med.order <- order(sapply(group.pheno, function(x) median(x, na.rm = TRUE)), 
-  decreasing = FALSE)
-  boxplot(group.pheno[med.order], main = colnames(adj.pheno)[i],
-  col = u_colors[med.order], las = 2)
-  mean.pheno[,i] <- sapply(group.pheno, function(x) mean(x, na.rm = TRUE))
+  #med.order <- order(sapply(group.pheno, function(x) median(x, na.rm = TRUE)), decreasing = FALSE)
+  boxplot(group.pheno, main = colnames(adj.pheno)[i],
+  col = u_colors, las = 2)
+  mean.pheno[,i] <- sapply(group.pheno, function(x) median(x, na.rm = TRUE))
 }
 ```
 
-The following heatmap shows the mean phenotype across groups and phenotypes.
+The following heatmap shows the mean phenotype across groups and 
+phenotypes. These are scaled by row to accentuate the trait 
+differences across groups, while minimizing the trait differences
+across traits.
 
 ```{r mean_pheno}
 if(is.interactive){quartz()}
 pheatmap(t(mean.pheno), scale = "row")
 ```
+
+The following plot is a PC plot of the mean trait values
+across the groups. The QTL groups Glu_tAUC and WPIC at 
+one end, the bulk of traits in the middle, and the HOMAs
+and insulin values at the other end. Ins_tAUC, which 
+is the trait for which the QTL was identified, is grouped
+with the bulk of trait along the first PC, but is distant
+along the second PC, which is explains a tiny amount of 
+variance. I'm not sure if any of this is interesting or 
+not, but like to make PC plots any time I generate a new
+matrix.
 
 ## Metagenes
 
@@ -331,9 +360,8 @@ grid of metagenes. The distribution of genes per metagene is shown
 below. 
 
 ```{r genes_per_metagene}
-metagene.assig <- env$som.result$feature.BMU
-n.meta <- max(metagene.assig)
-meta.genes <- lapply(1:n.meta, function(x) names(metagene.assig)[which(metagene.assig == x)])
+n.meta <- max(som.bmu)
+meta.genes <- lapply(1:n.meta, function(x) names(som.bmu)[which(som.bmu == x)])
 n.genes <- sapply(meta.genes, length)
 
 if(is.interactive){quartz()}
@@ -345,27 +373,37 @@ The following boxplot show the absolute value of the correlations
 between phenotypes and metagenes.
 
 ```{r spot_cor}
-kmeta <- env$spot.list.kmeans$spots
-metagenes <- env$metadata
-map.dim <- sqrt(nrow(metagenes))
+#This function gets the average expression for 
+#all metagenes given the metagene assignements
+#and an expression matrix.
+#metagene.assig = som.bmu
+metagene_expression <- function(adj.expr, metagene.assig){
+  metagene.expr <- matrix(NA, nrow = nrow(adj.expr), ncol = som.dim^2)
+  rownames(metagene.expr) <- rownames(adj.expr)
+  colnames(metagene.expr) <- 1:ncol(metagene.expr)
+  for(i in 1:ncol(metagene.expr)){
+    metagene.idx <- which(metagene.assig == i)
+    if(length(metagene.idx) > 0){
+      scaled.expr <- apply(adj.expr[, metagene.idx,drop=FALSE], 2, rankZ)
+      metagene.expr[,i] <- rowMeans(scaled.expr)
+    }
+  }
+  return(metagene.expr)
+}
 
+metagene.expr <- metagene_expression(adj.expr, som.bmu)
 pheno.metagene.cor <- vector(mode = "list", length = ncol(adj.pheno))
 names(pheno.metagene.cor) <- colnames(adj.pheno)
 
-common.ind <- intersect(colnames(metagenes), rownames(adj.pheno))
-metagene.locale <- match(common.ind, colnames(metagenes))
-pheno.locale <- match(common.ind, rownames(adj.pheno))
-expr.locale <- match(common.ind, rownames(adj.expr))
-#head(cbind(colnames(metagenes)[metagene.locale], rownames(adj.pheno)[pheno.locale]))
-
 for(m in 1:ncol(adj.pheno)){
-  metagene.cor <- apply(metagenes[,metagene.locale], 1, 
-    function(x) cor(adj.pheno[pheno.locale,m], x, use = "pairwise.complete.obs"))
-  pheno.metagene.cor[[m]] <- matrix(metagene.cor, nrow = map.dim, ncol = map.dim, byrow = FALSE)
+  metagene.cor <- apply(metagene.expr, 2, function(x) cor(x, adj.pheno[,m], 
+    use = "pairwise.complete.obs"))
+  pheno.metagene.cor[[m]] <- matrix(metagene.cor, nrow = som.dim, ncol = som.dim, byrow = FALSE)
   #pheatmap(pheno.metagene.cor[[m]], cluster_rows = FALSE, cluster_cols = FALSE,main = colnames(adj.pheno)[m])
 }
 
 if(is.interactive){quartz()}
+par(mar = c(8, 4, 4, 4))
 boxplot(lapply(pheno.metagene.cor, abs), las = 2)
 ```
 
@@ -404,21 +442,25 @@ xlab = "Pearson Correlation", breaks = 100)
 
 ### Global Color Scale
 ```{r metagene_cor_maps, fig.width = 10, fig.height = 9}
-min.cor <- min(unlist(pheno.metagene.cor))
-max.cor <- max(unlist(pheno.metagene.cor))
+
+min.cor <- min(unlist(pheno.metagene.cor), na.rm = TRUE)
+max.cor <- max(unlist(pheno.metagene.cor), na.rm = TRUE)
 
 layout.mat <- get.layout.mat((length(pheno.metagene.cor)+1))
 
 layout(layout.mat)
 par(mar = c(0,0,4,0))
 for(m in 1:length(pheno.metagene.cor)){
-  imageWithText(pheno.metagene.cor[[m]], use.pheatmap.colors = TRUE, 
-  show.text = FALSE, global.color.scale = TRUE, global.min = min.cor, 
-  global.max = max.cor, main = colnames(adj.pheno)[m])
-}
+  plot_portrait(pheno.metagene.cor[[m]], rotate = 3, 
+    global.min = min.cor, global.max = max.cor, main = colnames(adj.pheno)[m],
+    show.axes = TRUE)
+  }
 par(mar = c(0,4,4,4))
 imageWithTextColorbar(matrix(segment_region(min.cor, max.cor, 10), ncol = 1), 
   use.pheatmap.colors = TRUE, cex = 1)
+
+
+
 ```
 
 ### Individual Color Scale
@@ -427,321 +469,219 @@ imageWithTextColorbar(matrix(segment_region(min.cor, max.cor, 10), ncol = 1),
 layout(layout.mat)
 par(mar = c(0,0,4,0))
 for(m in 1:length(pheno.metagene.cor)){
-  imageWithText(pheno.metagene.cor[[m]], use.pheatmap.colors = TRUE, 
-  show.text = FALSE, main = colnames(adj.pheno)[m])
+  plot_portrait(pheno.metagene.cor[[m]], rotate = 3, main = colnames(adj.pheno)[m],
+  show.axes = TRUE)
 }
 ```
 
+## Metagene Mediation {.tabset .tabset-fade .tabset-pills}
 
-## Gene Set Correlations {.tabset .tabset-fade .tabset-pills}
-
-The following code looks for gene sets with maximal correlations with clinical
-phenotypes. Here we plot the top and bottom 10 processes associated with each
-trait.
-
-```{r gsz_cor}
-gsz <- env$samples.GSZ.scores
-
-common.ind <- intersect(colnames(gsz), rownames(adj.pheno))
-gsz.locale <- match(common.ind, colnames(gsz))
-pheno.locale <- match(common.ind, rownames(adj.pheno))
-
-gsz.cor.mat <- matrix(NA, nrow = nrow(gsz), ncol = ncol(adj.pheno))
-rownames(gsz.cor.mat) <- rownames(gsz)
-colnames(gsz.cor.mat) <- colnames(adj.pheno)
-
-for(m in 1:ncol(adj.pheno)){
-  gsz.cor.mat[,m] <- apply(gsz[,gsz.locale], 1, 
-    function(x) cor(adj.pheno[pheno.locale,m], x, use = "pairwise.complete.obs"))
-}
+```{r mediator_threshold}
+lod.drop.thresh = 3
 ```
 
-```{r top_assoc, results = "asis"}
-all.top.cor <- vector(mode = "list", length = ncol(adj.pheno))
-names(all.top.cor) <- colnames(adj.pheno)
-for(ph in 1:ncol(gsz.cor.mat)){
+Here we use the expression of each metagene to mediate the 
+`r trait.name` QTL.
+
+The following portrait shows the maximum LOD drop by metagene. There 
+are some individual metagenes that have relatively high mediation of
+the trait. There are also clusters of metagenes that have similar 
+mediation profiles. These do not really line up with the k-means
+clusters all that well, so we shold probably look at them in their 
+own right.
+
+```{r mediate_individual_metagenes}
+#adjust our trait for each metagene
+all.adj.trait <- sapply(1:ncol(metagene.expr), 
+  function(x) if(!all(is.na(metagene.expr[,x]))){adjust(adj.pheno[,trait.name,drop=FALSE], 
+  metagene.expr[,x,drop=FALSE])}else{rep(NA, nrow(adj.pheno))})
+rownames(all.adj.trait) <- rownames(adj.pheno)
+
+has.vals <- which(apply(all.adj.trait, 2, function(x) !all(is.na(x))))
+#only scanning chromosome with qtl
+all.med.scan <- scan1(genoprobs[,qtl.chr], all.adj.trait[,has.vals], cores = 4)
+lod.drop <- lapply(1:ncol(all.med.scan), function(x) qtl_map - all.med.scan[,x,drop=FALSE])
+lod.drop.map <- rep(0, som.dim^2)
+lod.drop.map[has.vals] <- sapply(lod.drop, max)
+
+layout(matrix(c(1,1,2,0), nrow = 2), widths = c(1, 0.2), height = c(0.5, 1))
+lod.drop.mat <- plot_portrait(lod.drop.map, rotate = 3, main = "Max LOD Drop", show.axes = TRUE)
+par(mar = c(0,0,4,4))
+imageWithTextColorbar(matrix(segment.region(min(lod.drop.map, na.rm = TRUE),  
+  max(lod.drop.map, na.rm = TRUE), 100)), use.pheatmap.colors = TRUE, cex = 1)
+```
+
+We clustered the mediating metagenes into groups to test
+whether as a group they might mediate the trait QTL even
+further.
+
+The following plot shows which metagenes were selected 
+and how they were grouped together.
+
+```{r cluster_metagenes, fig.height = 5, fig.width = 5}
+
+high.lod.idx <- which(lod.drop.mat >= lod.drop.thresh)
+metagene.idx <- idx_to_metagene_idx(mat.idx = high.lod.idx, som.dim = som.dim)
+
+#group all metagenes that are above the threshold and
+#within a distance of two from each other.
+node.coord <- which(lod.drop.mat > lod.drop.thresh, arr.ind = TRUE)
+node.blocks <- contiguous_blocks(node.coord, node.dist = 2)
+cluster.mask <- matrix(0, nrow = som.dim, ncol = som.dim)
+for(i in 1:length(node.blocks)){
+  for(j in 1:nrow(node.blocks[[i]])){
+    cluster.mask[node.blocks[[i]][j,1], node.blocks[[i]][j,2]] <- i
+  }
+}
+if(is.interactive){quartz()}
+imageWithText(cluster.mask, use.pheatmap.colors = TRUE)
+```
+
+```{r mediate_with_clusters}
+
+cluster_meta_idx <- lapply(node.blocks, function(x) idx_to_metagene_idx(row.col = x, som.dim = som.dim))
+cluster_meta_genes <- lapply(cluster_meta_idx, function(x) names(som.bmu)[which(som.bmu %in% x)])
+
+cluster.expr <- lapply(cluster_meta_genes, function(x) adj.expr[,match(x, colnames(adj.expr)), drop = FALSE])
+mean.cluster.expr <- sapply(cluster.expr, function(x) rowMeans(apply(x, 2, rankZ)))
+cluster.adj <- sapply(1:ncol(mean.cluster.expr), function(x) adjust(adj.pheno[,trait.name,drop=FALSE], mean.cluster.expr[,x,drop=FALSE]))
+rownames(cluster.adj) <- rownames(adj.pheno)
+cluster.med <- scan1(genoprobs[,qtl.chr], cluster.adj)
+cluster.lod.drop <- lapply(1:ncol(cluster.med), function(x) qtl_map - cluster.med[,x,drop=FALSE])
+lod.drops <- sapply(cluster.lod.drop, max)
+
+big.drops <- which(lod.drops > lod.drop.thresh)
+```
+
+### Trait QTL Mediation Plots {.tabset .tabset-fade .tabset-pills}
+
+The following plots show plots for the mediated QTL for `r trait.name`.
+The vertical line shows the position of the maximum LOD drop.
+Only those with LOD drops of at least `r lod.drop.thresh` are shown. 
+The drops are pretty modest and don't always line up with the trait 
+peak QTL.
+
+```{r plot_med, results = "asis", fig.width = 10, fig.height = 5}
+
+for(i in big.drops){
+  cat("#### Cluster", i, "\n")
   if(is.interactive){quartz()}
-  cat("###", colnames(adj.pheno)[ph], "\n")
-  sorted.cor <- sort(gsz.cor.mat[,ph])
-  top.cor <- c(head(sorted.cor, 10), tail(sorted.cor, 10))
-  all.top.cor[[ph]] <- top.cor
-  par(mar = c(3, 18, 4, 2))
-  barplot(top.cor, las = 2, horiz = TRUE, cex.names = 0.7, main = colnames(adj.pheno)[ph])
+  plot(qtl_map, map = map)
+  plot(cluster.med, lodcol = i, map = map, add = TRUE, col = "red")
+  med.drop <- qtl_map - cluster.med[,i,drop=FALSE]
+  peak.drop <- find_peaks(med.drop, map = map, threshold = lod.drop.thresh)
+  max.pos <- peak.drop[which.max(peak.drop[,"lod"]),"pos"]
+  abline(v = max.pos)
   cat("\n\n")
 }
+
+#big.drop.enrich <- lapply(cluster_meta_genes[big.drops], 
+#  function(x) gost(x, organism = "mmusculus"))
+#names(big.drop.enrich) <- round(lod.drops[big.drops], 2)
+#if(length(unlist(big.drop.enrich)) > 0){
+#  plot.enrichment.group(big.drop.enrich)
+#}
 ```
 
-## Trait-Process Correlation Heatmap
-
-The following heatmap shows the top processes associated with all traits.
-A box plot of this matrix can be found in the SOM results folder. 
-
-```{r process_cor, fig.height = 20, fig.width = 9}
-u_processes <- unique(unlist(lapply(all.top.cor, function(x) names(x))))
-process.locale <- match(u_processes, rownames(gsz.cor.mat))
-pheatmap(gsz.cor.mat[process.locale,])
-
-process.order <- order(rowMeans(gsz.cor.mat[process.locale,]))
-
-pdf(here("Results", "SOM", paste0("Top_Processes_", tissue.name, ".pdf")), 
-  width = 7, height = 20)
-par(mar = c(4, 15, 2, 2))
-boxplot(t(gsz.cor.mat[process.locale[process.order],]), horizontal = TRUE, las = 2,
-cex.axis = 0.5, main = "Top Correlated Processes")
-abline(v = 0)
-dev.off()
-```
-
-From these groups, we can look at differential expression of individual
-groups that have extreme phenotypes of interest. For example, Group D 
-above has very low HOMA values and differentially expresses genes related 
-to insulin response and chromatin remodeling. The top overexpressed genes
-are Calm1 and insulin receptor. Group NQRS has very high HOMA values and 
-is differentially expresses genes related to immune function and endocytosis.
-
-## Clustered Metagenes
-
-The SOM clusters metagenes into clusters using k-means clustering. 
-Neighboring metagenes are very highly correlated with each other. 
-The clustering of metagenes allows us to reduce the dimentionality 
-even more. 
-
-The barplot below shows the number of genes in each of the K-means 
-clusters. They are remarkably even in size.
-
-```{r metagenes, fig.width = 9, fig.height = 5}
-kmeta <- env$spot.list.kmeans$spots
-cluster.sizes <- sapply(kmeta, function(x) length(x$genes))
-barplot(cluster.sizes)
-```
+### Reverse Mediation {.tabset .tabset-fade .tabset-pills}
 
 
+It is possible that a feature that looks like a mediator
+is simply highly correlated with the haplotype in the
+same way as the trait, and that the apparent mediation is
+caused by the tight correlation between the haplotype and
+the transcript, and does not speak to a relationship between
+the transcript and the trait. 
 
-## Metagene Cluster Trends
+In other words, the genotype affects both the transcript 
+and the trait, but the transcript and the trait are not
+causally related.
 
-look at correlation matrices for clustered metagenes. Here we find all the 
-metagenes in a single cluster and decompose the cluster using SVD. We then
-use the first principle component of the metagene matrix as the clustered
-metagene. We calculated the correlation of each of these clustered metagenes
-to the clinical traits, and scanned each. 
+We can better investigate the relationship between the
+mediator and the trait by using partial correlation. 
+If we remove the effect of genotype on the transcript,
+the residual variance in the transcript should still 
+correlate with the trait. If it doesn't, we conclue 
+that the haplotype affects both transcript and trait 
+independently.
 
-The correlations with the traits are very comparable to WGCNA eigengene
-correlations with traits. The mapping is also par with mapping of other 
-gene modules. Maybe a little better.
+The following code checks residual trait correlations
+for all potential mediators.
 
-```{r metagene_clusters}
-kmeans <- env$spot.list.kmeans
-kmap <- kmeans$overview.map
-u_k <- sort(unique(as.vector(kmap)))
+If there is a big drop in LOD score at the position
+of the cluster QTL, AND the cluster is still correlated
+with the trait after accounting for genotype, then
+the cluster might be a mediator. 
 
-k.gene.cor <- matrix(NA, nrow = length(u_k), ncol = ncol(adj.pheno))
-rownames(k.gene.cor) <- names(kmeans$spots)
-colnames(k.gene.cor) <- colnames(adj.pheno)
+Do we remove the genotype from both the mediator and the 
+trait, or just the mediator?
 
-k.gene.mat <- matrix(NA, nrow = nrow(adj.pheno), ncol = length(u_k))
-colnames(k.gene.mat) <- names(kmeans$spots)
-rownames(k.gene.mat) <- rownames(adj.pheno)
+Vertical lines below show the position of peak LOD drop
+from the original mediation.
 
-common.ind <- intersect(rownames(adj.pheno), colnames(metagenes))
-pheno.locale <- match(common.ind, rownames(adj.pheno))
-metagene.locale <- match(common.ind, colnames(metagenes))
-expr.locale <- match(common.ind, rownames(adj.expr))
+```{r check_reverse, fig.width = 8, fig.height = 8, results = "asis"}
+cols <- categorical_pal(8)
+for(i in 1:ncol(mean.cluster.expr)){
+  cat("#### Cluster", i, "\n")
+  cluster.qtl <- scan1(genoprobs[,qtl.chr], mean.cluster.expr[,i])
 
-for(k in 1:length(u_k)){
-  #k.locale <- which(kmap == u_k[k])
-  #k.genes <- metagenes[k.locale,]
-  #k.gene <- plot.decomp(t(k.genes), plot.results = FALSE)$u[,1]
+  if(is.interactive){quartz(width = 8, height = 8)}
+  layout.mat <- matrix(c(1,1,2,3), nrow = 2, byrow = TRUE)
+  layout(layout.mat)
+  ymax <- max(c(cluster.qtl[,1], qtl_map[,1], cluster.med[,i]))  
+  plot(qtl_map, map = map, ylim = c(0, ymax))
+  plot(cluster.qtl, map = map, col = cols[3], main = paste("Cluster", i), add = TRUE)  
+  plot(cluster.med, map = map, lodcol = i, col = cols[1], add = TRUE)
+  legend("topleft", col = c("darkblue", cols[c(1,3)]), lty = 1, 
+    legend = c("Trait", "Mediated Trait", "Cluster"), lwd = 3)
 
-  k.genes <- kmeta[[k]]$genes
-  k.gene <- plot.decomp(adj.expr[,k.genes], plot.results = FALSE)$u[,1]
 
-  k.gene.mat[,k] <- k.gene
-  #k.cor <- apply(adj.pheno[pheno.locale,], 2, function(x) cor(x, k.gene[metagene.locale], use = "pairwise.complete.obs"))
-  k.cor <- apply(adj.pheno[pheno.locale,], 2, function(x) cor(x, k.gene[expr.locale], use = "pairwise.complete.obs"))
-  k.gene.cor[k,] <- k.cor
-}
+  #get the genotype at the LOD drop position
+  peak.table <- find_peaks(abs(qtl_map - cluster.med[,i,drop=FALSE]), map = map, 
+    threshold = lod.drop.thresh)
+  #peak.table <- find_peaks(cluster.qtl, map = map)
+  max.idx <- which.max(peak.table[,"lod"])
+  peak.marker <- map[[qtl.chr]][get.nearest.pt(map[[qtl.chr]], peak.table[max.idx,"pos"])]
+  peak.geno <- genoprobs[[qtl.chr]][,,names(peak.marker)]
+  abline(v = peak.table[,"pos"])
 
-pheatmap(k.gene.cor, display_numbers = TRUE)
-```
+  plot.with.model(mean.cluster.expr[,i], adj.pheno[,trait.name], 
+    xlab = paste("Cluster", i), ylab = trait.name, 
+    main = paste("Cluster", i, "vs.", trait.name))
 
-The following code runs genetic mapping on metagenes. I tried 
-mapping the metagenes directly and got very strange mapping.
-So instead I am mapping the first principle compoenent of the 
-expression matrix defined by the metagene clusters.
-
-```{r kgene_scan, fig.width = 12, fig.height = 6}
-metagene.scan.file <- here("Results", "SOM", paste0("Metagene.Scan.", tissue.name, ".RDS"))
-
-if(!file.exists(metagene.scan.file)){
-  k.gene.scan <- scan1(genoprobs, k.gene.mat)
-  saveRDS(k.gene.scan, metagene.scan.file)
-}else{
-  k.gene.scan <- readRDS(metagene.scan.file)
-}
-
-par(xpd = NA)
-multilod.plot(k.gene.scan, map = map, lod.thresh = 4, row.names = colnames(k.gene.scan))
-par(xpd = TRUE)
-```
-
-## LOD traces for clustered metagenes {.tabset .tabset-fade .tabset-pills}
-
-The following plots show the LOD trace for each metagene along with its
-cis-trans eQTL plot to help show where the metagene QTLs might be coming
-from.
-
-```{r eqtl_fun}
-#get a table with eQTL chromosome, position,
-#and lod score.
-get_eqtl_table <- function(gene.ids){
-    gene.locale <- match(gene.ids, lod.table[[1]])
-    gene.locale <- gene.locale[which(!is.na(gene.locale))]
-    sub.table <- as.matrix(lod.table[gene.locale,])
-    split.qtl.pos <- strsplit(sub.table[,2], "_")
-    qtl.chr <- sapply(split.qtl.pos, function(x) x[1])
-    qtl.pos <- as.numeric(sapply(split.qtl.pos, function(x) x[2]))/1e6
-    final.table <- cbind(sub.table[,1], qtl.chr, qtl.pos)
-    return(final.table)
-}
-
-#get a table with transcript chromosome and
-#position
-get_transcript_table <- function(gene.ids){
-    trans.locale <- match(gene.ids, gene.info[[1]])
-    sub.table <- as.matrix(gene.info[trans.locale,])
-    final.table <- sub.table[,c(1,4,5)]
-    return(final.table)
-}
-```
-
-```{r plot_ind, fig.width = 12, fig.height = 8, results = "asis"}
-lod.table <- expr.data$lod$additive
-gene.info <- expr.data$annot.mrna
-
-all.marker.chr <- unlist(sapply(1:length(map), function(x) rep(names(map)[x], length(map[[x]]))))
-all.marker.pos <- as.numeric(unlist(map))
-rel.marker.pos <- get_relative_genomic_position(all.marker.chr, all.marker.pos, map)
-chr.col <- rep("darkgray", length(all.marker.chr))
-chr.col[which(as.numeric(all.marker.chr) %% 2 == 1)] <- "#1f78b4"
-
-layout.mat <- matrix(c(1,2), ncol = 1)
-
-for(i in 1:ncol(k.gene.scan)){
-  if(is.interactive){quartz(width = 10, height = 6)}
-  cat("###", colnames(k.gene.scan)[i], "\n")
-  layout(layout.mat, heights = c(0.5, 1))
-
-  par(mar = c(0,2,2,2))
-  #plot(k.gene.scan, map = map, lodcol = i)
-  #quartz()
-  plot(rel.marker.pos, k.gene.scan[,i], col = chr.col, type = "h", 
-    axes = FALSE, ylab = "LOD Score")
-  axis(2);abline(h = 6)
-
-  cluster.genes <- kmeta[[i]]$genes
-  #mod.eig <- plot.decomp(adj.expr[,cluster.genes], plot.results = FALSE)$u[,1,drop=FALSE]
-  #rownames(mod.eig) <- rownames(adj.pheno)
-  #eig.scan <- scan1(genoprobs, mod.eig)
-  #plot(rel.marker.pos, eig.scan[,1], col = chr.col, type = "h", 
-  #  axes = FALSE, ylab = "LOD Score")
-  #axis(2);abline(h = 6)
- 
-  eqtl.table <- get_eqtl_table(cluster.genes)
-  transcript.pos.table <- get_transcript_table(cluster.genes)
-  lod.col <- colors.from.values(sqrt(as.numeric(eqtl.table[,3])), 
-  col.scale = "blue", light.dark = "d")
-  par(mar = c(2,2,0,2))
-  plot.cistrans.table(eqtl.table, transcript.pos.table, map = map,
-    add = FALSE, cex = 0.5, col = lod.col, label.cex = 0.7)  
-  
-  mtext(side = 3, outer = TRUE, text = paste("Metagene", colnames(k.gene.scan)[i]),
-  line = -2.5)
+  #adjust the mediator for the genotype
+  adj.med <- adjust(mean.cluster.expr[,i,drop=FALSE], peak.geno, retain.intercept = FALSE)
+  adj.trait <- adjust(adj.pheno[,trait.name,drop=FALSE], peak.geno, retain.intercept = FALSE)
+  #plot.with.model(adj.med, adj.pheno[,trait.name], xlab = paste("Cluster", i, "Adjusted"),
+  #  ylab = trait.name, main = paste("Cluster", i, "Adjusted for Haplotpye"))
+  plot.with.model(adj.med, adj.trait, xlab = paste("Cluster", i, "Adjusted"),
+    ylab = paste(trait.name, "Adjusted"), 
+    main = paste("Cluster", i, "vs.", trait.name, "Adjusted for Haplotpye"))
   cat("\n\n")
+
 }
-```
 
-## Peak Allele Effects {.tabset .tabset-fade .tabset-pills}
-
-```{r scan_allele_effects}
-metagene.peak.scan.file <- here("Results", "SOM", 
-  paste0("Metagene.LOD.Scores.", tissue.name, ".RDS"))
-metagene.peak.allele.file <- here("Results", "SOM", 
-  paste0("Metagene.Allele.Effects.", tissue.name, ".RDS"))
-
-peak.table <- find_peaks(k.gene.scan, map = map, threshold = 6)
-
-if(!file.exists(metagene.peak.scan.file)){
-  metagene.peak.lod.scans <- metagene.peak.allele.scans <- vector(mode = "list", length = nrow(peak.table))
-  scan.names <- apply(peak.table, 1, function(x) paste0(x[2], "_Chr", str_trim(x[3])))
-  for(i in 1:nrow(peak.table)){
-    peak.chr <- as.vector(peak.table[i,"chr"])
-    if(peak.chr != "X"){
-      peak.pos <- as.numeric(peak.table[i,"pos"])
-      peak.trait <- peak.table[i,"lodcolumn"]
-      chr.locale <- which(names(map) == peak.chr)
-      lod.scan <- scan1(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
-      metagene.peak.lod.scans[[i]] <- lod.scan
-      coef.scan <- scan1coef(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
-      #coef.scan <- scan1blup(genoprobs[,chr.locale], k.gene.mat[,peak.trait])
-      metagene.peak.allele.scans[[i]] <- coef.scan
-    }
-  }
-  saveRDS(metagene.peak.allele.scans, metagene.peak.allele.file)
-  saveRDS(metagene.peak.lod.scans, metagene.peak.scan.file)
-}else{
-  metagene.peak.allele.scans <- readRDS(metagene.peak.allele.file)
-  metagene.peak.lod.scans <- readRDS(metagene.peak.scan.file)
-}
-```
-
-```{r plot_scans, results = "asis", fig.height = 8, fig.widdth = 12}
-for(i in 1:length(metagene.peak.lod.scans)){
-  peak.chr <- peak.table[i,"chr"]
-  peak.pos <- as.numeric(peak.table[i,"pos"])
-  if(peak.chr != "X"){
-    cat("###", peak.table[i,"lodcolumn"], "Chr", peak.chr, "\n")
-    par(mfrow = c(2,1), mar = c(2,2,2,2))
-    plot(metagene.peak.lod.scans[[i]], map = map);abline(v = peak.pos)
-    plot_coefCC(metagene.peak.allele.scans[[i]], map = map)
-    abline(v = peak.pos)
-    cat("\n\n")
-  }
-}
 ```
 
 
-```{r cluster_analysis, eval = FALSE}
-cluster.name = "L"
-p.thresh <- 20
-cluster.locale <- which(names(kmeta) == cluster.name)
-cluster.enrich <- kmeta[[cluster.locale]]$Fisher.p
-log.p <- -log10(cluster.enrich)
-par(mar = c(4, 18, 2, 2))
-barplot(sort(log.p[which(log.p > p.thresh)]), horiz = TRUE, las = 2, xlab = "-log10(p)",
-main = paste("Metagene", cluster.name))
+```{r slfn3_muscle, eval = FALSE}
+gene.id <- "ENSMUSG00000018986"; #Slfn3
+gene.idx <- which(colnames(adj.expr) == gene.id)
+eqtl <- scan1(genoprobs[,qtl.chr], adj.expr[,gene.idx])
+plot(eqtl, map = map)
 
-cl.names <- lapply(kmeta, function(x) tail(sort(-log10(x$Fisher.p)), 1))
+#Slfn3 has an eQTL that matches the trait QTL on Chr11
+#It mediates the QTL, but does that mean it's related 
+#to the trait, or just the QTL?
 
-barplot(unlist(cl.names), las = 2, horiz = TRUE)
-```
+eqtl.coef <- scan1coef(genoprobs[,qtl.chr], adj.expr[,gene.idx])
+plot_coefCC(eqtl.coef, map = map)
 
-## Cluster Enrichments {.tabset .tabset-fade .tabset-pills}
+plot.with.model(adj.expr[,gene.idx], adj.pheno[,trait.name], report = "cor.test")
 
-The following plots show the locations and top associated biological
-processes of each metagene.
-
-```{r cluster_enrichments, results = "asis", fig.width = 10, fig.height = 6}
-layout.matrix <- matrix(c(1,2,0,2), byrow = TRUE, ncol = 2)
-for(k in 1:length(kmeta)){
-  cat("### Cluster", names(kmeta)[k], "\n")
-  if(is.interactive){quartz(width = 10, height = 6)}
-  layout(layout.matrix, widths = c(0.7, 1), heights = c(1,0.5))
-  par(mar = c(0,2,2,0))
-  plot_portrait(kmeta[[k]]$mask, rotate = 3)
-  enrich <- sort(-log10(kmeta[[k]]$Fisher.p))
-  top.enrich <- tail(enrich, 20)
-  par(mar = c(4, 18, 4, 4))
-  barplot(top.enrich, horiz = TRUE, las = 2, main = paste("Metagene", names(kmeta)[k]))
-  cat("\n\n")
+for(i in 1:length(test.genes)){
+  adj.trans <- adjust(adj.expr[,test.genes[i],drop=FALSE], peak.geno)
+  plot.with.model(adj.trans, adj.pheno[,trait.name])
 }
+
 ```
