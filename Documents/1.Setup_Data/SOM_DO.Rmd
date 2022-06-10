@@ -271,11 +271,12 @@ som.result.file1 <- here("Documents", "1.Setup_Data", paste0("DO_", tissue.name,
 som.result.file2 <- here("Results", "SOM", paste0("DO_", tissue.name, ".RData"))
 
 if(delete_previous){
-  unlink(som.result.file)
+  unlink(som.result.file1)
+  unlink(som.result.file2)
 }
 
 if(!file.exists(som.result.file1) && !file.exists(som.result.file2)){
-  exp.name <- gsub(".RData", "", basename(som.result.file))
+  exp.name <- gsub(".RData", "", basename(som.result.file1))
   env <- opossom.new(list(dataset.name = exp.name))
   env$indata <- t(adj.expr)
   env$group.labels <- group.labels
