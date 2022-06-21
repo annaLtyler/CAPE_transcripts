@@ -220,6 +220,8 @@ for(i in 2:ncol(adj.pheno)){
 #quick test of expression differences by group using a t test.
 #we expect most of these to be in the QTL that we picked, but
 #hopefully there are some others too that are interesting.
+diff.genes <- read.csv(here("Results", "SOM", "DO_Adipose - Results", "Summary Sheets - Differences", "CSV Sheets", "Gene Lists - Global", "down.vs.up.csv"), skip = 17)
+
 
 test <- apply(adj.expr, 2, function(x) t.test(x~as.factor(group.labels)))
 all.p <- sapply(test, function(x) x$p.value)
@@ -666,23 +668,45 @@ for(i in 1:ncol(mean.cluster.expr)){
 
 
 ```{r slfn3_muscle, eval = FALSE}
-gene.id <- "ENSMUSG00000018986"; #Slfn3
-gene.idx <- which(colnames(adj.expr) == gene.id)
-eqtl <- scan1(genoprobs[,qtl.chr], adj.expr[,gene.idx])
+gene.id <- "ENSMUSG00000018986"; test.chr = 11; lod.thresh = 6; trait.name = "Ins_tAUC" #Slfn3 in SkeletalMuscl
+gene.id <- "ENSMUSG00000031101"; test.chr <- "X"; lod.thresh = 4; trait.name = "weight_10wk" #Sash3 in Adipose
+
+trait_qtl <- scan1(genoprobs[,test.chr], adj.pheno[,trait.name])
+plot(trait_qtl, map = map)
+
+peak.trait.geno <- find_peaks(trait_qtl, map = map, threshold = lod.thresh)
+peak.marker.idx <- get.nearest.pt(map[[test.chr]], peak.trait.geno[1,"pos"])
+peak.geno <- genoprobs[[test.chr]][,,peak.marker.idx]
+
+eqtl <- scan1(genoprobs[,test.chr], adj.expr[,gene.id])
 plot(eqtl, map = map)
 
 #Slfn3 has an eQTL that matches the trait QTL on Chr11
 #It mediates the QTL, but does that mean it's related 
 #to the trait, or just the QTL?
 
-eqtl.coef <- scan1coef(genoprobs[,qtl.chr], adj.expr[,gene.idx])
-plot_coefCC(eqtl.coef, map = map)
+#eqtl.coef <- scan1coef(genoprobs[,test.chr], adj.expr[,gene.id])
+#plot_coefCC(eqtl.coef, map = map)
 
-plot.with.model(adj.expr[,gene.idx], adj.pheno[,trait.name], report = "cor.test")
+#check the forward mediation
+step.three.scan <- scan1(genoprobs[,test.chr], adj.pheno[,trait.name], addcovar = adj.expr[,gene.id])
+plot(trait_qtl, map = map)
+plot(step.three.scan, map = map, col = "red", add = TRUE)
 
-for(i in 1:length(test.genes)){
-  adj.trans <- adjust(adj.expr[,test.genes[i],drop=FALSE], peak.geno)
-  plot.with.model(adj.trans, adj.pheno[,trait.name])
-}
+
+step.four.scan <- scan1(genoprobs[,test.chr], adj.expr[,gene.id], addcovar = adj.pheno[,trait.name])
+plot(eqtl, map = map)
+plot(step.four.scan, map = map, col = "red", add = TRUE)
+
+#adjust both trait and transcript for haplotype
+marker.adj.trans <- adjust(adj.expr[,gene.id,drop=FALSE], peak.geno)
+marker.adj.trait <- adjust(adj.pheno[,trait.name,drop=FALSE], peak.geno)
+
+par(mfrow = c(1,2))
+plot.with.model(adj.expr[,gene.id], adj.pheno[,trait.name], report = "cor.test",
+  xlab = gene.id, ylab = trait.name, main = "Unadjusted")
+plot.with.model(marker.adj.trans, marker.adj.trait, report = "cor.test",
+  xlab = gene.id, ylab = trait.name, main = "Adjusted")
+
 
 ```

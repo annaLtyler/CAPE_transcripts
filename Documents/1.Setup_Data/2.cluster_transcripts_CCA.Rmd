@@ -24,8 +24,8 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    #exp.name <- "imputed"
-    exp.name = "all_traits"
+    exp.name <- "imputed"
+    #exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE
     delete_previous <- FALSE
@@ -104,7 +104,6 @@ full transcript matrix.
 I was expecting separation by tissue, but they all overlap each other. 
 
 ```{r transcript_overlap}
-
 n.expr.pc = n.trait.pc = 5
 
 transcript.list <- lapply(tissue.adj.expr, colnames)
@@ -178,7 +177,7 @@ par(mfrow = c(n.expr.pc,n.trait.pc), mar = c(3,3,3,3))
 for(i in 1:n.expr.pc){
     for(j in 1:n.trait.pc){
     result <- plot.with.model(expr.decomp$u[expr.locale,i], trait.decomp$u[trait.locale,j], 
-    xlab = paste("Expression PC", i), ylab = paste("Trait PC", j))
+    xlab = paste("Expression PC", i), ylab = paste("Trait PC", j), report = "cor.test")
     overall.cor.mat[i,j] <- result[1]
     }
 }
@@ -236,7 +235,7 @@ as a heat map. This makes the magnitude of the correlations easier to
 compare.
 
 ```{r pc_cor_heat, results = "asis"}
-global.max <- max(sapply(tissue.pc.cor.mats, function(x) max(abs(x))))
+global.max <- max(c(sapply(tissue.pc.cor.mats, function(x) max(abs(x))), max(overall.cor.mat)))
 global.min <- 0
 
 #pdf(paste0("~/Desktop/PC_cor.pdf"), width = 4, height = 4)
@@ -422,8 +421,8 @@ We want to use a LASSO penalty to sparsify the transcriptome in each
 tissue for ease of interpretation.
 
 ```{r tissue_xz}
-for(i in 1:length(group))
-plot_portrait(mean.vals)
+matched.mats <- lapply(1:length(tissue.adj.expr), 
+    function(x) get.xz(tissue.adj.expr[[x]], cca.pheno))
 file.text <- "trait"
 names(matched.mats) <- tissue.names
 #saveRDS(matched.mats, file.path(results.dir, "Trait.Expression.Matched.RDS"))

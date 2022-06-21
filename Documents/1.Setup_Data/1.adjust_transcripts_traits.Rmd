@@ -168,6 +168,14 @@ if(exp.name == "imputed"){
     imp.expr.files <- get.files(here("Data", "imputed"), want = "RDS", 
         dont.want = "adjusted", full.names = TRUE)
     tissue.norm <- lapply(imp.expr.files, readRDS)
+
+    #add animal names from original expression data
+    for(i in 1:length(tissue.norm)){
+        tissue.name <- strsplit(basename(imp.expr.files[[i]]), "_")[[1]][2]
+        expr.data <- get(paste0("dataset.DO.Cube.", tissue.name))
+        rownames(tissue.norm[[i]]) <- rownames(expr.data$data$rz)
+    }
+
 }else{
     adj.expr.file <- here("Data", "Adjusted_Expression.RDS")
 }
