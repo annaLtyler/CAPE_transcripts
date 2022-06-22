@@ -1017,10 +1017,11 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
             cat("\n\n")
 
             cat("#### Trait Network\n")
-            layout(matrix(c(1,1,2,0), ncol = 2, byrow = FALSE), widths = c(1, 0.2))
+            layout(matrix(c(1,1,2,0), ncol = 2, byrow = FALSE), widths = c(1, 0.3))
             plot(trait_graph, edge.color = e.col, layout = layout_nicely, 
             main = "Trait Relatedness By Associated Transcripts", 
             edge.width = E(trait_graph)$weight*3)
+            par(mar = c(0,0,1,1))
             imageWithTextColorbar(matrix(E(trait_graph)$weight*edge_sign, ncol = 1), 
                 use.pheatmap.colors = TRUE, cex = 1)
             cat("\n\n")
@@ -1038,15 +1039,10 @@ describe_results <- function(tissue.mats, tissue.results, filename = NULL){
 
 ```{r plot_agg, results = "asis"}
 for(i in 1:length(tissue.names)){
-    cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
-    if(is.interactive){
-        filename = file.path(results.dir, paste0("Boot.Results.", tissue.names[i], ".pdf"))
-        }else{
-        filename = NULL
-        }
+    #cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
+    filename = file.path(results.dir, paste0("Boot.Results.", tissue.names[i], ".pdf"))
     describe_results(tissue.mats = matched.mats[[i]], tissue.results = boot.CCA.results[[i]], 
     filename = filename)
-    cat("\n\n")
 }
 ```
 
