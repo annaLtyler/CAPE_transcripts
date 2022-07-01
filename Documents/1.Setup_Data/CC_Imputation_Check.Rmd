@@ -461,9 +461,15 @@ if(!file.exists(do.cc.cor.file)){
 }
 
 hist(all.do.coef.cor[,1], breaks = 100, 
-    main = "Spearman Rank Correlation between\nDO and CC-RIX Allele Effects",
+    main = "Without Kinship",
     xlab = "Spearman Rank Correlation")
 abline(v = median(all.do.coef.cor[,1], na.rm = TRUE), col = "red")
+
+hist(all.do.coef.cor.kin[,1], breaks = 100, 
+    main = "With Kinship",
+    xlab = "Spearman Rank Correlation")
+abline(v = median(all.do.coef.cor.kin[,1], na.rm = TRUE), col = "red")
+
 ```
 
 
@@ -486,7 +492,14 @@ coefficients is not related to the number of trans eQTL in the DO.
 
 plot.with.model(all.do.coef.cor[,1], all.do.coef.cor[,2], report = "cor.test", 
     ylab = "Number of Trans eQTL",
-    xlab = "Correlation between DO coefficients and CC coefficients")
+    xlab = "Correlation between DO coefficients and CC coefficients",
+    main = "without kinship")
+
+plot.with.model(all.do.coef.cor.kin[,1], all.do.coef.cor.kin[,2], report = "cor.test", 
+    ylab = "Number of Trans eQTL",
+    xlab = "Correlation between DO coefficients and CC coefficients",
+    main = "with kinship")
+
 
 #high.cor <- which(all.do.coef.cor[,1] > 0.9)
 #plot_do_cc_coef(names(high.cor)[6], plot.results = TRUE)

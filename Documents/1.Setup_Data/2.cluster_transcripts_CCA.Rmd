@@ -2118,7 +2118,7 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
 
 ```
 
-```{r plot_all, results = "asis", fig.width = 12, fig.height = 9}
+```{r plot_all}
 for(i in 1:length(tissue.names)){
     pdf(file.path(results.dir, paste0("All.together.", tissue.names[i], ".pdf")), width = 12, height = 7)
     tissue.gene.list <- get_transcript_list(tissue.mats = matched.mats[[i]], 
@@ -2636,10 +2636,76 @@ plot(adj.scan, map = map, add = TRUE, col = "red")
 #way. The effect it weak but consistent.
 ```
 
+## Loading by LOD {.tabset .tabset-fade .tabset-pills}
 
-```{r eqtl, eval = FALSE}
-tissue.eqtl <- get(paste0("dataset.DO.Cube.", tissue.name))$lod.peaks$additive
+The following plots show imputed transcript loadings plotted
+agains their eQTL LOD score in the DO. 
 
+```{r eqtl, results = "asis"}
+get_cis_lod <- function(transcript.id, eqtl.table, marker.chr, marker.pos, 
+    bp.buffer = 4e6){
+
+    trans.idx <- which(gene.table[,1] == transcript.id)[1]
+    trans.chr <- gene.table[trans.idx,"chr"]
+    trans.start <- as.numeric(gene.table[trans.idx,"start"])
+    trans.end <- as.numeric(gene.table[trans.idx,"end"])
+    id.locale <- which(eqtl.table[,1] == transcript.id)
+    on.chr <- which(marker.chr == trans.chr)
+    above.min <- which(marker.pos >= (trans.start*1e6-bp.buffer))
+    below.max <- which(marker.pos <= (trans.end*1e6+bp.buffer))
+    cis.locale <- Reduce("intersect", list(id.locale, on.chr, above.min, below.max))
+    if(length(cis.locale) == 1){
+        cis.lod <- unlist(eqtl.table[cis.locale,"lod"])
+    }else{
+        cis.lod <- NA
+    }
+    return(cis.lod)
+}
+
+cis.lod.file <- here("Results", "CCA_clusters", "imputed", "cis.lod.scores.RDS")
+if(!file.exists(cis.lod.file)){
+    all.cis.lod <- vector(mode = "list", length = length(matched.mats))
+    names(all.cis.lod) <- names(matched.mats)
+    for(tx in 1:length(matched.mats)){
+        tissue.eqtl <- get(paste0("dataset.DO.Cube.", tissue.name))$lod.peaks$additive
+        split.lod.markers <- strsplit(unlist(tissue.eqtl[,"marker.id"]), "_")
+        lod.marker.chr <- sapply(split.lod.markers, function(x) x[1])
+        lod.marker.pos <- as.numeric(sapply(split.lod.markers, function(x) x[2]))
+        all.cis.lod[[tx]] <- sapply(colnames(matched.mats[[tx]]$X), 
+            function(x) get_cis_lod(x, eqtl.table = tissue.eqtl, 
+            marker.chr = lod.marker.chr, 
+            marker.pos = lod.marker.pos, bp.buffer = 4e6))
+    }
+    saveRDS(all.cis.lod, cis.lod.file)
+}else{
+    all.cis.lod  <- readRDS(cis.lod.file)
+}
+
+#plot the cis lod score for each transcript against its imputed transcript loading
+for(tx in 1:length(matched.mats)){
+    cat("###", names(matched.mats)[tx], "{.tabset .tabset-fade .tabset-pills}\n")
+    lod.scores <- all.cis.lod[[tx]]
+    lod.scores[which(is.na(lod.scores))] <- 6
+    transcript.loadings <- boot.CCA.results[[tx]]$u
+    for(ct in 1:ncol(transcript.loadings)){
+        non.zero.idx <- which(transcript.loadings[,ct] != 0)
+        if(length(non.zero.idx) > 0){
+            cat("#### CT", ct, "\n")
+            plot(lod.scores[non.zero.idx], transcript.loadings[non.zero.idx,ct], 
+            xlab = "LOD Score", ylab = "Transcript CCA Loading", main = paste("CT", ct))
+            abline(h = 0)
+            gene.names <- gene.table[match(colnames(matched.mats[[tx]]$X)[non.zero.idx], gene.table[,1]),"symbol"]
+            text(x = lod.scores[non.zero.idx], y = transcript.loadings[non.zero.idx,ct],
+            labels = gene.names, pos = 3, cex = 0.7, offset = 0.2)
+            cat("\n\n")
+        }
+    cat("\n\n")
+    }
+    #mtext(names(matched.mats)[tx], side = 3, outer = TRUE, line = -1.5)
+}
+```
+    
+```{r, eval = FALSE}
 eqtl.pos <- strsplit(tissue.eqtl[[2]], "_")
 chr.locale <- which(sapply(eqtl.pos, function(x) x[1]) == Chr)
 mb.locale <- intersect(which(as.numeric(sapply(eqtl.pos, function(x) x[2])) >=  40e6),
@@ -2679,59 +2745,3 @@ look for any eQTL in the region, cis or trans
     length(overlap) genes of these are in the composite transcript
     none of these have very strong LOD scores the max is 8-something.
 
-## Heritability 
-
-```{r herit, eval = FALSE}
-
-overall.kin.file <- here("Data", "overall.kinship.RDS")
-if(!file.exists(overall.kin.file)){
-    overall.kin <- calc_kinship(genoprobs, "overall")
-    saveRDS(overall.kin, overall.kin.file)
-}else{
-    overall.kin <- readRDS(overall.kin.file)
-}
-
-chr.kin <- calc_kinship(genoprobs, type = "chr")
-
-#start selection over again
-#tissue.name <- "Islet"
-tissue.name <- "Adipose"
-
-
-#get data for specified tissue
-tissue.locale <- which(tissue.names == tissue.name)
-trait.trans <- get_latent_var(tissue.mats = matched.mats[[tissue.locale]], 
-    tissue.results = boot.CCA.results[[tissue.locale]])
-
-
-trait.herit <- apply(trait.trans$Composite_Traits, 2, function(x) est_herit(x, overall.kin))
-barplot_with_num(round(trait.herit, 2), las = 2)
-
-trans.herit <- apply(trait.trans$Composite_Transcripts, 2, function(x) est_herit(x, overall.kin))
-barplot_with_num(round(trans.herit, 2), las = 2)
-
-all.transcript.herit.file <- file.path(results.dir, "all.transcript.heritability.RDS")
-if(!file.exists(all.transcript.herit.file)){
-    all.transcript.herit <- apply(matched.mats[[tissue.locale]]$X[,1:100], 2, function(x) est_herit(x, overall.kin))
-    saveRDS(all.transcript.herit, all.transcript.herit.file)
-}else{
-    all.transcript.herit <- readRDS(all.transcript.herit.file)
-}
-
-all.transcript.herit[which(all.transcript.herit < 0.1)]
-
-test.trans <- "ENSMUSG00000000134" #low heritability
-#test.trans <- "ENSMUSG00000000579" #high heritability
-
-test.scan <- scan1(genoprobs, matched.mats[[tissue.locale]]$X[,test.trans,drop=FALSE])
-multi.herit <- sapply(chr.kin, function(x) est_herit(matched.mats[[tissue.locale]]$X[,test.trans,drop=FALSE], x)[[1]])
-overall.herit <- est_herit(matched.mats[[tissue.locale]]$X[,test.trans,drop=FALSE], overall.kin)
-
-par(mfrow = c(2,1))
-plot(test.scan, map = map)
-barplot(multi.herit, ylim = c(0, max(c(multi.herit, overall.herit))))
-abline(h = overall.herit[[1]])
-
-pheno <- matched.mats[[tissue.locale]]$X[,test.trans,drop=FALSE]
-
-```
