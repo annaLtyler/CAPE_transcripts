@@ -13,7 +13,13 @@ output:
 ## Introduction
 
 ```{r get_args}
-tissue.name <- "Adipose"
+args <- commandArgs(trailingOnly = T)
+tissue.name <- args[1]
+
+if(is.na(tissue.name)){
+    tissue.name <- "Adipose"
+}
+
 is.interactive <- FALSE
 #is.interactive <- TRUE
 ```
