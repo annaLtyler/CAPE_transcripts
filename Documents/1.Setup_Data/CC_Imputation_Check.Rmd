@@ -1,0 +1,554 @@
+---
+title: "CC-RIX Transcript Imputation Check"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+
+```{r get_args}
+tissue.name <- "Adipose"
+is.interactive <- FALSE
+#is.interactive <- TRUE
+```
+
+The purpose of this workflow is to compare `r tissue.name` transcripts 
+imputed in the CC to the measured `r tissue.name` transcripts.
+
+
+```{r source_code}
+library("here")
+
+all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
+for(j in 1:length(all.fun)){source(all.fun[j])}
+```
+
+
+```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
+needed.packages <- c("pheatmap", "knitr", "qtl2")
+load_libraries(needed.packages, personal.library = TRUE)
+```
+
+Read in measured CC-RIX gene expression.
+
+```{r read_data}
+all.var <- ls()
+data.loaded <- as.logical(length(which(all.var == "dataset.DO.Cube.Liver")))
+cc.dir <- here("Data", "CC-RIX")
+
+if(!data.loaded){
+    annot <- read.csv(file.path(cc.dir, "final_sample_annotations.csv"))
+    tissue.expr <- readRDS(file.path(cc.dir, "Expression.by.Tissue.RDS"))
+    manifest <- as.matrix(read.csv(file.path(cc.dir, "Original_Samples_Manifest.csv")))
+    covar <- as.matrix(read.csv(file.path(cc.dir, "Covar.csv"), row.names = 1))
+    groups <- read.csv(file.path(cc.dir, "Groups.csv"), row.names = 1)
+    group.def <- colnames(groups)
+    load(here("Data", "dataset.DO.CUBE.multissue.RData")) #DO data for eQTL LOD scores
+}
+```
+
+Adjust measured expression for all covariates: RNASeq_Batch, Age, 
+Sex, Diet, and Treatment.
+
+```{r adjust}
+tissue.locale <- grep(tissue.name, names(tissue.expr), ignore.case = TRUE)
+
+orsam.id <- names(rownames(tissue.expr[[tissue.locale]]))
+orsam.idx <- match(orsam.id, rownames(covar))
+
+tissue.info <- unique(t(sapply(rownames(tissue.expr[[tissue.locale]]), 
+  function(x) get_mouse_info(x, manifest, "Barcode.1"))))
+
+group.mat <- tissue.info[,group.def]
+rnaseq.covar <- dummy_covar(covar[orsam.idx,c("Age", "RNAseq_Batch", colnames(group.mat))])
+rownames(rnaseq.covar) <- tissue.info[,1]
+cc.expr <- tissue.expr[[tissue.locale]]
+#adj.cc.expr <- adjust(cc, rnaseq.covar)
+#adj.do.expr <- do.adj.expr <- adjust(do.expr$data$rz, do.expr$covar.matrix)
+```
+
+Read in imputed CC-RIX gene expression.
+
+```{r load_imputed}
+imp.expr <- readRDS(here("Data", "imputed", 
+    paste0("CC-RIX_", tissue.name, "_imputed_transcriptome_local.RDS")))
+```
+
+Group the true expression based on the CC-RIX cross.
+
+```{r group_expr}
+cross.id <- tissue.info[,"User.Defined.Strain"]
+u_cross <- unique(cross.id)
+cross.idx <- lapply(u_cross, function(x) which(cross.id == x))
+cross_expr <- lapply(cross.idx, function(x) cc.expr[x,])
+mean.cross.expr <- t(sapply(cross_expr, colMeans))
+rownames(mean.cross.expr) <- u_cross
+```
+
+For each of these crosses pull out the imputed autosomal 
+gene expression for comparison.
+
+```{r imp_expr_by_strain}
+split.cross <- strsplit(u_cross, " ")
+mom <- sapply(split.cross, function(x) x[1])
+dad <- sapply(split.cross, function(x) x[3])
+
+#str(imp.expr)
+
+mom.idx <- sapply(mom, function(x) grep(x, rownames(imp.expr[[1]])))
+dad.idx <- sapply(dad, function(x) grep(x, colnames(imp.expr[[1]])))
+
+#cbind(mom, rownames(imp.expr[[1]])[mom.idx])
+#cbind(dad, colnames(imp.expr[[1]])[dad.idx])
+
+imp.auto.expr <- t(sapply(1:length(mom.idx), function(x) imp.expr[[1]][mom.idx[x], dad.idx[x],]))
+rownames(imp.auto.expr) <- u_cross
+```
+
+Compare expression between the two data sets. The following 
+histogram shows the distribution of correlations between
+imputed gene expression and measured gene expression.
+
+```{r match_transcripts}
+common.transcripts <- intersect(colnames(mean.cross.expr), colnames(imp.auto.expr))
+all.cor <- sapply(common.transcripts, function(x) cor(mean.cross.expr[,x], imp.auto.expr[,x]))
+mean.cor <- mean(all.cor, na.rm = TRUE)
+hist(all.cor, breaks = 100);abline(v = mean.cor, col = "red")
+```
+
+The following plot shows the correlation between the local additive 
+eQTL LOD score for each transcript in the DOs and the correlation 
+between the imputed and the actual gene expression.
+
+```{r lod}
+do.expr <- get(paste0("dataset.DO.Cube.", tissue.name))
+expr.annot <- do.expr$annot.mrna
+expr.lod <- do.expr$lod.peaks
+split.lod.markers <- strsplit(expr.lod$additive[,"marker.id"], "_")
+lod.marker.chr <- sapply(split.lod.markers, function(x) x[1])
+lod.marker.pos <- as.numeric(sapply(split.lod.markers, function(x) x[2]))
+bp.buffer <- 4e6 #cis is anything within 4 Mb of the nearest marker
+
+cis.lod <- rep(NA, length(common.transcripts))
+names(cis.lod) <- common.transcripts
+for(i in 1:length(common.transcripts)){
+    if(is.interactive){report.progress(i, length(common.transcripts))}
+    trans.id <- common.transcripts[i]
+    trans.idx <- which(expr.annot[,1] == trans.id)
+    trans.chr <- expr.annot[trans.idx,"chr"]
+    trans.start <- expr.annot[trans.idx,"start"]
+    trans.end <- expr.annot[trans.idx,"end"]
+    id.locale <- which(expr.lod$additive[,1] == trans.id)
+    on.chr <- which(lod.marker.chr == trans.chr)
+    above.min <- which(lod.marker.pos >= (trans.start*1e6-bp.buffer))
+    below.max <- which(lod.marker.pos <= (trans.end*1e6+bp.buffer))
+    cis.locale <- Reduce("intersect", list(id.locale, on.chr, above.min, below.max))
+    if(length(cis.locale) == 1){
+        cis.lod[i] <- expr.lod$additive[cis.locale,"lod"]
+    }
+    if(length(cis.locale) > 1){stop}
+}
+
+plot.with.model(cis.lod, all.cor, xlab = "Local LOD Score", 
+    ylab = "Correlation between imputed and measured")
+```
+
+```{r var}
+#This code spot checks genes to compare within-strain variance
+#and between-strain variance across the CC with the imputed 
+#values and local LOD scores.
+
+plot_cc_v_imp <- function(transcript.id){
+
+    test.expr <- lapply(cross_expr, function(x) x[,transcript.id])
+    mean.test <- sapply(test.expr, mean)
+
+    mean.order <- order(mean.test)
+    layout.mat <- matrix(c(1,2,3,0,4,0), byrow = FALSE, ncol = 2)
+    
+    layout(layout.mat, widths = c(1, 0.3))
+    par(mar = c(0, 4, 2, 4))
+    local.lod <- round(cis.lod[transcript.id])
+    if(is.na(local.lod)){local.lod <- "< 6"}
+    barplot(imp.auto.expr[mean.order,transcript.id], las = 2, 
+        main = paste0(transcript.id, ", LOD:" , local.lod),
+        axes = FALSE, names = NA)
+    mtext("Imputed Expression", side = 2, line = 2.5)
+    axis(2)
+    par(mar = c(0,4,0,4))
+    boxplot(test.expr[mean.order], names = u_cross[mean.order], las = 2, axes = FALSE)
+    mtext("Measured Expression", side = 2, line = 2.5)
+    axis(2)
+    plot.dim <- par("usr")
+    par(mar = c(0,4,0,4))
+    plot.new()
+    plot.window(xlim = plot.dim[1:2], ylim = c(0,1))
+    text(x = 1:length(u_cross), y = 1, 
+        labels = u_cross[mean.order], srt = 90, adj = 1)    
+
+    instrain.var <- sapply(test.expr, var)
+    betstrain.var <- var(sapply(test.expr, mean))
+    xlim <- c(min(c(instrain.var, betstrain.var)), max(c(instrain.var, betstrain.var)))
+    par(mar = c(0,0,2,3))
+    hist(instrain.var, xlim = xlim, main = "Within-Strain vs.\nBetween-Strain Variation")
+    abline(v = betstrain.var, col = "red")
+}
+
+#quartz(); plot.with.model(sapply(test.expr, function(x) mean(x, na.rm = TRUE)), imp.auto.expr[,transcript.id])
+```
+
+There is no relationship between the imputed CC-RIX expression values
+and the measured values. I wanted to dig into this a bit more to test
+whether this is a bug somewhere along the line or whether we really 
+can't impute CC-RIX gene expression from DO haplotype effects.
+
+For some transcripts in the CC-RIX there are large across-strain
+differences. For example...
+
+```{r hi_strain_var}
+
+test.idx <- which(cis.lod > 200)
+idx <- 1
+transcript.id <- names(test.idx)[idx]
+
+plot_cc_v_imp(transcript.id)
+```
+
+```{r, low_strain_var}
+test.idx <- which(cis.lod < 6.5)
+idx <- 1
+transcript.id <- names(test.idx)[idx]
+
+plot_cc_v_imp(transcript.id)
+```
+
+If there is a relationship between LOD score in the DO and 
+across strain variation in the CC, we would expect to see
+greater between-strain variation relative to within-strain
+variation in transcripts with higher LOD scores in the DO. 
+
+We divided the across-strain variation by the maximum 
+within-strain variation. If this ratio is above 1, there
+is more across-strain variation than within-strain variation.
+
+There does actually appear to be a relationship between LOD 
+score in the DO, and across-strain variation in the CC-RIX.
+
+```{r var_vs_lod}
+common.transcript.idx <- match(common.transcripts, colnames(cross_expr[[1]]))
+all.within.var <- t(sapply(cross_expr, function(x) apply(x[,common.transcripts], 2, var)))
+max.within.var <- apply(all.within.var, 2, max)
+all.across.var <- sapply(common.transcript.idx, function(y) var(unlist(lapply(cross_expr, function(x) unlist(x[,y])))))
+all.diff.var <- all.across.var/max.within.var
+
+plot.with.model(cis.lod, log(all.diff.var), xlab = "Local LOD score", 
+    ylab = "Across-Strain Variance/Within-Strain Variance", report = "cor.test")
+
+#test.idx <- which(all.diff.var > 5)
+#test.idx <- which(all.diff.var < 1)
+#plot_cc_v_imp(names(test.idx)[5])
+```
+
+## Spot Checking
+
+We are going to look at individual genes with high LOD scores in the
+DO and compare allele effects in the CC-RIX. If allele effects don't 
+match, we have no hope of imputing expression.
+
+```{r match_pheno_geno}
+
+match_geno_pheno <- function(mouse.genoprobs, mouse.K, mouse.pheno.id, manifest){
+    #get mouse info from the mouse id
+    all.pheno.id <- t(sapply(mouse.pheno.id, function(x) get_CC_RIX_mouse_info(x, manifest)))
+
+    all.geno.group <- apply(all.pheno.id, 1, function(x) paste(gsub(" X ", "_", x[6]), x[3], sep = "_"))
+    #match up with the genotype data
+    all.pheno.idx <- match(all.geno.group, rownames(mouse.genoprobs[[1]]))
+    #take out na's
+    not.na.locale <- which(!is.na(all.pheno.idx))
+    all.pheno.idx <- all.pheno.idx[not.na.locale]
+    mouse.pheno.id <- mouse.pheno.id[not.na.locale]
+    
+    new.genoprobs <- mouse.genoprobs
+    new.K <- mouse.K
+    #expand genoprobs to incorporate all these individuals
+    #assign unique IDs to all individuals
+    for(i in 1:length(mouse.genoprobs)){
+        new.genoprobs[[i]] <- mouse.genoprobs[[i]][all.pheno.idx,,]
+        rownames(new.genoprobs[[i]]) <- as.vector(mouse.pheno.id)
+        new.K[[i]] <- mouse.K[[i]][all.pheno.idx,all.pheno.idx]
+        rownames(new.K[[i]]) <- colnames(new.K[[i]]) <- as.vector(mouse.pheno.id)
+    }
+
+    result <- list("expanded.geno" = new.genoprobs, "expanded.K" = new.K)
+    return(result)
+}
+
+```
+
+The following histogram shows the overall distribution of correlations
+between DO allele coefficients and CC coefficients at the marker
+for the cis eQTL in the DO.
+
+```{r, do_cc_cor}
+cc.genoprobs <- readRDS(file.path(cc.dir, "Genoprobs.RDS")) #created by 3.5.CC-RIX_genotypes.Rmd
+cc.K <- readRDS(file.path(cc.dir, "Kinship.RDS"))
+cc.map <- readRDS(file.path(cc.dir, "Map.RDS"))
+expanded.geno.K <- match_geno_pheno(cc.genoprobs, cc.K, rownames(cc.expr), manifest)
+expanded.geno <- expanded.geno.K$expanded.geno
+expanded.K <- expanded.geno.K$expanded.K
+
+#to parallelize the DO and CC analyses, use fit1 for 
+#both
+get_transcript_pos <- function(transcript.id){
+    trans.idx <- which(expr.annot[,1] == transcript.id)
+    trans.chr <- expr.annot[trans.idx,"chr"]
+    trans.start <- expr.annot[trans.idx,"start"]
+    return(c(trans.chr, trans.start))
+}
+
+get_coef <- function(transcript.chr, transcript.pos, mouse.expr, mouse.geno, mouse.map, 
+    mouse.K, mouse.covar, use.kinship = TRUE, plot.results = FALSE){
+    
+    cis.marker <- find_marker(mouse.map, transcript.chr, transcript.pos)
+    
+    #bin the genotype into 0, 0.5, and 1. Otherwise we get super crazy coefficients
+    binned.geno <- apply(mouse.geno[[transcript.chr]][,,cis.marker], 2, bin.vector)
+    if(use.kinship){
+        marker.fit <- fit1(binned.geno, pheno = mouse.expr[,transcript.id,drop=FALSE], 
+            kinship = mouse.K[[transcript.chr]],
+            addcovar = mouse.covar)
+    }else{
+        marker.fit <- fit1(binned.geno, pheno = mouse.expr[,transcript.id,drop=FALSE], 
+            addcovar = mouse.covar)
+    }
+    
+    mouse.coef <- marker.fit$coef[1:8]
+
+    if(plot.results){
+        coef.order <- order(mouse.coef)
+        barplot(mouse.coef[coef.order], col = CCcolors[coef.order])
+    }
+
+    return(mouse.coef)
+}
+
+#This function does not use fit1, but fits a linear model to 
+#each allele separately. This method does take covariates into 
+#account, but not kinship. Thie method also 
+get_coef_by_allele <- function(transcript.chr, transcript.pos, mouse.expr, 
+    mouse.geno, mouse.map, mouse.K, mouse.covar, plot.results = FALSE){
+    
+    cis.marker <- find_marker(mouse.map, transcript.chr, transcript.pos)
+
+    binned.geno <- apply(mouse.geno[[transcript.chr]][,,cis.marker], 2, bin.vector)
+    common.ind <- Reduce("intersect", list(rownames(binned.geno), rownames(mouse.expr), rownames(mouse.covar)))
+    common.geno.ind <- match(common.ind, rownames(binned.geno))
+    common.expr.ind <- match(common.ind, rownames(mouse.expr))
+    common.covar.ind <- match(common.ind, rownames(mouse.covar))
+    allele.tests <- apply(binned.geno[common.geno.ind,], 2, 
+        function(x) lm(rankZ(mouse.expr[common.expr.ind,transcript.id,drop=FALSE])~mouse.covar[common.covar.ind,]+x))
+    allele.coef <- t(sapply(allele.tests, function(x) c(head(coef(x), 1), tail(coef(x), 1))))
+    mouse.coef <- allele.coef[,2] - allele.coef[,1]
+    barplot(allele.coef[,2])
+    barplot(mouse.coef)
+    plot(allele.coef[,2], mouse.coef)
+
+    marker.fit <- fit1(binned.geno, 
+        pheno = mouse.expr[,transcript.id,drop=FALSE], kinship = mouse.K[[transcript.chr]],
+        addcovar = mouse.covar)
+    
+    mouse.coef <- marker.fit$coef[1:8]
+    plot(allele.coef[,2], mouse.coef, col = CCcolors, pch = 16)
+
+    if(plot.results){
+        coef.order <- order(mouse.coef)
+        barplot(mouse.coef[coef.order], col = CCcolors[coef.order])
+    }
+
+    return(mouse.coef)
+}
+
+get_num_trans <- function(transcript.id, bp.buffer = 4e6){
+    transcript.idx <- which(do.expr$lod.peaks$additive[,1] == transcript.id)
+    if(length(transcript.idx) == 0){return(0)}
+    #do.expr$lod.peaks$additive[transcript.idx,]
+    transcript.pos <- get_transcript_pos(transcript.id)
+    qtl.markers <- do.expr$lod.peaks$additive[transcript.idx,2]
+    split.markers <- strsplit(qtl.markers, "_")
+    qtl.chr <- sapply(split.markers, function(x) x[1])
+    qtl.pos <- sapply(split.markers, function(x) as.numeric(x[2]))
+    chr.locale <- which(qtl.chr == transcript.pos[1])
+    above.min <- which(qtl.pos/1e6 >= (as.numeric(transcript.pos[2])-(bp.buffer/1e6)))
+    below.max <- which(qtl.pos/1e6 <= (as.numeric(transcript.pos[2])+(bp.buffer/1e6)))
+    cis.idx <- Reduce("intersect", list(chr.locale, above.min, below.max))
+    trans.idx <- setdiff(transcript.idx, cis.idx)
+    return(length(trans.idx))
+}
+
+plot_do_cc_coef <- function(transcript.id, bp.buffer = 4e6, 
+    cor.type = c("Spearman", "Pearson"), do.kinship = TRUE, 
+    cc.kinship = FALSE, plot.results = TRUE){
+
+        cor.type = cor.type[1]
+        transcript.info <- get_transcript_pos(transcript.id)
+        transcript.chr <- transcript.info[1]
+        transcript.pos <- as.numeric(transcript.info[2])
+
+        do.coef <- get_coef(transcript.chr, transcript.pos, mouse.expr = do.expr$data$rz, 
+            mouse.geno = genoprobs, mouse.map = map, mouse.K = K, 
+            mouse.covar = do.expr$covar.matrix, use.kinship = do.kinship, 
+            plot.results = FALSE)
+        #barplot(do.coef, col = CCcolors)
+
+        cc.coef <- get_coef(transcript.chr, transcript.pos, 
+            mouse.expr = tissue.expr[[tissue.locale]], 
+            mouse.geno = expanded.geno, mouse.map = cc.map, mouse.K = expanded.K, 
+            mouse.covar = rnaseq.covar, plot.results = FALSE, use.kinship = cc.kinship)
+        #quartz();barplot(cc.coef, col = CCcolors)
+
+        num.trans <- get_num_trans(transcript.id, bp.buffer)
+
+        if(cor.type == "Spearman"){
+            norm.do.coef <- rankZ(do.coef)
+            norm.cc.coef <- rankZ(cc.coef)
+        }else{
+            norm.do.coef <- do.coef
+            norm.cc.coef <- cc.coef
+        }
+
+        if(plot.results){
+            r <- plot.with.model(norm.do.coef, norm.cc.coef,
+                xlab = "DO Coefficient", ylab = "CC Coefficient",
+                pch = 16, col = CCcolors, cex = 2, report = "cor.test",
+                main = transcript.id)[1]
+        }else{
+            r <- cor(norm.do.coef, norm.cc.coef, 
+                use = "pairwise.complete.obs")
+        }
+
+    result <- c(r, num.trans)
+    names(result) <- c("r", "num_trans")
+    invisible(result)
+}
+
+do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
+do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed", paste0("cc.do.cor.", tissue.name, ".RDS"))
+if(!file.exists(do.cc.cor.file)){
+    all.do.coef.cor.kin <- t(sapply(names(cis.lod), 
+        function(x) plot_do_cc_coef(x, plot.results = FALSE, 
+        cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)))
+    saveRDS(all.do.coef.cor.kin, do.cc.cor.kin.file)
+    all.do.coef.cor <- t(sapply(names(cis.lod), 
+        function(x) plot_do_cc_coef(x, plot.results = FALSE, 
+        cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)))
+    saveRDS(all.do.coef.cor, do.cc.cor.file)
+}else{
+    all.do.coef.cor.kin <- readRDS(do.cc.cor.kin.file)
+    all.do.coef.cor <- readRDS(do.cc.cor.file)
+}
+
+hist(all.do.coef.cor[,1], breaks = 100, 
+    main = "Spearman Rank Correlation between\nDO and CC-RIX Allele Effects",
+    xlab = "Spearman Rank Correlation")
+abline(v = median(all.do.coef.cor[,1], na.rm = TRUE), col = "red")
+```
+
+
+The following plot shows how the correlation between allele effects
+in the DO and CC depend on LOD score in the DO. We expect a priori
+that transcripts with high LOD scores in the DO will have a higher
+correlation of allele coefficients than transcripts with low LOD
+scores.
+
+```{r lod_cor}
+plot.with.model(cis.lod, all.do.coef.cor[,1], report = "cor.test", 
+    xlab = "DO Local LOD score",
+    ylab = "Correlation between DO coefficients and CC coefficients")
+```
+
+The plot below shows that the correlation between DO and CC-RIX
+coefficients is not related to the number of trans eQTL in the DO.
+
+```{r trans_check}
+
+plot.with.model(all.do.coef.cor[,1], all.do.coef.cor[,2], report = "cor.test", 
+    ylab = "Number of Trans eQTL",
+    xlab = "Correlation between DO coefficients and CC coefficients")
+
+#high.cor <- which(all.do.coef.cor[,1] > 0.9)
+#plot_do_cc_coef(names(high.cor)[6], plot.results = TRUE)
+```
+
+```{r compare_do_cc}
+compare_do_cc <- function(transcript.id){
+    
+    transcript.info <- get_transcript_pos(transcript.id)
+    transcript.chr <- transcript.info[1]
+    transcript.pos <- as.numeric(transcript.info[2])
+
+    do.coef <- get_coef(transcript.chr, transcript.pos, mouse.expr = do.expr$data$rz, 
+        mouse.geno = genoprobs, mouse.map = map, mouse.K = K, 
+        mouse.covar = do.expr$covar.matrix, plot.results = FALSE)
+
+    cc.coef <- get_coef(transcript.chr, transcript.pos, 
+        mouse.expr = tissue.expr[[tissue.locale]], 
+        mouse.geno = expanded.geno, mouse.map = cc.map, mouse.K = expanded.K, 
+        mouse.covar = rnaseq.covar, plot.results = FALSE)
+
+
+    do.cis.marker <- find_marker(map, trans.chr, transcript.pos)
+    binned.do.geno <- apply(genoprobs[[trans.chr]][,,do.cis.marker],2, bin.vector)
+    adj.do.expr <- adjust(do.expr$data$rz[,transcript.id,drop=FALSE], do.expr$covar.matrix)
+    common.do.ind <- intersect(rownames(adj.do.expr), rownames(binned.do.geno))
+    common.do.trans.idx <- match(common.do.ind, rownames(adj.do.expr))
+    common.do.geno.idx <- match(common.do.ind, rownames(binned.do.geno))
+
+    cc.cis.marker <- find_marker(cc.map, trans.chr, transcript.pos)
+    binned.cc.geno <- apply(expanded.geno[[trans.chr]][,,cc.cis.marker],2, bin.vector)
+    adj.cc.expr <- adjust(cc.expr[,transcript.id,drop=FALSE], rnaseq.covar)
+    common.cc.ind <- intersect(rownames(adj.cc.expr), rownames(binned.cc.geno))
+    common.cc.trans.idx <- match(common.cc.ind, rownames(adj.cc.expr))
+    common.cc.geno.idx <- match(common.cc.ind, rownames(binned.cc.geno))
+
+    par(mfrow = c(4,4), mar = c(1,1,1,1))    
+    #barplot(unlist(expr.lod$additive[cis.locale,LETTERS[1:8][do.coef.order]]))
+    for(cc in 1:8){
+        boxplot(adj.do.expr[common.do.trans.idx]~binned.do.geno[common.do.geno.idx,cc], 
+        col = CCcolors[cc], xlab = "", ylab = "DO expression", 
+        main = paste("DO", names(CCcolors)[cc]), axes = FALSE)
+        axis(2)
+    
+
+        boxplot(adj.cc.expr[common.cc.trans.idx]~binned.cc.geno[common.cc.geno.idx,cc], 
+        col = CCcolors[cc], xlab = "", ylab = "CC expression", 
+        main = paste("CC", names(CCcolors)[cc]), axes = FALSE)
+        axis(2)
+    }
+}
+
+```
+
+```{r spot_check, eval = FALSE}
+check.idx <- intersect(which(all.do.coef.cor[,1] < -0.5), which(cis.lod > 100))
+
+check.idx <- intersect(which(all.do.coef.cor[,1] > 0.9), which(cis.lod > 100))
+check.idx <- which(cis.lod > 150)
+
+check.id <- names(cis.lod)[check.idx[5]]
+check.id <- "ENSMUSG00000031101" #Sash3
+
+quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)
+quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)
+quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = FALSE, cc.kinship = FALSE)
+
+quartz();compare_do_cc(check.id)
+
+
+```
