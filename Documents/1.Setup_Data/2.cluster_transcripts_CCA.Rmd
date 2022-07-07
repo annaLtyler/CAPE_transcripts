@@ -2628,18 +2628,19 @@ for(i in 1:length(matched.mats)){
         gene.name <- gene.table[which(gene.table[,"gene.id"] == gene.id),"symbol"]
         trans.expr <- adj.do.expr[,gene.id]
         imp.expr <- adj.imp.expr[,gene.id]
+        trans.chr <- gene.table[gene.idx,"chr"]
         one.matched.expr <- get.xz(x.mat = as.matrix(trans.expr), z.mat = as.matrix(imp.expr))
         r2 <- plot.with.model(one.matched.expr[[1]], one.matched.expr[[2]], 
             xlab = "Measured Expression", ylab = "Imputed Expression", 
             main = gene.name, plot.results = plot.results)
 
         gene.idx <- which(gene.table[,1] == gene.id)
-        cis.marker <- find_marker(map, gene.table[gene.idx,"chr"], as.numeric(gene.table[gene.idx,"start"]))
+        cis.marker <- find_marker(map, trans.chr, as.numeric(gene.table[gene.idx,"start"]))
         #scan measured transcript expression
-        measured.qtl <- scan1(genoprobs[,gene.table[gene.idx,"chr"]], trans.expr) 
-        imp.qtl <- scan1(genoprobs[,gene.table[gene.idx,"chr"]], imp.expr)
-        med.qtl.expr <- scan1(genoprobs[,gene.table[gene.idx,"chr"]], trans.expr, addcovar = imp.expr)
-        med.qtl.marker <- scan1(genoprobs[,gene.table[gene.idx,"chr"]], trans.expr, addcovar = genoprobs[[gene.table[gene.idx,"chr"]]][,,cis.marker])
+        measured.qtl <- scan1(genoprobs[,trans.chr], trans.expr, kinship = K[[trans.chr]]) 
+        imp.qtl <- scan1(genoprobs[,trans.chr], imp.expr, kinship = K[[trans.chr]])
+        med.qtl.expr <- scan1(genoprobs[,trans.chr], trans.expr, addcovar = imp.expr, kinship = K[[trans.chr]])
+        med.qtl.marker <- scan1(genoprobs[,trans.chr], trans.expr, addcovar = genoprobs[[trans.chr]][,,cis.marker], kinship = K[[trans.chr]])
         measured.lod <- measured.qtl[cis.marker,]
         med.lod <- med.qtl.marker[cis.marker,]
         lod.drop <- measured.lod - med.lod
@@ -2649,7 +2650,7 @@ for(i in 1:length(matched.mats)){
             plot(measured.qtl, map = map);abline(v = as.numeric(gene.table[gene.idx,"start"]))
             plot(med.qtl.expr, map = map, col = "red", add = TRUE)
             plot(med.qtl.marker, map = map, col = "gray60", add = TRUE)
-            plot(imp.qtl, map = map, col = "red", add = TRUE);abline(v = as.numeric(gene.table[gene.idx,"start"]))
+            plot(imp.qtl, map = map, col = "red");abline(v = as.numeric(gene.table[gene.idx,"start"]))
             plot(imp.qtl[,1], measured.qtl[,1]);abline(0,1)
             barplot(c(measured.qtl[cis.marker,], med.qtl.expr[cis.marker,], 
                 med.qtl.marker[cis.marker,]), names = c("measured", "med expr", 
