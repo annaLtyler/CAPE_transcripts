@@ -24,7 +24,7 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    exp.name <- "imputed_all"
+    #exp.name <- "imputed_all"
     exp.name <- "imputed_local"
     #exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
@@ -82,12 +82,11 @@ cca.pheno <- apply(cca.pheno, 2, rankZ)
 num.components <- ncol(cca.pheno)
 
 if(exp.name == "imputed_full"){
-    tissue.adj.expr <- readRDS(here("Data", "imputed", "Adjusted_Expression.RDS"))
-    names(tissue.adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
+    tissue.adj.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS")))
 }else{   
-    tissue.adj.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
+    tissue.adj.expr <- readRDS(here("Data", paste0("Adjusted_Expression_", exp.name, ".RDS")))
 }
-
+names(tissue.adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
 tissue.names <- names(tissue.adj.expr)
 
 tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))

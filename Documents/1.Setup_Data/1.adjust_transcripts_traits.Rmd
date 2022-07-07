@@ -153,30 +153,19 @@ If we are using imputed data, read it in here and overwrite the measured
 expression data.
 
 ```{r adjust_covar}
+adj.expr.file <- here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS"))
 
+#if we are using imputed data, read it in and overwrite 
+#tissue.norm
 if(use.imputed){
     if(exp.name == "imputed_local"){
-        adj.expr.file <- here("Data", "imputed", "Adjusted_Expression_Local.RDS")
         imp.expr.files <- get.files(here("Data", "imputed"), want = "RDS", 
             dont.want = c("adjusted", "local", "CC"), full.names = TRUE)
     }
     if(exp.name == "imputed_full"){
-        adj.expr.file <- here("Data", "imputed", "Adjusted_Expression_Full.RDS")
         imp.expr.files <- get.files(here("Data", "imputed"), want = c("RDS", "local"), 
             dont.want = c("adjusted", "CC"), full.names = TRUE)
     }
-}else{
-    if(weight.adjusted){
-        adj.expr.file <- here("Data", "Adjusted_Expression_Weight_Adjusted.RDS")
-    }else{
-        adj.expr.file <- here("Data", "Adjusted_Expression.RDS")
-    }
-}
-
-#row names are missing in imputed data. Add the rownames
-#from the measured DO data.
-if(use.imputed){
-    #read in imputed data and overwrite tissue.norm
     tissue.norm <- lapply(imp.expr.files, readRDS)
     #add animal names from original expression data
     for(i in 1:length(tissue.norm)){
