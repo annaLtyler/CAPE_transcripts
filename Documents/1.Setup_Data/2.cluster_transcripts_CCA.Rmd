@@ -81,7 +81,7 @@ cca.pheno <- adjust(cca.pheno[,2:ncol(cca.pheno)], cca.pheno[,1,drop=FALSE]) #re
 cca.pheno <- apply(cca.pheno, 2, rankZ)
 num.components <- ncol(cca.pheno)
 
-if(exp.name == "imputed_full"){
+if(use.imputed){
     tissue.adj.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS")))
 }else{   
     tissue.adj.expr <- readRDS(here("Data", paste0("Adjusted_Expression_", exp.name, ".RDS")))
