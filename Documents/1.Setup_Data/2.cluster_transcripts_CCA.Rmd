@@ -24,8 +24,8 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    #exp.name <- "imputed_all"
-    exp.name <- "imputed_local"
+    exp.name <- "imputed_full"
+    #exp.name <- "imputed_local"
     #exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE
@@ -2467,7 +2467,7 @@ get_cis_lod <- function(transcript.id, eqtl.table, marker.chr, marker.pos,
     return(cis.lod)
 }
 
-cis.lod.file <- here("Results", "CCA_clusters", "imputed", "cis.lod.scores.RDS")
+cis.lod.file <- here("Results", "CCA_clusters", exp.name, "cis.lod.scores.RDS")
 if(!file.exists(cis.lod.file)){
     all.cis.lod <- vector(mode = "list", length = length(matched.mats))
     names(all.cis.lod) <- names(matched.mats)
