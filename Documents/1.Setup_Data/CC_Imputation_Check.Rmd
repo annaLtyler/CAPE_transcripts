@@ -327,11 +327,15 @@ get_coef <- function(transcript.chr, transcript.pos, mouse.expr, mouse.geno, mou
     #bin the genotype into 0, 0.5, and 1. Otherwise we get super crazy coefficients
     binned.geno <- apply(mouse.geno[[transcript.chr]][,,cis.marker], 2, bin.vector)
     if(use.kinship){
-        marker.fit <- fit1(binned.geno, pheno = mouse.expr[,transcript.id,drop=FALSE], 
+        norm.expr <- rankZ(mouse.expr[,transcript.id,drop=FALSE])
+        names(norm.expr) <- rownames(mouse.expr)
+        marker.fit <- fit1(binned.geno, pheno = norm.expr, 
             kinship = mouse.K[[transcript.chr]],
             addcovar = mouse.covar)
     }else{
-        marker.fit <- fit1(binned.geno, pheno = mouse.expr[,transcript.id,drop=FALSE], 
+        norm.expr <- rankZ(mouse.expr[,transcript.id,drop=FALSE])
+        names(norm.expr) <- rownames(mouse.expr)
+        marker.fit <- fit1(binned.geno, pheno = norm.expr, 
             addcovar = mouse.covar)
     }
     
@@ -352,7 +356,6 @@ get_coef_by_allele <- function(transcript.chr, transcript.pos, mouse.expr,
     mouse.geno, mouse.map, mouse.K, mouse.covar, plot.results = FALSE){
     
     cis.marker <- find_marker(mouse.map, transcript.chr, transcript.pos)
-
     binned.geno <- apply(mouse.geno[[transcript.chr]][,,cis.marker], 2, bin.vector)
     common.ind <- Reduce("intersect", list(rownames(binned.geno), rownames(mouse.expr), rownames(mouse.covar)))
     common.geno.ind <- match(common.ind, rownames(binned.geno))
@@ -460,15 +463,16 @@ if(!file.exists(do.cc.cor.file)){
     all.do.coef.cor <- readRDS(do.cc.cor.file)
 }
 
-hist(all.do.coef.cor[,1], breaks = 100, 
+
+hist(all.do.coef.cor[test.idx,1], breaks = 100, 
     main = "Without Kinship",
     xlab = "Spearman Rank Correlation")
-abline(v = median(all.do.coef.cor[,1], na.rm = TRUE), col = "red")
+abline(v = median(all.do.coef.cor[test.idx,1], na.rm = TRUE), col = "red")
 
-hist(all.do.coef.cor.kin[,1], breaks = 100, 
+hist(all.do.coef.cor.kin[test.idx,1], breaks = 100, 
     main = "With Kinship",
     xlab = "Spearman Rank Correlation")
-abline(v = median(all.do.coef.cor.kin[,1], na.rm = TRUE), col = "red")
+abline(v = median(all.do.coef.cor.kin[test.idx,1], na.rm = TRUE), col = "red")
 
 ```
 
@@ -489,6 +493,7 @@ The plot below shows that the correlation between DO and CC-RIX
 coefficients is not related to the number of trans eQTL in the DO.
 
 ```{r trans_check}
+
 
 plot.with.model(all.do.coef.cor[,1], all.do.coef.cor[,2], report = "cor.test", 
     ylab = "Number of Trans eQTL",
@@ -561,6 +566,7 @@ check.idx <- intersect(which(all.do.coef.cor[,1] > 0.9), which(cis.lod > 100))
 check.idx <- which(cis.lod > 150)
 
 check.id <- names(cis.lod)[check.idx[5]]
+check.id <- names(cis.lod)[1]
 check.id <- "ENSMUSG00000031101" #Sash3
 
 quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)

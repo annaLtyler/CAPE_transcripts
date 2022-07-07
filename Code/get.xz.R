@@ -12,12 +12,15 @@ get.xz  <- function(x.mat, z.mat){
     x.na.locale <- which(is.na(ordered.x), arr.ind = TRUE)
     z.na.locale <- which(is.na(ordered.z), arr.ind = TRUE)
 
-    na.locale <- rbind(x.na.locale, z.na.locale)
-    if(nrow(na.locale) > 0){
-        ordered.x <- ordered.x[-na.locale[,1],]
+    if(length(x.na.locale) > 0 | length(z.na.locale) > 0){
+        na.locale <- rbind(x.na.locale, z.na.locale)
+        if(nrow(na.locale) > 0){
+            ordered.x <- ordered.x[-na.locale[,1],]
+        }
+        if(nrow(na.locale) > 0){
+            ordered.z <- ordered.z[-na.locale[,1],]
+        }
     }
-    if(nrow(na.locale) > 0){
-        ordered.z <- ordered.z[-na.locale[,1],]
-    }
+
     return(list("X" = ordered.x, "Z" = ordered.z))
 }

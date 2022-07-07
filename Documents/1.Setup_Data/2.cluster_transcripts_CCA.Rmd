@@ -24,7 +24,8 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    exp.name <- "imputed"
+    exp.name <- "imputed_all"
+    exp.name <- "imputed_local"
     #exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE
@@ -42,6 +43,7 @@ lodthresh = 5.5 #Minimum LOD score for a QTL we will examine
 peak.dist <- 2 #maximum distance in MB for overlapping QTL
 perc.drop.thresh = 0.75 #fraction of full LOD score mediated LOD score needs to be to be investigated further
 
+use.imputed <- as.logical(length(grep("imputed", exp.name)))
 ```
 
 The results shown here pertain to `r exp.name`.
@@ -79,7 +81,7 @@ cca.pheno <- adjust(cca.pheno[,2:ncol(cca.pheno)], cca.pheno[,1,drop=FALSE]) #re
 cca.pheno <- apply(cca.pheno, 2, rankZ)
 num.components <- ncol(cca.pheno)
 
-if(exp.name == "imputed"){
+if(exp.name == "imputed_full"){
     tissue.adj.expr <- readRDS(here("Data", "imputed", "Adjusted_Expression.RDS"))
     names(tissue.adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
 }else{   
@@ -2646,10 +2648,12 @@ get_cis_lod <- function(transcript.id, eqtl.table, marker.chr, marker.pos,
     bp.buffer = 4e6){
 
     trans.idx <- which(gene.table[,1] == transcript.id)[1]
+    #gene.table[trans.idx,]
     trans.chr <- gene.table[trans.idx,"chr"]
     trans.start <- as.numeric(gene.table[trans.idx,"start"])
     trans.end <- as.numeric(gene.table[trans.idx,"end"])
     id.locale <- which(eqtl.table[,1] == transcript.id)
+    #eqtl.table[id.locale,]
     on.chr <- which(marker.chr == trans.chr)
     above.min <- which(marker.pos >= (trans.start*1e6-bp.buffer))
     below.max <- which(marker.pos <= (trans.end*1e6+bp.buffer))
@@ -2667,6 +2671,8 @@ if(!file.exists(cis.lod.file)){
     all.cis.lod <- vector(mode = "list", length = length(matched.mats))
     names(all.cis.lod) <- names(matched.mats)
     for(tx in 1:length(matched.mats)){
+        tissue.name <- tissue.names[tx]
+        if(is.interactive){cat(tissue.name, "\n")}
         tissue.eqtl <- get(paste0("dataset.DO.Cube.", tissue.name))$lod.peaks$additive
         split.lod.markers <- strsplit(unlist(tissue.eqtl[,"marker.id"]), "_")
         lod.marker.chr <- sapply(split.lod.markers, function(x) x[1])
@@ -2685,7 +2691,7 @@ if(!file.exists(cis.lod.file)){
 for(tx in 1:length(matched.mats)){
     cat("###", names(matched.mats)[tx], "{.tabset .tabset-fade .tabset-pills}\n")
     lod.scores <- all.cis.lod[[tx]]
-    lod.scores[which(is.na(lod.scores))] <- 6
+    lod.scores[which(is.na(lod.scores))] <- 3
     transcript.loadings <- boot.CCA.results[[tx]]$u
     for(ct in 1:ncol(transcript.loadings)){
         non.zero.idx <- which(transcript.loadings[,ct] != 0)
@@ -2704,8 +2710,175 @@ for(tx in 1:length(matched.mats)){
     #mtext(names(matched.mats)[tx], side = 3, outer = TRUE, line = -1.5)
 }
 ```
+
+## Loading by Position {.tabset .tabset-fade .tabset-pills}
+
+The plots below show where the transcripts selected by CCA are positioned
+in the genome.
+
+```{r imputed_marker_position, fig.width = 10, fig.height = 5, results = "asis"}
+for(tx in 1:length(matched.mats)){
+    tissue.name <- tissue.names[tx]
+    cat("###", tissue.name, "{.tabset .tabset-fade .tabset-pills}\n")
+    transcript.loadings <- boot.CCA.results[[tx]]$u
+    ymin <- min(transcript.loadings)
+    ymax <- max(transcript.loadings)
+    yheight <- ymax - ymin
+    ylim = c(ymin-(yheight*0.1), ymax+(yheight*0.1))
+
+    for(u in 1:ncol(transcript.loadings)){
+        t.loading <- transcript.loadings[,u]
+        non.zero <- which(t.loading != 0)
+        if(length(non.zero) == 0){next()}
+        cat("#### CT", u, "\n")
+        if(is.interactive){quartz(width = 12, height = 5)}
+        transcript.id <- colnames(matched.mats[[tx]]$X)[non.zero]
+        transcript.idx <- match(transcript.id, gene.table[,1])
+        transcript.chr <- gene.table[transcript.idx,"chr"]
+        transcript.pos <- as.numeric(gene.table[transcript.idx,"start"])
+            
+        layout(matrix(1:19, nrow = 1))
+        for(ch in 1:19){
+            if(ch == 1){par(mar = c(4,2,4,0))}else{par(mar = c(4,1,4,0))}
+            chr.transcripts <- which(transcript.chr == ch)
+            transcript.names <- gene.table[match(transcript.id[chr.transcripts], gene.table[,1]),"symbol"]
+            if(length(chr.transcripts) > 0){
+                ch.pos <- transcript.pos[chr.transcripts]
+                min.pos <- min(ch.pos)
+                max.pos <- max(ch.pos)
+                pos.width <- max.pos - min.pos
+                xlim <- c(min.pos-(pos.width*0.1), max.pos+(pos.width*0.1))
+                plot(transcript.pos[chr.transcripts], t.loading[non.zero[chr.transcripts]], 
+                type = "h", axes = FALSE, xlab = ch, ylim = ylim, xlim = xlim, cex.lab = 2)
+                neg.load <- which(t.loading[non.zero[chr.transcripts]] < 0)
+                pos.load <- which(t.loading[non.zero[chr.transcripts]] > 0)
+                if(length(neg.load) > 0){
+                    text(transcript.pos[chr.transcripts[neg.load]], 
+                        t.loading[non.zero[chr.transcripts[neg.load]]],
+                        labels = transcript.names[neg.load], srt = 90, adj = 1)
+                }
+                if(length(pos.load) > 0){
+                    text(transcript.pos[chr.transcripts[pos.load]], 
+                        t.loading[non.zero[chr.transcripts[pos.load]]],
+                        labels = transcript.names[pos.load], srt = 90, adj = 0)
+                }
+                if(ch == 1){axis(2)}
+                #axis(1)
+                abline(h = 0)
+            }else{
+                plot(1:10, rep(0, 10), cex.lab = 2,
+                type = "h", axes = FALSE, xlab = ch, ylim = ylim)
+                if(ch == 1){axis(2)}
+                abline(h = 0)
+            }
+        }
+    mtext(paste(tissue.name, "CT", u), side = 3, outer = TRUE, line = -1.5)
+    cat("\n\n")
+    }
+    cat("\n\n")
+}
+
+```
+
+## Checking
+
+```{r check_one, eval = FALSE}
+#look at correlation between individual transcripts and 
+#composite traits - this is a way to test the correlation
+#of measured transcript versions of transcripts identified 
+#in the imputed set.
+
+#gene.name <- "Gusb" #adipose
+#gene.name <- "Aldh2" #adipose
+#gene.name <- "Lep" #adipose
+#gene.name <- "Mdfic" #adipose
+#gene.name <- "Prrx1"
+#gene.name <- "Igfbp2"
+
+#gene.idx <- which(gene.table[,"symbol"] == gene.name)
+#gene.id <- gene.table[gene.idx,"gene.id"][1]
+
+#randomly sample a transcript with a loading of 0
+#i = 2; gene.id <- colnames(matched.mats[[i]]$X)[sample(which(boot.CCA.results[[i]]$u[,1] == 0), 1)]
+#gene.name <- gene.table[which(gene.table[,"gene.id"] == gene.id),"symbol"]
+#gene.idx <- which(gene.table[,"symbol"] == gene.name)
+
+plot.results = FALSE
+all.trans.stats <- vector(mode = "list", length = length(matched.mats))
+names(all.trans.stats) <- tissue.names
+for(i in 1:length(matched.mats)){
+    tissue.name <- tissue.names[i]
+    tissue.expr <- get(paste0("dataset.DO.Cube.", tissue.name))$data$norm
+
+    adj.do.expr <- adjust(tissue.expr, get(paste0("dataset.DO.Cube.", tissue.name))$covar.matrix)
+    adj.imp.expr <- matched.mats[[i]]$X
+
+    trait.trans <- get_latent_var(tissue.mats = matched.mats[[i]], 
+        tissue.results = boot.CCA.results[[i]])
+    non.zero <- which(rowSums(boot.CCA.results[[i]]$u) != 0)
+
+    stat.mat <- matrix(NA, nrow = length(non.zero), ncol = 5)
+    colnames(stat.mat) <- c("R2_measured_imputed", "cis_LOD_score", "cis_LOD_drop", "measured_cor", "adjusted_cor")
+    rownames(stat.mat)  <- colnames(matched.mats[[i]]$X)[non.zero]
+
+    for(tr in 1:length(non.zero)){
+        if(is.interactive){report.progress(tr, ncol(adj.do.expr))}
+        gene.id <- rownames(stat.mat)[tr]
+        gene.name <- gene.table[which(gene.table[,"gene.id"] == gene.id),"symbol"]
+        trans.expr <- adj.do.expr[,gene.id]
+        imp.expr <- adj.imp.expr[,gene.id]
+        one.matched.expr <- get.xz(x.mat = as.matrix(trans.expr), z.mat = as.matrix(imp.expr))
+        r2 <- plot.with.model(one.matched.expr[[1]], one.matched.expr[[2]], 
+            xlab = "Measured Expression", ylab = "Imputed Expression", 
+            main = gene.name, plot.results = plot.results)
+
+        gene.idx <- which(gene.table[,1] == gene.id)
+        cis.marker <- find_marker(map, gene.table[gene.idx,"chr"], as.numeric(gene.table[gene.idx,"start"]))
+        #scan measured transcript expression
+        measured.qtl <- scan1(genoprobs[,gene.table[gene.idx,"chr"]], trans.expr) 
+        imp.qtl <- scan1(genoprobs[,gene.table[gene.idx,"chr"]], imp.expr)
+        med.qtl.expr <- scan1(genoprobs[,gene.table[gene.idx,"chr"]], trans.expr, addcovar = imp.expr)
+        med.qtl.marker <- scan1(genoprobs[,gene.table[gene.idx,"chr"]], trans.expr, addcovar = genoprobs[[gene.table[gene.idx,"chr"]]][,,cis.marker])
+        measured.lod <- measured.qtl[cis.marker,]
+        med.lod <- med.qtl.marker[cis.marker,]
+        lod.drop <- measured.lod - med.lod
+
+        if(plot.results){
+            par(mfrow = c(2,1))
+            plot(measured.qtl, map = map);abline(v = as.numeric(gene.table[gene.idx,"start"]))
+            plot(med.qtl.expr, map = map, col = "red", add = TRUE)
+            plot(med.qtl.marker, map = map, col = "gray60", add = TRUE)
+            plot(imp.qtl, map = map, col = "red", add = TRUE);abline(v = as.numeric(gene.table[gene.idx,"start"]))
+            plot(imp.qtl[,1], measured.qtl[,1]);abline(0,1)
+            barplot(c(measured.qtl[cis.marker,], med.qtl.expr[cis.marker,], 
+                med.qtl.marker[cis.marker,]), names = c("measured", "med expr", 
+                "med marker"), ylab = "LOD", main = gene.name)
+        }
+
+        matched.var <- get.xz(as.matrix(trans.expr), trait.trans$Composite_Traits)
+        trait.trans.cor <- apply(matched.var[[2]], 2, 
+            function(x) cor(matched.var[[1]], x))
     
-```{r, eval = FALSE}
+        #correlation after accounting for imputed transcript/genotype
+        adj.traits <- adjust(matched.var[[2]], as.matrix(imp.expr))
+        post.cor <- apply(adj.traits, 2, function(x) cor(matched.var[[1]], x))
+        
+        if(plot.results){
+            boxplot(list(abs(trait.trans.cor), abs(post.cor)), 
+            names = c("Correlation to Latent Traits", 
+            "Correlation After Removing Imputed Transcript"), 
+            main = gene.name, ylim = c(0,0.75))
+        }
+
+        stat.mat[tr,] <- c(r2[1], measured.lod, lod.drop, 
+            mean(abs(trait.trans.cor)), mean(abs(post.cor)))
+    }
+
+    all.trans.stats[[i]] <- stat.mat
+}
+
+boxplot(lapply(all.trait.trans.cor, abs), main = gene.name)
+
 eqtl.pos <- strsplit(tissue.eqtl[[2]], "_")
 chr.locale <- which(sapply(eqtl.pos, function(x) x[1]) == Chr)
 mb.locale <- intersect(which(as.numeric(sapply(eqtl.pos, function(x) x[2])) >=  40e6),

@@ -23,8 +23,10 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(delete_previous)){
-    #exp.name = "weight_adjusted"
-    exp.name = "imputed"
+    #exp.name = "all_traits"; weight.adjusted = FALSE
+    #exp.name = "weight_adjusted"; weight.adjusted = TRUE
+    #exp.name = "imputed_full"; weight.adjusted = FALSE
+    exp.name = "imputed_local"; weight.adjusted = FALSE
     delete_previous <- FALSE
 }
 
@@ -35,27 +37,15 @@ if(is.na(delete_previous)){
 #traits to adjust out of the phenotype matrix. This could be weight,
 #for example, or NULL to not adjust for anything
 
-#exp.name = "TG"
-#   keep.traits <- "TG" #Triglycerides only
-#   adj.traits <- NULL
-
-#exp.name = "ex_vivo"
-#   keep.traits <- c("WPIC", "Ins_per_islet", "num_islets")
-#   adj.traits = NULL
-
-#exp.name = "Homeostasis"    
-#    keep.traits <- c("HOMA_IR_0min", "HOMA_B_0min", "Glu_tAUC", "Ins_tAUC")
-#    adj.traits <- NULL
-
-if(exp.name == "all_traits" || exp.name == "imputed"){
+if(weight.adjusted){
+    keep.traits <- 1:20 #all traits;
+    adj.traits <- "weight" #traits to adjust for, set to NULL to not adjust
+}else{
     keep.traits <- 1:20 #all traits;
     adj.traits <- NULL #traits to adjust for, set to NULL to not adjust
 }
-if(exp.name == "weight_adjusted"){
-    keep.traits <- 1:20 #all traits;
-    adj.traits <- "weight" #traits to adjust for, set to NULL to not adjust
-}
 
+use.imputed <- as.logical(length(grep("imputed", exp.name)))
 ```
 
 ```{r load_code}
@@ -140,7 +130,6 @@ covar.idx <- match(common.ind, rownames(covar))
 adj.pheno <- adjust(matX = num.pheno[,keep.trait.locale], 
     adj.mat = all.covar, retain.intercept = TRUE)
 
-
 cca.pheno <- apply(adj.pheno, 2, scale)
 rownames(cca.pheno) <- rownames(adj.pheno)
 
@@ -160,39 +149,52 @@ Also regress out covariates using the same covariate matrix generated above.
 Here we use the raw expression matrix to select transcripts from the rank Z
 normalized expression matrix. 
 
+If we are using imputed data, read it in here and overwrite the measured
+expression data.
+
 ```{r adjust_covar}
-min.mean = 5
 
-if(exp.name == "imputed"){
-    adj.expr.file <- here("Data", "imputed", "Adjusted_Expression.RDS")
-    imp.expr.files <- get.files(here("Data", "imputed"), want = "RDS", 
-        dont.want = "adjusted", full.names = TRUE)
+if(use.imputed){
+    if(exp.name == "imputed_local"){
+        adj.expr.file <- here("Data", "imputed", "Adjusted_Expression_Local.RDS")
+        imp.expr.files <- get.files(here("Data", "imputed"), want = "RDS", 
+            dont.want = c("adjusted", "local", "CC"), full.names = TRUE)
+    }
+    if(exp.name == "imputed_full"){
+        adj.expr.file <- here("Data", "imputed", "Adjusted_Expression_Full.RDS")
+        imp.expr.files <- get.files(here("Data", "imputed"), want = c("RDS", "local"), 
+            dont.want = c("adjusted", "CC"), full.names = TRUE)
+    }
+}else{
+    if(weight.adjusted){
+        adj.expr.file <- here("Data", "Adjusted_Expression_Weight_Adjusted.RDS")
+    }else{
+        adj.expr.file <- here("Data", "Adjusted_Expression.RDS")
+    }
+}
+
+#row names are missing in imputed data. Add the rownames
+#from the measured DO data.
+if(use.imputed){
+    #read in imputed data and overwrite tissue.norm
     tissue.norm <- lapply(imp.expr.files, readRDS)
-
     #add animal names from original expression data
     for(i in 1:length(tissue.norm)){
         tissue.name <- strsplit(basename(imp.expr.files[[i]]), "_")[[1]][2]
         expr.data <- get(paste0("dataset.DO.Cube.", tissue.name))
         rownames(tissue.norm[[i]]) <- rownames(expr.data$data$rz)
     }
-
-}else{
-    adj.expr.file <- here("Data", "Adjusted_Expression.RDS")
 }
-if(!file.exists(adj.expr.file)){
-    if(exp.name != "imputed"){
-        tissue.fil.expr <- lapply(tissue.norm, 
-            function(x) x[,which(colMeans(x, na.rm = TRUE) > min.mean)])
-    }else{
-        tissue.fil.expr <- tissue.norm
-    }
 
+#if we haven't generated the adjusted expression file yet,
+#create it here. Otherwise, read it in.
+if(!file.exists(adj.expr.file)){
     #adjust expression for covarates
-    adj.expr <- lapply(tissue.fil.expr, function(x) adjust(x, all.covar, TRUE))
+    adj.expr <- lapply(tissue.norm, function(x) adjust(x, all.covar, TRUE))
+    names(adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
     saveRDS(adj.expr, adj.expr.file)
 }else{
     adj.expr <- readRDS(adj.expr.file)
-    names(adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
 }
 ```
 
@@ -217,7 +219,7 @@ function(x) rep(names(adj.expr)[x], ncol(matched.expr[[x]]))))
 
 all.expr <- Reduce("cbind", matched.expr)
 
-expr.decomp.file <- here(results.dir, "all.expr.decomp.RDS")
+expr.decomp.file <- here(results.dir, paste0("all.expr.decomp.", exp.name, ".RDS"))
 if(!file.exists(expr.decomp.file)){
     expr.decomp <- plot.decomp(t(all.expr), plot.results = FALSE)
     saveRDS(expr.decomp, expr.decomp.file)
