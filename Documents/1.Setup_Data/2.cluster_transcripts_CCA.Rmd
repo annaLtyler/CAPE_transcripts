@@ -24,8 +24,8 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    exp.name <- "imputed_full"
-    #exp.name <- "imputed_local"
+    #exp.name <- "imputed_full"
+    exp.name <- "imputed_local"
     #exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE

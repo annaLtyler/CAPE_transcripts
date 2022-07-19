@@ -41,7 +41,8 @@ needed.packages <- c("pheatmap", "knitr", "qtl2")
 load_libraries(needed.packages, personal.library = TRUE)
 ```
 
-Read in measured CC-RIX gene expression.
+Read in measured CC-RIX gene expression. Also read in DO data.
+We will use that to look at imputation based on LOD score in the DO.
 
 ```{r read_data}
 all.var <- ls()
@@ -75,24 +76,24 @@ group.mat <- tissue.info[,group.def]
 rnaseq.covar <- dummy_covar(covar[orsam.idx,c("Age", "RNAseq_Batch", colnames(group.mat))])
 rownames(rnaseq.covar) <- tissue.info[,1]
 cc.expr <- tissue.expr[[tissue.locale]]
-#adj.cc.expr <- adjust(cc, rnaseq.covar)
-#adj.do.expr <- do.adj.expr <- adjust(do.expr$data$rz, do.expr$covar.matrix)
+adj.cc.expr <- adjust(cc.expr, rnaseq.covar)
+#adj.do.expr <- do.adj.expr <- adjust(do.expr$data$norm, do.expr$covar.matrix)
 ```
 
 Read in imputed CC-RIX gene expression.
 
 ```{r load_imputed}
-imp.expr <- readRDS(here("Data", "imputed", 
+imp.cc.expr <- readRDS(here("Data", "imputed", 
     paste0("CC-RIX_", tissue.name, "_imputed_transcriptome_local.RDS")))
 ```
 
-Group the true expression based on the CC-RIX cross.
+Group the true expression based on the CC-RIX crosses.
 
 ```{r group_expr}
 cross.id <- tissue.info[,"User.Defined.Strain"]
 u_cross <- unique(cross.id)
 cross.idx <- lapply(u_cross, function(x) which(cross.id == x))
-cross_expr <- lapply(cross.idx, function(x) cc.expr[x,])
+cross_expr <- lapply(cross.idx, function(x) adj.cc.expr[x,])
 mean.cross.expr <- t(sapply(cross_expr, colMeans))
 rownames(mean.cross.expr) <- u_cross
 ```
@@ -107,13 +108,13 @@ dad <- sapply(split.cross, function(x) x[3])
 
 #str(imp.expr)
 
-mom.idx <- sapply(mom, function(x) grep(x, rownames(imp.expr[[1]])))
-dad.idx <- sapply(dad, function(x) grep(x, colnames(imp.expr[[1]])))
+mom.idx <- sapply(mom, function(x) grep(x, rownames(imp.cc.expr[[1]])))
+dad.idx <- sapply(dad, function(x) grep(x, colnames(imp.cc.expr[[1]])))
 
-#cbind(mom, rownames(imp.expr[[1]])[mom.idx])
-#cbind(dad, colnames(imp.expr[[1]])[dad.idx])
+#cbind(mom, rownames(imp.cc.expr[[1]])[mom.idx])
+#cbind(dad, colnames(imp.cc.expr[[1]])[dad.idx])
 
-imp.auto.expr <- t(sapply(1:length(mom.idx), function(x) imp.expr[[1]][mom.idx[x], dad.idx[x],]))
+imp.auto.expr <- t(sapply(1:length(mom.idx), function(x) imp.cc.expr[[1]][mom.idx[x], dad.idx[x],]))
 rownames(imp.auto.expr) <- u_cross
 ```
 
@@ -565,8 +566,8 @@ check.idx <- intersect(which(all.do.coef.cor[,1] < -0.5), which(cis.lod > 100))
 check.idx <- intersect(which(all.do.coef.cor[,1] > 0.9), which(cis.lod > 100))
 check.idx <- which(cis.lod > 150)
 
-check.id <- names(cis.lod)[check.idx[5]]
-check.id <- names(cis.lod)[1]
+check.id <- names(cis.lod)[check.idx[6]]
+check.id <- names(cis.lod)[2]
 check.id <- "ENSMUSG00000031101" #Sash3
 
 quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)

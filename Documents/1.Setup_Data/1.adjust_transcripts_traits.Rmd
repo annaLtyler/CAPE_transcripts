@@ -25,7 +25,7 @@ delete_previous <- as.logical(args[2])
 if(is.na(delete_previous)){
     #exp.name = "all_traits"; weight.adjusted = FALSE
     #exp.name = "weight_adjusted"; weight.adjusted = TRUE
-    #exp.name = "imputed_full"; weight.adjusted = FALSE
+    exp.name = "imputed_full"; weight.adjusted = FALSE
     exp.name = "imputed_local"; weight.adjusted = FALSE
     delete_previous <- FALSE
 }
@@ -80,14 +80,15 @@ all.var <- ls()
 data.loaded <- as.logical(length(which(all.var == "dataset.clinical.phenotypes")))
 if(!data.loaded){
     gen.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
-    tissue.files <- list.files(here("Data", "RDS_datasets_tissues"), full.names = TRUE)
+    tissue.files <- list.files(here("Data", "RDS_datasets_tissues"), full.names = TRUE) #DO measured expression
     tissue.names <- gsub(".RDS", "", basename(tissue.files))
     tissue.data <- lapply(tissue.files, readRDS)
     names(tissue.data) <- tissue.names
-    tissue.counts <- lapply(tissue.data, function(x) x$data$raw)
-    tissue.rz <- lapply(tissue.data, function(x) x$data$rz)
-    tissue.norm <- lapply(tissue.data, function(x) x$data$norm)
     tissue.covar <- lapply(tissue.data, function(x) x$covar.matrix)
+    data.set.names <- lapply(1:length(tissue.names), 
+    function(x) paste0("dataset.DO.Cube.", tissue.names[x]))
+    gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, 
+        function(x) get(x)$annot.mrna))))
 }
 ```
 
@@ -104,7 +105,7 @@ pheno <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsA
 num.pheno <- apply(pheno[,11:(ncol(pheno)-1)], 2, as.numeric)
 rownames(num.pheno) <- pheno[,1]
 
-max.n <- which.max(sapply(tissue.norm, nrow)) #adjust with the largest covariate matrix
+max.n <- which.max(sapply(tissue.covar, nrow)) #adjust with the largest covariate matrix
 covar <- tissue.covar[[max.n]]
 
 if(is.numeric(keep.traits[1])){
@@ -141,26 +142,19 @@ covar.file <- here("Data", "Covariates.RDS")
 saveRDS(all.covar, covar.file)
 ```
 
-## Filter Expression
-Filter the expression matrices to include only genes that have at least
-a minimum amount of expression (unless we are using imputed transcripts). 
-Also regress out covariates using the same covariate matrix generated above.
+## Adjust Expression for Covariates
 
-Here we use the raw expression matrix to select transcripts from the rank Z
-normalized expression matrix. 
-
-If we are using imputed data, read it in here and overwrite the measured
+Adjust expression for sex and generation. If we are using 
+imputed data, read it in here and overwrite the measured
 expression data.
 
 ```{r adjust_covar}
 adj.expr.file <- here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS"))
 
-#if we are using imputed data, read it in and overwrite 
-#tissue.norm
 if(use.imputed){
     if(exp.name == "imputed_local"){
         imp.expr.files <- get.files(here("Data", "imputed"), want = "RDS", 
-            dont.want = c("adjusted", "local", "CC"), full.names = TRUE)
+            dont.want = c("adjusted", "local", "CC", "genetic"), full.names = TRUE)
     }
     if(exp.name == "imputed_full"){
         imp.expr.files <- get.files(here("Data", "imputed"), want = c("RDS", "local"), 
@@ -171,8 +165,39 @@ if(use.imputed){
     for(i in 1:length(tissue.norm)){
         tissue.name <- strsplit(basename(imp.expr.files[[i]]), "_")[[1]][2]
         expr.data <- get(paste0("dataset.DO.Cube.", tissue.name))
-        rownames(tissue.norm[[i]]) <- rownames(expr.data$data$rz)
+        rownames(tissue.norm[[i]]) <- rownames(expr.data$data$norm)
     }
+}else{
+    tissue.norm <- lapply(tissue.data, function(x) x$data$norm)
+}
+
+if(is.interactive){
+#test a few to make sure we're not mapping to the end of the chromosome
+    tx = 1
+    rnd.id  <- sample(colnames(tissue.norm[[tx]]), 1)
+    #rnd.id = colnames(tissue.norm[[tx]])[1]
+    measured.expr <- adjust(tissue.data[[tx]]$data$norm[,rnd.id,drop=FALSE], tissue.data[[tx]]$covar.matrix)
+    imp.expr <- adjust(tissue.norm[[tx]][,rnd.id,drop=FALSE], tissue.data[[tx]]$covar.matrix)
+    #imp.expr <- tissue.norm[[tx]][,rnd.id,drop=FALSE]
+    rnd.chr <- gene.table[match(rnd.id, gene.table[,1]), "chr"]
+    rnd.pos <- as.numeric(gene.table[match(rnd.id, gene.table[,1]), "start"])
+    rnd.name <- gene.table[match(rnd.id, gene.table[,1]), "symbol"]
+    test.imp <- scan1(genoprobs[,rnd.chr], imp.expr, kinship = K[[rnd.chr]])
+    test.measured <- scan1(genoprobs[,rnd.chr], measured.expr, kinship = K[[rnd.chr]])
+    #test <- scan1(genoprobs, tissue.norm[[tx]][,rnd.id], kinship = K);plot(test, map = map)
+    ylim <- c(0, max(c(test.imp, test.measured)))
+
+    quartz(width = 10, height = 5)
+    par(mfrow = c(1,2))
+    plot(test.measured, map = map, col = "red", main = paste(rnd.name, "Chr", rnd.chr),
+        ylim = ylim)
+    plot(test.imp, map = map, add = TRUE)
+    abline(v = rnd.pos)
+    legend("topleft", col = c("red", "darkblue"), lty = 1, legend = c("measured", "imputed"), lwd = 2)
+
+    matched.var <- get.xz(imp.expr, measured.expr)
+    plot.with.model(matched.var[[1]], matched.var[[2]], 
+        xlab = "Imputed Expression", ylab = "Measured Expression", col = tissue.data[[tx]]$covar.matrix[,1]+1)
 }
 
 #if we haven't generated the adjusted expression file yet,
