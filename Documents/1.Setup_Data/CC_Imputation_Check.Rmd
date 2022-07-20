@@ -116,6 +116,20 @@ dad.idx <- sapply(dad, function(x) grep(x, colnames(imp.cc.expr[[1]])))
 
 imp.auto.expr <- t(sapply(1:length(mom.idx), function(x) imp.cc.expr[[1]][mom.idx[x], dad.idx[x],]))
 rownames(imp.auto.expr) <- u_cross
+
+#also make an expanded version to compare to adj.cc.expr
+ind.cross <- tissue.info[,"User.Defined.Strain"]
+split.cross <- strsplit(ind.cross, " ")
+ind.mom <- sapply(split.cross, function(x) x[1])
+ind.dad <- sapply(split.cross, function(x) x[3])
+
+ind.mom.idx <- sapply(ind.mom, function(x) grep(x, rownames(imp.cc.expr[[1]])))
+ind.dad.idx <- sapply(ind.dad, function(x) grep(x, colnames(imp.cc.expr[[1]])))
+
+
+ind.auto.expr <- t(sapply(1:length(ind.mom.idx), function(x) imp.cc.expr[[1]][ind.mom.idx[x], ind.dad.idx[x],]))
+rownames(ind.auto.expr) <- ind.cross
+
 ```
 
 Compare expression between the two data sets. The following 
@@ -123,8 +137,12 @@ histogram shows the distribution of correlations between
 imputed gene expression and measured gene expression.
 
 ```{r match_transcripts}
-common.transcripts <- intersect(colnames(mean.cross.expr), colnames(imp.auto.expr))
-all.cor <- sapply(common.transcripts, function(x) cor(mean.cross.expr[,x], imp.auto.expr[,x]))
+common.transcripts <- intersect(colnames(adj.cc.expr), colnames(ind.auto.expr))
+#test.transcript <- sample(common.transcripts, 1)
+#plot.with.model(adj.cc.expr[,test.transcript], ind.auto.expr[,test.transcript],
+#    xlab = "CC-RIX expression", ylab = "Imputed Expression")
+
+all.cor <- sapply(common.transcripts, function(x) cor(adj.cc.expr[,x], ind.auto.expr[,x]))
 mean.cor <- mean(all.cor, na.rm = TRUE)
 hist(all.cor, breaks = 100);abline(v = mean.cor, col = "red")
 ```
@@ -135,6 +153,7 @@ between the imputed and the actual gene expression.
 
 ```{r lod}
 do.expr <- get(paste0("dataset.DO.Cube.", tissue.name))
+do.covar <- do.expr$covar.matrix
 expr.annot <- do.expr$annot.mrna
 expr.lod <- do.expr$lod.peaks
 split.lod.markers <- strsplit(expr.lod$additive[,"marker.id"], "_")
@@ -207,7 +226,6 @@ plot_cc_v_imp <- function(transcript.id){
     abline(v = betstrain.var, col = "red")
 }
 
-#quartz(); plot.with.model(sapply(test.expr, function(x) mean(x, na.rm = TRUE)), imp.auto.expr[,transcript.id])
 ```
 
 There is no relationship between the imputed CC-RIX expression values
@@ -328,13 +346,13 @@ get_coef <- function(transcript.chr, transcript.pos, mouse.expr, mouse.geno, mou
     #bin the genotype into 0, 0.5, and 1. Otherwise we get super crazy coefficients
     binned.geno <- apply(mouse.geno[[transcript.chr]][,,cis.marker], 2, bin.vector)
     if(use.kinship){
-        norm.expr <- rankZ(mouse.expr[,transcript.id,drop=FALSE])
+        norm.expr <- mouse.expr[,transcript.id,drop=FALSE]
         names(norm.expr) <- rownames(mouse.expr)
         marker.fit <- fit1(binned.geno, pheno = norm.expr, 
             kinship = mouse.K[[transcript.chr]],
             addcovar = mouse.covar)
     }else{
-        norm.expr <- rankZ(mouse.expr[,transcript.id,drop=FALSE])
+        norm.expr <- mouse.expr[,transcript.id,drop=FALSE]
         names(norm.expr) <- rownames(mouse.expr)
         marker.fit <- fit1(binned.geno, pheno = norm.expr, 
             addcovar = mouse.covar)
@@ -352,7 +370,8 @@ get_coef <- function(transcript.chr, transcript.pos, mouse.expr, mouse.geno, mou
 
 #This function does not use fit1, but fits a linear model to 
 #each allele separately. This method does take covariates into 
-#account, but not kinship. Thie method also 
+#account, but not kinship. This method also 
+
 get_coef_by_allele <- function(transcript.chr, transcript.pos, mouse.expr, 
     mouse.geno, mouse.map, mouse.K, mouse.covar, plot.results = FALSE){
     
@@ -366,20 +385,23 @@ get_coef_by_allele <- function(transcript.chr, transcript.pos, mouse.expr,
         function(x) lm(rankZ(mouse.expr[common.expr.ind,transcript.id,drop=FALSE])~mouse.covar[common.covar.ind,]+x))
     allele.coef <- t(sapply(allele.tests, function(x) c(head(coef(x), 1), tail(coef(x), 1))))
     mouse.coef <- allele.coef[,2] - allele.coef[,1]
-    barplot(allele.coef[,2])
-    barplot(mouse.coef)
-    plot(allele.coef[,2], mouse.coef)
+    #barplot(allele.coef[,2])
+    #barplot(mouse.coef)
+    #plot(allele.coef[,2], mouse.coef)
 
     marker.fit <- fit1(binned.geno, 
         pheno = mouse.expr[,transcript.id,drop=FALSE], kinship = mouse.K[[transcript.chr]],
         addcovar = mouse.covar)
     
     mouse.coef <- marker.fit$coef[1:8]
-    plot(allele.coef[,2], mouse.coef, col = CCcolors, pch = 16)
 
     if(plot.results){
+        par(mfrow = c(1,2))
+        plot(rankZ(allele.coef[,2]), rankZ(mouse.coef), col = CCcolors, pch = 16, cex = 2,
+            main = "Comparison of allele fit and fit1")
+        abline(0,1)
         coef.order <- order(mouse.coef)
-        barplot(mouse.coef[coef.order], col = CCcolors[coef.order])
+        barplot(rankZ(mouse.coef[coef.order]), col = CCcolors[coef.order])
     }
 
     return(mouse.coef)
@@ -402,6 +424,7 @@ get_num_trans <- function(transcript.id, bp.buffer = 4e6){
     return(length(trans.idx))
 }
 
+#rnd.transcript <- sample(common.transcripts, 1)
 plot_do_cc_coef <- function(transcript.id, bp.buffer = 4e6, 
     cor.type = c("Spearman", "Pearson"), do.kinship = TRUE, 
     cc.kinship = FALSE, plot.results = TRUE){
@@ -411,17 +434,30 @@ plot_do_cc_coef <- function(transcript.id, bp.buffer = 4e6,
         transcript.chr <- transcript.info[1]
         transcript.pos <- as.numeric(transcript.info[2])
 
-        do.coef <- get_coef(transcript.chr, transcript.pos, mouse.expr = do.expr$data$rz, 
+        do.coef <- get_coef(transcript.chr, transcript.pos, mouse.expr = do.expr$data$norm, 
             mouse.geno = genoprobs, mouse.map = map, mouse.K = K, 
             mouse.covar = do.expr$covar.matrix, use.kinship = do.kinship, 
             plot.results = FALSE)
-        #barplot(do.coef, col = CCcolors)
+
+        quartz(width = 8, height = 4)
+        test_do_coef <- get_coef_by_allele(transcript.chr, transcript.pos, 
+            mouse.expr = do.expr$data$norm, 
+            mouse.geno = genoprobs, mouse.map = map, mouse.K = K, 
+            mouse.covar = do.expr$covar.matrix, plot.results = TRUE)
+            #barplot(do.coef, col = CCcolors)
 
         cc.coef <- get_coef(transcript.chr, transcript.pos, 
             mouse.expr = tissue.expr[[tissue.locale]], 
             mouse.geno = expanded.geno, mouse.map = cc.map, mouse.K = expanded.K, 
             mouse.covar = rnaseq.covar, plot.results = FALSE, use.kinship = cc.kinship)
         #quartz();barplot(cc.coef, col = CCcolors)
+
+        quartz(width = 8, height = 4)
+        test.cc.coef <- get_coef_by_allele(transcript.chr, transcript.pos, 
+            mouse.expr = tissue.expr[[tissue.locale]], 
+            mouse.geno = expanded.geno, mouse.map = cc.map, mouse.K = expanded.K, 
+            mouse.covar = rnaseq.covar, plot.results = FALSE)
+
 
         num.trans <- get_num_trans(transcript.id, bp.buffer)
 
@@ -447,6 +483,20 @@ plot_do_cc_coef <- function(transcript.id, bp.buffer = 4e6,
     names(result) <- c("r", "num_trans")
     invisible(result)
 }
+
+if(is.interactive){
+    rnd.transcript <- sample(common.transcripts, 1)
+    par(mfrow = c(2,2))
+    plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
+        cor.type = "Spearman", do.kinship = FALSE, cc.kinship = FALSE)
+    plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
+        cor.type = "Spearman", do.kinship = FALSE, cc.kinship = TRUE)
+    plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
+        cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)
+    plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
+        cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)
+}
+
 
 do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
 do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed", paste0("cc.do.cor.", tissue.name, ".RDS"))

@@ -1592,175 +1592,183 @@ if(!file.exists(trait.lod.file) || delete_previous){
 
 ## Allele Coefficients for Matched QTL {.tabset .tabset-fade .tabset-pills}
 
-We are most interested in trait-transcript pairs that have shared QTL.
-Here we go through each pair and identify overlapping peaks above
-a given threshold. We then perform a mediation analysis to test 
-whether the allele effects match. We 
-We then plot the allele effects of the two to see
+If we are looking at measured transcripts, we are most interested 
+in trait-transcript pairs that have shared QTL. Here we go through 
+each pair and identify overlapping peaks above a given threshold. 
+We then perform a mediation analysis to test whether the allele 
+effects match. We then plot the allele effects of the two to see
 if they match.
 
+If we are using imputed transcripts, the composite transcript
+is the same as mapping, since the composite transcript is made 
+up of genetic loci that influence gene expression.
+
 ```{r allele_plots}
-shared.peaks <- vector(mode = "list", length = length(tissue.names))
-names(shared.peaks) <- tissue.names
+if(!use.imputed){
+    shared.peaks <- vector(mode = "list", length = length(tissue.names))
+    names(shared.peaks) <- tissue.names
 
-for(i in 1:length(tissue.names)){
-    
-    if(length(qtl.results[[i]][[1]]) > 0){
-        shared.tissue.peaks <- NULL
-
-        transcript.peak.table <- find_peaks(qtl.results[[i]][[1]], 
-        map = map, threshold = lodthresh, prob = 0.95)
-        trait.peak.table <- find_peaks(qtl.results[[i]][[2]], 
-        map = map, threshold = lodthresh, drop = 0.95)
-
-        shared.traits <- intersect(transcript.peak.table[,"lodindex"], trait.peak.table[,"lodindex"])
+    for(i in 1:length(tissue.names)){
         
-        #identify peaks within the Mb limit
-        for(tr in 1:length(shared.traits)){
-            tr.trait <- transcript.peak.table[which(transcript.peak.table[,"lodindex"] == shared.traits[tr]),]
-            tr.transcript <- trait.peak.table[which(trait.peak.table[,"lodindex"] == shared.traits[tr]),]
-            tr.pairs <- cbind(rep(1:nrow(tr.trait), nrow(tr.transcript)), rep(1:nrow(tr.transcript), each = nrow(tr.trait)))
-            for(p in 1:nrow(tr.pairs)){
-                trait.pair <- tr.pairs[p,1]
-                trans.pair <- tr.pairs[p,2]
-                if(tr.trait[trait.pair,"chr"] == tr.transcript[trans.pair,"chr"]){
-                    peak1.mb <- tr.trait[trait.pair,"pos"]
-                    peak2.mb <- tr.transcript[trans.pair,"pos"]
-                    peaks.overlap <- (abs(peak1.mb - peak2.mb) <= peak.dist)
-                    if(peaks.overlap){
-                        shared.info <- matrix(c(unlist(tr.transcript[trans.pair,]), 
-                        unlist(tr.trait[trait.pair,])), nrow = 1)
-                        shared.tissue.peaks <- rbind(shared.tissue.peaks, shared.info)
-                    } #end case when peaks overlap within Mb limit
-                } #end case for when peaks are on same chromosome
-            }#end looping through tr pairs
-        }#end looping through shared traits
-    shared.peaks[[i]] <- shared.tissue.peaks
-    #plot(as.numeric(shared.tissue.peaks[,5]), as.numeric(shared.tissue.peaks[,12]))
+        if(length(qtl.results[[i]][[1]]) > 0){
+            shared.tissue.peaks <- NULL
+
+            transcript.peak.table <- find_peaks(qtl.results[[i]][[1]], 
+            map = map, threshold = lodthresh, prob = 0.95)
+            trait.peak.table <- find_peaks(qtl.results[[i]][[2]], 
+            map = map, threshold = lodthresh, drop = 0.95)
+
+            shared.traits <- intersect(transcript.peak.table[,"lodindex"], trait.peak.table[,"lodindex"])
+            
+            #identify peaks within the Mb limit
+            for(tr in 1:length(shared.traits)){
+                tr.trait <- transcript.peak.table[which(transcript.peak.table[,"lodindex"] == shared.traits[tr]),]
+                tr.transcript <- trait.peak.table[which(trait.peak.table[,"lodindex"] == shared.traits[tr]),]
+                tr.pairs <- cbind(rep(1:nrow(tr.trait), nrow(tr.transcript)), rep(1:nrow(tr.transcript), each = nrow(tr.trait)))
+                for(p in 1:nrow(tr.pairs)){
+                    trait.pair <- tr.pairs[p,1]
+                    trans.pair <- tr.pairs[p,2]
+                    if(tr.trait[trait.pair,"chr"] == tr.transcript[trans.pair,"chr"]){
+                        peak1.mb <- tr.trait[trait.pair,"pos"]
+                        peak2.mb <- tr.transcript[trans.pair,"pos"]
+                        peaks.overlap <- (abs(peak1.mb - peak2.mb) <= peak.dist)
+                        if(peaks.overlap){
+                            shared.info <- matrix(c(unlist(tr.transcript[trans.pair,]), 
+                            unlist(tr.trait[trait.pair,])), nrow = 1)
+                            shared.tissue.peaks <- rbind(shared.tissue.peaks, shared.info)
+                        } #end case when peaks overlap within Mb limit
+                    } #end case for when peaks are on same chromosome
+                }#end looping through tr pairs
+            }#end looping through shared traits
+        shared.peaks[[i]] <- shared.tissue.peaks
+        #plot(as.numeric(shared.tissue.peaks[,5]), as.numeric(shared.tissue.peaks[,12]))
+        }
     }
 }
 ```
 
 
 ```{r plot_shared, results = "asis", fig.height = 9, fig.width = 11}
-all.lod.drop <- vector(mode = "list", length = length(tissue.names))
-names(all.lod.drop) <- tissue.names
-for(i in 1:length(shared.peaks)){
-    if(is.interactive){pdf(file.path(results.dir, 
-    paste0("Overlapping.Peaks.", tissue.names[i], ".pdf")), width = 10, height = 6)}
-    if(length(shared.peaks[[i]]) > 0){
-        cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
-        lod.drop.table <- matrix(NA, nrow = nrow(shared.peaks[[i]]), ncol = 5)
-        colnames(lod.drop.table) <- c("chr", "pos", "original", "mediated", "percent_drop")
-        rownames(lod.drop.table) <- shared.peaks[[i]][,2]
-        
-        for(tr in 1:nrow(shared.peaks[[i]])){
+if(!use.imputed){
+    all.lod.drop <- vector(mode = "list", length = length(tissue.names))
+    names(all.lod.drop) <- tissue.names
+    for(i in 1:length(shared.peaks)){
+        if(is.interactive){pdf(file.path(results.dir, 
+        paste0("Overlapping.Peaks.", tissue.names[i], ".pdf")), width = 10, height = 6)}
+        if(length(shared.peaks[[i]]) > 0){
+            cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
+            lod.drop.table <- matrix(NA, nrow = nrow(shared.peaks[[i]]), ncol = 5)
+            colnames(lod.drop.table) <- c("chr", "pos", "original", "mediated", "percent_drop")
+            rownames(lod.drop.table) <- shared.peaks[[i]][,2]
+            
+            for(tr in 1:nrow(shared.peaks[[i]])){
 
-            trait.trans <- get_latent_var(tissue.mats = matched.mats[[i]], 
-                tissue.results = boot.CCA.results[[i]])
+                trait.trans <- get_latent_var(tissue.mats = matched.mats[[i]], 
+                    tissue.results = boot.CCA.results[[i]])
 
-            CT = as.numeric(gsub("Composite_Trait", "", shared.peaks[[i]][tr,2]))
-            chr = as.numeric(shared.peaks[[i]][tr,3])
-            pos.trait.qtl <- as.numeric(shared.peaks[[i]][tr,4])
-            trait.qtl.lod <- as.numeric(shared.peaks[[i]][tr,5])
-            peak.marker <- get.nearest.pt(map[[chr]], pos.trait.qtl)
-            pos.transcript.qtl <- as.numeric(shared.peaks[[i]][tr,11])
-            if(chr == 20){chr = "X"}
+                CT = as.numeric(gsub("Composite_Trait", "", shared.peaks[[i]][tr,2]))
+                chr = as.numeric(shared.peaks[[i]][tr,3])
+                pos.trait.qtl <- as.numeric(shared.peaks[[i]][tr,4])
+                trait.qtl.lod <- as.numeric(shared.peaks[[i]][tr,5])
+                peak.marker <- get.nearest.pt(map[[chr]], pos.trait.qtl)
+                pos.transcript.qtl <- as.numeric(shared.peaks[[i]][tr,11])
+                if(chr == 20){chr = "X"}
 
-            trans <- trait.trans$Composite_Transcripts[,CT,drop=FALSE]
-            ctrait <- trait.trans$Composite_Traits[,CT,drop=FALSE]
+                trans <- trait.trans$Composite_Transcripts[,CT,drop=FALSE]
+                ctrait <- trait.trans$Composite_Traits[,CT,drop=FALSE]
 
-            mediation.scan.file <- file.path(results.dir, 
-                paste0("Mediation.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
-                ".Chr.", shared.peaks[[i]][tr,3], ".RDS"))
-
-            if(!file.exists(mediation.scan.file) || delete_previous){
-                #scan to see if the transcript mediates the trait QTL
-                adj.trait <- adjust(ctrait, trans)
-                adj.scan <- scan1(genoprobs[,chr], adj.trait, kinship = K[[chr]])
-                saveRDS(adj.scan, mediation.scan.file)
-            }else{
-                adj.scan <- readRDS(mediation.scan.file)
-            }
-
-            med.lod <- adj.scan[peak.marker,1]
-            perc.drop <- (trait.qtl.lod-med.lod)/trait.qtl.lod
-            lod.drop.table[tr,] <- c(as.numeric(shared.peaks[[i]][tr,3:4]), trait.qtl.lod, med.lod, perc.drop)
-
-            #if the percent drop is greater than the threshold run the blups to visualize the 
-            #allele effects
-            if(perc.drop > perc.drop.thresh){
-                cat("####", shared.peaks[[i]][tr,2], ", Chr", shared.peaks[[i]][tr,3], "\n")
-
-                individual.scan.file <- file.path(results.dir, 
-                    paste0("Individual.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
+                mediation.scan.file <- file.path(results.dir, 
+                    paste0("Mediation.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
                     ".Chr.", shared.peaks[[i]][tr,3], ".RDS"))
 
-                if(!file.exists(individual.scan.file) || delete_previous){
-                
-                    #map the transcript
-                    transcript.lod <- scan1(genoprobs[,chr], trans, kinship = K[[chr]])
-                    #find_peaks(transcript.lod, map = map, threshold = 5, prob = 0.95)
-                    #transcript.coef <- scan1coef(genoprobs[,chr], trans, kinship = K[[chr]])
-                    transcript.coef <- scan1blup(genoprobs[,chr], trans, kinship = K[[chr]])
-            
-                    #map the trait too
-                    trait.lod <- scan1(genoprobs[,chr], ctrait, kinship = K[[chr]])
-                    #find_peaks(trait.lod, map = map, threshold = 5, prob = 0.95)
-                    #trait.coef <- scan1coef(genoprobs[,chr], ctrait)
-                    trait.coef <- scan1blup(genoprobs[,chr], ctrait, kinship = K[[chr]])
-                
-                    result <- list("Transcript_LOD" = transcript.lod, 
-                    "Transcript_Coef" = transcript.coef, 
-                    "Trait_LOD" = trait.lod, 
-                    "Trait_Coef" = trait.coef)
-
-                    saveRDS(result, individual.scan.file)
+                if(!file.exists(mediation.scan.file) || delete_previous){
+                    #scan to see if the transcript mediates the trait QTL
+                    adj.trait <- adjust(ctrait, trans)
+                    adj.scan <- scan1(genoprobs[,chr], adj.trait, kinship = K[[chr]])
+                    saveRDS(adj.scan, mediation.scan.file)
                 }else{
-                    result <- readRDS(individual.scan.file)
-                    transcript.lod = result$Transcript_LOD
-                    transcript.coef <- result$Transcript_Coef
-                    trait.lod <- result$Trait_LOD
-                    trait.coef <- result$Trait_Coef
+                    adj.scan <- readRDS(mediation.scan.file)
                 }
+
+                med.lod <- adj.scan[peak.marker,1]
+                perc.drop <- (trait.qtl.lod-med.lod)/trait.qtl.lod
+                lod.drop.table[tr,] <- c(as.numeric(shared.peaks[[i]][tr,3:4]), trait.qtl.lod, med.lod, perc.drop)
+
+                #if the percent drop is greater than the threshold run the blups to visualize the 
+                #allele effects
+                if(perc.drop > perc.drop.thresh){
+                    cat("####", shared.peaks[[i]][tr,2], ", Chr", shared.peaks[[i]][tr,3], "\n")
+
+                    individual.scan.file <- file.path(results.dir, 
+                        paste0("Individual.QTL.", tissue.names[i], ".", shared.peaks[[i]][tr,2], 
+                        ".Chr.", shared.peaks[[i]][tr,3], ".RDS"))
+
+                    if(!file.exists(individual.scan.file) || delete_previous){
+                    
+                        #map the transcript
+                        transcript.lod <- scan1(genoprobs[,chr], trans, kinship = K[[chr]])
+                        #find_peaks(transcript.lod, map = map, threshold = 5, prob = 0.95)
+                        #transcript.coef <- scan1coef(genoprobs[,chr], trans, kinship = K[[chr]])
+                        transcript.coef <- scan1blup(genoprobs[,chr], trans, kinship = K[[chr]])
+                
+                        #map the trait too
+                        trait.lod <- scan1(genoprobs[,chr], ctrait, kinship = K[[chr]])
+                        #find_peaks(trait.lod, map = map, threshold = 5, prob = 0.95)
+                        #trait.coef <- scan1coef(genoprobs[,chr], ctrait)
+                        trait.coef <- scan1blup(genoprobs[,chr], ctrait, kinship = K[[chr]])
+                    
+                        result <- list("Transcript_LOD" = transcript.lod, 
+                        "Transcript_Coef" = transcript.coef, 
+                        "Trait_LOD" = trait.lod, 
+                        "Trait_Coef" = trait.coef)
+
+                        saveRDS(result, individual.scan.file)
+                    }else{
+                        result <- readRDS(individual.scan.file)
+                        transcript.lod = result$Transcript_LOD
+                        transcript.coef <- result$Transcript_Coef
+                        trait.lod <- result$Trait_LOD
+                        trait.coef <- result$Trait_Coef
+                    }
+                
             
-           
-                #plot the results
-                layout.mat <- matrix(c(1,1,2,2,3,3,4,4,5,0,0,0), nrow = 3, byrow = TRUE)
-                layout(layout.mat)
-                par(mar = c(2,2,2,2))
-                plot(transcript.lod, map = map, main = paste("Transcript QTL"))
-                abline(v = pos.transcript.qtl)
-                
-                plot_coefCC(transcript.coef, map = map)
-                abline(v = pos.transcript.qtl)
-                mtext(paste("CTranscript", CT, "Chr", chr), side = 3, outer = TRUE, line = -2)
-                #cat("\n\n")
+                    #plot the results
+                    layout.mat <- matrix(c(1,1,2,2,3,3,4,4,5,0,0,0), nrow = 3, byrow = TRUE)
+                    layout(layout.mat)
+                    par(mar = c(2,2,2,2))
+                    plot(transcript.lod, map = map, main = paste("Transcript QTL"))
+                    abline(v = pos.transcript.qtl)
+                    
+                    plot_coefCC(transcript.coef, map = map)
+                    abline(v = pos.transcript.qtl)
+                    mtext(paste("CTranscript", CT, "Chr", chr), side = 3, outer = TRUE, line = -2)
+                    #cat("\n\n")
 
-                plot(trait.lod, map = map, main = "Trait QTL")
-                abline(v = pos.trait.qtl)
-                plot_coefCC(trait.coef, map = map)
-                abline(v = pos.trait.qtl)
-                #mtext(paste0("CTrait: ", trait, ", Chr: ", chr), side = 3, 
-                #outer = TRUE, line = -2)
+                    plot(trait.lod, map = map, main = "Trait QTL")
+                    abline(v = pos.trait.qtl)
+                    plot_coefCC(trait.coef, map = map)
+                    abline(v = pos.trait.qtl)
+                    #mtext(paste0("CTrait: ", trait, ", Chr: ", chr), side = 3, 
+                    #outer = TRUE, line = -2)
 
-                #compare allele coefficients for the trait and transcript
-                chr.pos.trait <- as.numeric(sapply(strsplit(rownames(trait.coef), "_"), function(x) x[2]))
-                nearest.trait.marker <- get.nearest.pt(chr.pos.trait, pos.trait.qtl*1e6)
-                trait.allele <- trait.coef[nearest.trait.marker,LETTERS[1:8]]
-                
-                chr.pos.trans <- as.numeric(sapply(strsplit(rownames(transcript.coef), "_"), function(x) x[2]))
-                nearest.trans.marker <- get.nearest.pt(chr.pos.trans, pos.transcript.qtl*1e6)
-                transcript.allele <- transcript.coef[nearest.trans.marker,LETTERS[1:8]]
-                plot.with.model(trait.allele, transcript.allele, pch = 16, col = CCcolors,
-                xlab = "Trait Coefficients", ylab = "Transcript Coefficients", cex = 2)
-        
-                cat("\n\n")
-            }#end case for passing lod drop threshold
-        } #end looping through shared peaks for the tissue
-    all.lod.drop[[i]] <- lod.drop.table
-    }  #end looping through tissues
-    if(is.interactive){dev.off()}
+                    #compare allele coefficients for the trait and transcript
+                    chr.pos.trait <- as.numeric(sapply(strsplit(rownames(trait.coef), "_"), function(x) x[2]))
+                    nearest.trait.marker <- get.nearest.pt(chr.pos.trait, pos.trait.qtl*1e6)
+                    trait.allele <- trait.coef[nearest.trait.marker,LETTERS[1:8]]
+                    
+                    chr.pos.trans <- as.numeric(sapply(strsplit(rownames(transcript.coef), "_"), function(x) x[2]))
+                    nearest.trans.marker <- get.nearest.pt(chr.pos.trans, pos.transcript.qtl*1e6)
+                    transcript.allele <- transcript.coef[nearest.trans.marker,LETTERS[1:8]]
+                    plot.with.model(trait.allele, transcript.allele, pch = 16, col = CCcolors,
+                    xlab = "Trait Coefficients", ylab = "Transcript Coefficients", cex = 2)
+            
+                    cat("\n\n")
+                }#end case for passing lod drop threshold
+            } #end looping through shared peaks for the tissue
+        all.lod.drop[[i]] <- lod.drop.table
+        }  #end looping through tissues
+        if(is.interactive){dev.off()}
+    }
 }
 ```
 
@@ -1992,6 +2000,7 @@ plot.grouped.boxes(list("Canonical Correlations" = can.cors,
 ```{r check_eqtl, eval = FALSE}
 gene.name = "Lep"
 gene.name = "Fkbp11"
+gene.name = "Aldh2"
 gene.id <- unique(gene.table[which(gene.table[,"symbol"] == gene.name), "gene.id"])
 gene.chr <- unique(gene.table[which(gene.table[,"symbol"] == gene.name), "chr"])
 gene.pos <- unique(gene.table[which(gene.table[,"symbol"] == gene.name), "start"])
@@ -2050,204 +2059,209 @@ transcript have LOD scores greater than `r lodthresh`, and the
 composite transcript mediates the composite trait QTL by at least
 `r perc.drop.thresh*100` percent.
 
+We only do this for measured transcripts. It doesn't make sense
+for imputed transcripts, since they are really a genotype, not
+expression.
+
 ```{r mediation, results = "asis", fig.width = 10, fig.height = 7}
+if(!use.imputed){
+    for(i in 1:length(all.lod.drop)){
+        cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
+        tissue.name <- tissue.names[i]
+        if(length(all.lod.drop[[i]]) > 0){
+            for(tr in 1:nrow(all.lod.drop[[i]])){
+                CT <- as.numeric(gsub("Composite_Trait", "", rownames(all.lod.drop[[i]])[tr]))
+                chr.num <- all.lod.drop[[i]][tr,"chr"]
+                lod.cut <- all.lod.drop[[i]][tr,"percent_drop"]
 
-for(i in 1:length(all.lod.drop)){
-    cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
-    tissue.name <- tissue.names[i]
-    if(length(all.lod.drop[[i]]) > 0){
-        for(tr in 1:nrow(all.lod.drop[[i]])){
-            CT <- as.numeric(gsub("Composite_Trait", "", rownames(all.lod.drop[[i]])[tr]))
-            chr.num <- all.lod.drop[[i]][tr,"chr"]
-            lod.cut <- all.lod.drop[[i]][tr,"percent_drop"]
+                if(!is.na(lod.cut) && lod.cut > perc.drop.thresh){
+                    cat("####", rownames(all.lod.drop[[i]])[tr], "Chr", chr.num, "{.tabset .tabset-fade .tabset-pills}\n")
+                    #get data for specified tissue
+                    tissue.locale <- which(tissue.names == tissue.name)
+                    trait.trans <- get_latent_var(tissue.mats = matched.mats[[tissue.locale]], 
+                        tissue.results = boot.CCA.results[[tissue.locale]])
 
-            if(!is.na(lod.cut) && lod.cut > perc.drop.thresh){
-                cat("####", rownames(all.lod.drop[[i]])[tr], "Chr", chr.num, "{.tabset .tabset-fade .tabset-pills}\n")
-                #get data for specified tissue
-                tissue.locale <- which(tissue.names == tissue.name)
-                trait.trans <- get_latent_var(tissue.mats = matched.mats[[tissue.locale]], 
-                    tissue.results = boot.CCA.results[[tissue.locale]])
-
-                #scan specified CT on specified chromosome to find overlapping peaks
-                if(chr.num == 20){
-                    Chr <- "X"
-                    }else{
-                     Chr <- chr.num
-                }
-
-                trait.qtl <- scan1(genoprobs[,Chr], trait.trans$Composite_Traits[,CT,drop=FALSE], 
-                    kinship = K[[chr.num]])
-                transcript.qtl <- scan1(genoprobs[,Chr], 
-                    trait.trans$Composite_Transcripts[,CT,drop=FALSE], kinship = K[[chr.num]])
-                peak.pos <- all.lod.drop[[i]][tr,"pos"]
-                nearest.marker <- get.nearest.pt(peak.pos, map[[chr.num]])
-
-                #quartz(width = 10, height = 6)
-                cat("##### Transcript and Trait Scans\n")
-                par(mfrow = c(2,1))
-                plot(trait.qtl, map = map, main = "CTrait")
-                abline(v = peak.pos)
-                plot(transcript.qtl, map = map, main = "CTranscript")
-                abline(v = peak.pos)
-
-                trait.peak.lod <- trait.qtl[nearest.marker,1]
-                trait.peak.pos <- peak.pos
-                transcript.peak.lod <- transcript.qtl[nearest.marker,1]
-                transcript.peak.pos <- peak.pos
-
-                #see if transcript mediates trait qtl
-                adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], trait.trans$Composite_Transcripts[,CT,drop=FALSE])
-                med.qtl <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
-
-                cat("\n\n")
-                #quartz(width = 10, height = 6)
-                cat("##### Mediation Scan\n")
-                layout(matrix(c(1,0), ncol = 1))
-                #plot(transcript.qtl, map = map)
-
-                med.ylim <- c(0, max(c(trait.qtl[,1], med.qtl[,1])))
-                plot(trait.qtl, map = map, ylim = med.ylim)
-                plot(med.qtl, map = map, add = TRUE, col = "red")
-                segments(x0 = peak.pos, y0 = 0, y1 = 6, col = "blue", lwd = 2)
-
-                #Identify transcripts with non-zero loadings
-                non.zero.loadings <- which(boot.CCA.results[[tissue.locale]]$u[,CT] != 0)
-                transcripts <- colnames(matched.mats[[tissue.locale]]$X)[non.zero.loadings]
-                transcript.names <- gene.info[[tissue.locale]][match(transcripts, gene.info[[tissue.locale]][,1]),"symbol"]
-
-                full.table <- cbind(transcript.names, transcripts, boot.CCA.results[[tissue.locale]]$u[non.zero.loadings,CT])
-                loading.order <- order(as.numeric(full.table[,3]))
-
-                chr.locale <- which(gene.info[[tissue.name]][,"chr"] == Chr)
-                mb.locale <- intersect(which(as.numeric(gene.info[[tissue.name]][,"start"]) >= 40),
-                                which(as.numeric(gene.info[[tissue.name]][,"end"]) <= 50))
-                locus.genes <- gene.info[[tissue.name]][intersect(mb.locale, chr.locale),,drop=FALSE]
-
-                #Mediate on all gene in the locus. 
-                #Color genes that are also in the transcript red.
-                #Intersect the lists to find any transcripts encoded in QTL
-                #If there are some. Export the list and try using mediation
-                #to identify which are most likely to be causal.
-                #or use all as candidates
-
-                locus.gene.name <- locus.genes[,"symbol"]
-                overlap.genes <- intersect(transcript.names, locus.gene.name)
-                gene.col <- rep("darkgray", length = length(locus.gene.name))
-                if(length(overlap.genes) > 0){
-                    gene.col[match(overlap.genes, locus.gene.name)] <- "red"
-                }
-
-                if(length(locus.gene.name) > 0){
-                    #use the expression of each gene individually to mediate the effect of the locus on the trait
-                    gene.id <- gene.info[[tissue.locale]][match(locus.gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
-                    gene.id <- gene.id[which(!is.na(gene.id))]
-                    #gene.id <- transcripts #use all transcript IDs
-                    gene.names <- gene.info[[tissue.locale]][match(gene.id, gene.info[[tissue.locale]][,1]),"symbol"]
-                    gene.locale <- match(gene.id, colnames(matched.mats[[tissue.locale]]$X))
-                    gene.pos <- as.numeric(gene.info[[tissue.locale]][match(gene.names, gene.info[[tissue.locale]][,"symbol"]), "start"])
-
-                    mediated.lod <- matrix(NA, nrow = length(gene.locale), ncol = 2)
-                    rownames(mediated.lod) <- gene.names
-                    colnames(mediated.lod) <- c("CTrait", "CTranscript")
-                    for(g in 1:length(gene.locale)){
-                        if(is.interactive){cat(g, gene.names[g], "\n")}
-                        adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], 
-                            matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE])
-                        adj.transcript <- adjust(trait.trans$Composite_Transcripts[,CT,drop=FALSE],
-                            matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE])
-                    
-                        med.trait <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
-                        mediated.lod[g,1] <- get_LOD(med.trait, map = map, chr = Chr, pos = trait.peak.pos)
-
-                        med.transcript <- scan1(genoprobs[,Chr], adj.transcript, kinship = K[[chr.num]])
-                        mediated.lod[g,2] <- get_LOD(med.transcript, map = map, chr = Chr, pos = transcript.peak.pos)
-
-                        #plot(trait.qtl, map = map, ylim = c(0, max(c(unlist(trait.qtl), unlist(med.trait)))));plot(med.trait, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
-                        #plot(transcript.qtl, map = map, ylim = c(0, max(c(unlist(transcript.qtl), unlist(med.transcript)))));plot(med.transcript, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
+                    #scan specified CT on specified chromosome to find overlapping peaks
+                    if(chr.num == 20){
+                        Chr <- "X"
+                        }else{
+                        Chr <- chr.num
                     }
 
-                    cat("\n\n")
-                    cat("##### LOD Score Drops\n")
+                    trait.qtl <- scan1(genoprobs[,Chr], trait.trans$Composite_Traits[,CT,drop=FALSE], 
+                        kinship = K[[chr.num]])
+                    transcript.qtl <- scan1(genoprobs[,Chr], 
+                        trait.trans$Composite_Transcripts[,CT,drop=FALSE], kinship = K[[chr.num]])
+                    peak.pos <- all.lod.drop[[i]][tr,"pos"]
+                    nearest.marker <- get.nearest.pt(peak.pos, map[[chr.num]])
+
+                    #quartz(width = 10, height = 6)
+                    cat("##### Transcript and Trait Scans\n")
                     par(mfrow = c(2,1))
-                    ylim = c(0, max(c(round(mediated.lod[,1], 2), trait.peak.lod, transcript.peak.lod)))
-                    trait.med.order <- order(round(mediated.lod[,1], 2))
-                    barplot_with_num(round(mediated.lod[trait.med.order,1]), 
-                        main = "Mediated Trait Peaks", las = 2, text.gap = 0.2,
-                        text.shift = 0.12, ylim = ylim, col = gene.col[trait.med.order])
-                    abline(h = trait.peak.lod)
-                    transcript.med.order <- order(round(mediated.lod[,2], 2))
-                    barplot_with_num(round(mediated.lod[transcript.med.order,2], 2), 
-                        main = "Mediated Transcript Peaks", las = 2, text.gap = 0.2,
-                        text.shift = 0.12, ylim = ylim, col = gene.col[transcript.med.order])
-                    abline(h = transcript.peak.lod)
+                    plot(trait.qtl, map = map, main = "CTrait")
+                    abline(v = peak.pos)
+                    plot(transcript.qtl, map = map, main = "CTranscript")
+                    abline(v = peak.pos)
+
+                    trait.peak.lod <- trait.qtl[nearest.marker,1]
+                    trait.peak.pos <- peak.pos
+                    transcript.peak.lod <- transcript.qtl[nearest.marker,1]
+                    transcript.peak.pos <- peak.pos
+
+                    #see if transcript mediates trait qtl
+                    adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], trait.trans$Composite_Transcripts[,CT,drop=FALSE])
+                    med.qtl <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
 
                     cat("\n\n")
-                    cat("##### Transcript vs. Trait LOD Drops\n")
-                    plot(mediated.lod, pch = 16,
-                        xlab = "Trait Mediated LOD", ylab = "Transcript Mediated LOD",
-                        xlim = c(min(mediated.lod[,1]), ylim[2]), 
-                        ylim = c(min(mediated.lod[,2]), ylim[2]), col = gene.col)
-                    text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
-                    abline(v = trait.peak.lod, h = transcript.peak.lod)             
-
-                    #show heatmap of individual gene expression along with trait values
-                    ct.expr <- matched.mats[[tissue.locale]]$X[,non.zero.loadings,drop=FALSE]
-                    colnames(ct.expr) <- gene.info[[tissue.name]][match(colnames(ct.expr), gene.info[[tissue.name]][,1]),"symbol"]
-                
-                    ind.order <- order(trait.trans$Composite_Traits[,CT,drop=FALSE], decreasing = TRUE)
-
-                    #scale expression across transcripts
-                    scaled.expr <- apply(ct.expr, 2, rankZ)
-                    #trans.order <- hclust(dist(t(scaled.expr)))$order
-                    if(ncol(scaled.expr) > 1){
-                        trans.order <- order(plot.decomp(t(scaled.expr), plot.results = FALSE)$u[,1])
-                    }else{
-                        trans.order <- 1
-                    }
-
-                    #plot without dendrogram
-                    #png("~/Desktop/CT_transcripts_expression.png", width = 10, height = 4, units = "in", res = 200)
-                    cat("\n\n")
-                    cat("##### Transcripts by Trait\n")
-                    layout(matrix(c(1,2), nrow = 1), widths = c(1,0.2))
-                    par(mar = c(2,2,2,2))
-                    imageWithText(scaled.expr[ind.order, trans.order,drop=FALSE], 
-                        show.text = FALSE, use.pheatmap.colors = TRUE, col.names = NULL,
-                        row.names = NULL)
-                    par(mar = c(2,2,2,4))
-                    imageWithText(trait.trans$Composite_Traits[ind.order,CT,drop=FALSE], 
-                        show.text = FALSE, use.pheatmap.colors = TRUE, row.names = NULL)
-                                
-
-                    #look for eQTL among positional candidates
-                    eqtl.lod <- rep(NA, length(gene.names))
-                    names(eqtl.lod) <- gene.names
-                    for(g in 1:length(gene.names)){
-                        #cat(g, gene.names[g], "\n")
-                        eqtl <- scan1(genoprobs[,Chr], matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE], 
-                            kinship = K[[chr.num]])
-                        eqtl.lod[g] <- get_LOD(eqtl, map = map, chr = Chr, pos = gene.pos[g])
-                        #plot(eqtl, map = map);abline(v = gene.pos[g])
-                    }
-                    cat("\n\n")
-                    cat("##### Local eQTL LOD Scores\n")
+                    #quartz(width = 10, height = 6)
+                    cat("##### Mediation Scan\n")
                     layout(matrix(c(1,0), ncol = 1))
-                    par(mar = c(8,4,2,2))
-                    eqtl.order <- order(round(eqtl.lod, 2))
-                    barplot_with_num(round(eqtl.lod, 2)[eqtl.order], las = 2, col = gene.col[eqtl.order])
+                    #plot(transcript.qtl, map = map)
 
-                    #trait.peak.lod <- get_LOD(trait.qtl, map = map, chr = Chr, pos = trait.peak.pos)
+                    med.ylim <- c(0, max(c(trait.qtl[,1], med.qtl[,1])))
+                    plot(trait.qtl, map = map, ylim = med.ylim)
+                    plot(med.qtl, map = map, add = TRUE, col = "red")
+                    segments(x0 = peak.pos, y0 = 0, y1 = 6, col = "blue", lwd = 2)
 
-                    cat("\n\n")
-                } #end case for when there are genes to mediate on
+                    #Identify transcripts with non-zero loadings
+                    non.zero.loadings <- which(boot.CCA.results[[tissue.locale]]$u[,CT] != 0)
+                    transcripts <- colnames(matched.mats[[tissue.locale]]$X)[non.zero.loadings]
+                    transcript.names <- gene.info[[tissue.locale]][match(transcripts, gene.info[[tissue.locale]][,1]),"symbol"]
 
-            } #end case for when there is good mediation by the composite transcript
-            cat("\n\n")
-        } #end looping through rows of overlapping peaks
-    cat("\n\n")
-    } #end case for when there are overlapping peaks for the tissue
-    cat("\n\n")
-} #end looping through tissues.
+                    full.table <- cbind(transcript.names, transcripts, boot.CCA.results[[tissue.locale]]$u[non.zero.loadings,CT])
+                    loading.order <- order(as.numeric(full.table[,3]))
+
+                    chr.locale <- which(gene.info[[tissue.name]][,"chr"] == Chr)
+                    mb.locale <- intersect(which(as.numeric(gene.info[[tissue.name]][,"start"]) >= 40),
+                                    which(as.numeric(gene.info[[tissue.name]][,"end"]) <= 50))
+                    locus.genes <- gene.info[[tissue.name]][intersect(mb.locale, chr.locale),,drop=FALSE]
+
+                    #Mediate on all gene in the locus. 
+                    #Color genes that are also in the transcript red.
+                    #Intersect the lists to find any transcripts encoded in QTL
+                    #If there are some. Export the list and try using mediation
+                    #to identify which are most likely to be causal.
+                    #or use all as candidates
+
+                    locus.gene.name <- locus.genes[,"symbol"]
+                    overlap.genes <- intersect(transcript.names, locus.gene.name)
+                    gene.col <- rep("darkgray", length = length(locus.gene.name))
+                    if(length(overlap.genes) > 0){
+                        gene.col[match(overlap.genes, locus.gene.name)] <- "red"
+                    }
+
+                    if(length(locus.gene.name) > 0){
+                        #use the expression of each gene individually to mediate the effect of the locus on the trait
+                        gene.id <- gene.info[[tissue.locale]][match(locus.gene.name, gene.info[[tissue.locale]][,"symbol"]),1]
+                        gene.id <- gene.id[which(!is.na(gene.id))]
+                        #gene.id <- transcripts #use all transcript IDs
+                        gene.names <- gene.info[[tissue.locale]][match(gene.id, gene.info[[tissue.locale]][,1]),"symbol"]
+                        gene.locale <- match(gene.id, colnames(matched.mats[[tissue.locale]]$X))
+                        gene.pos <- as.numeric(gene.info[[tissue.locale]][match(gene.names, gene.info[[tissue.locale]][,"symbol"]), "start"])
+
+                        mediated.lod <- matrix(NA, nrow = length(gene.locale), ncol = 2)
+                        rownames(mediated.lod) <- gene.names
+                        colnames(mediated.lod) <- c("CTrait", "CTranscript")
+                        for(g in 1:length(gene.locale)){
+                            if(is.interactive){cat(g, gene.names[g], "\n")}
+                            adj.trait <- adjust(trait.trans$Composite_Traits[,CT,drop=FALSE], 
+                                matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE])
+                            adj.transcript <- adjust(trait.trans$Composite_Transcripts[,CT,drop=FALSE],
+                                matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE])
+                        
+                            med.trait <- scan1(genoprobs[,Chr], adj.trait, kinship = K[[chr.num]])
+                            mediated.lod[g,1] <- get_LOD(med.trait, map = map, chr = Chr, pos = trait.peak.pos)
+
+                            med.transcript <- scan1(genoprobs[,Chr], adj.transcript, kinship = K[[chr.num]])
+                            mediated.lod[g,2] <- get_LOD(med.transcript, map = map, chr = Chr, pos = transcript.peak.pos)
+
+                            #plot(trait.qtl, map = map, ylim = c(0, max(c(unlist(trait.qtl), unlist(med.trait)))));plot(med.trait, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
+                            #plot(transcript.qtl, map = map, ylim = c(0, max(c(unlist(transcript.qtl), unlist(med.transcript)))));plot(med.transcript, map = map, add = TRUE, col = "red");abline(v = trait.peak.pos)
+                        }
+
+                        cat("\n\n")
+                        cat("##### LOD Score Drops\n")
+                        par(mfrow = c(2,1))
+                        ylim = c(0, max(c(round(mediated.lod[,1], 2), trait.peak.lod, transcript.peak.lod)))
+                        trait.med.order <- order(round(mediated.lod[,1], 2))
+                        barplot_with_num(round(mediated.lod[trait.med.order,1]), 
+                            main = "Mediated Trait Peaks", las = 2, text.gap = 0.2,
+                            text.shift = 0.12, ylim = ylim, col = gene.col[trait.med.order])
+                        abline(h = trait.peak.lod)
+                        transcript.med.order <- order(round(mediated.lod[,2], 2))
+                        barplot_with_num(round(mediated.lod[transcript.med.order,2], 2), 
+                            main = "Mediated Transcript Peaks", las = 2, text.gap = 0.2,
+                            text.shift = 0.12, ylim = ylim, col = gene.col[transcript.med.order])
+                        abline(h = transcript.peak.lod)
+
+                        cat("\n\n")
+                        cat("##### Transcript vs. Trait LOD Drops\n")
+                        plot(mediated.lod, pch = 16,
+                            xlab = "Trait Mediated LOD", ylab = "Transcript Mediated LOD",
+                            xlim = c(min(mediated.lod[,1]), ylim[2]), 
+                            ylim = c(min(mediated.lod[,2]), ylim[2]), col = gene.col)
+                        text(mediated.lod[,1], mediated.lod[,2], labels = gene.names, pos = 4)
+                        abline(v = trait.peak.lod, h = transcript.peak.lod)             
+
+                        #show heatmap of individual gene expression along with trait values
+                        ct.expr <- matched.mats[[tissue.locale]]$X[,non.zero.loadings,drop=FALSE]
+                        colnames(ct.expr) <- gene.info[[tissue.name]][match(colnames(ct.expr), gene.info[[tissue.name]][,1]),"symbol"]
+                    
+                        ind.order <- order(trait.trans$Composite_Traits[,CT,drop=FALSE], decreasing = TRUE)
+
+                        #scale expression across transcripts
+                        scaled.expr <- apply(ct.expr, 2, rankZ)
+                        #trans.order <- hclust(dist(t(scaled.expr)))$order
+                        if(ncol(scaled.expr) > 1){
+                            trans.order <- order(plot.decomp(t(scaled.expr), plot.results = FALSE)$u[,1])
+                        }else{
+                            trans.order <- 1
+                        }
+
+                        #plot without dendrogram
+                        #png("~/Desktop/CT_transcripts_expression.png", width = 10, height = 4, units = "in", res = 200)
+                        cat("\n\n")
+                        cat("##### Transcripts by Trait\n")
+                        layout(matrix(c(1,2), nrow = 1), widths = c(1,0.2))
+                        par(mar = c(2,2,2,2))
+                        imageWithText(scaled.expr[ind.order, trans.order,drop=FALSE], 
+                            show.text = FALSE, use.pheatmap.colors = TRUE, col.names = NULL,
+                            row.names = NULL)
+                        par(mar = c(2,2,2,4))
+                        imageWithText(trait.trans$Composite_Traits[ind.order,CT,drop=FALSE], 
+                            show.text = FALSE, use.pheatmap.colors = TRUE, row.names = NULL)
+                                    
+
+                        #look for eQTL among positional candidates
+                        eqtl.lod <- rep(NA, length(gene.names))
+                        names(eqtl.lod) <- gene.names
+                        for(g in 1:length(gene.names)){
+                            #cat(g, gene.names[g], "\n")
+                            eqtl <- scan1(genoprobs[,Chr], matched.mats[[tissue.locale]]$X[,gene.locale[g],drop=FALSE], 
+                                kinship = K[[chr.num]])
+                            eqtl.lod[g] <- get_LOD(eqtl, map = map, chr = Chr, pos = gene.pos[g])
+                            #plot(eqtl, map = map);abline(v = gene.pos[g])
+                        }
+                        cat("\n\n")
+                        cat("##### Local eQTL LOD Scores\n")
+                        layout(matrix(c(1,0), ncol = 1))
+                        par(mar = c(8,4,2,2))
+                        eqtl.order <- order(round(eqtl.lod, 2))
+                        barplot_with_num(round(eqtl.lod, 2)[eqtl.order], las = 2, col = gene.col[eqtl.order])
+
+                        #trait.peak.lod <- get_LOD(trait.qtl, map = map, chr = Chr, pos = trait.peak.pos)
+
+                        cat("\n\n")
+                    } #end case for when there are genes to mediate on
+
+                } #end case for when there is good mediation by the composite transcript
+                cat("\n\n")
+            } #end looping through rows of overlapping peaks
+        cat("\n\n")
+        } #end case for when there are overlapping peaks for the tissue
+        cat("\n\n")
+    } #end looping through tissues.
+} #end case for being imputed
 
 ```
 
