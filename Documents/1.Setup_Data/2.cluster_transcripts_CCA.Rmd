@@ -2551,7 +2551,7 @@ for(tx in 1:length(matched.mats)){
         transcript.idx <- match(transcript.id, gene.table[,1])
         transcript.chr <- gene.table[transcript.idx,"chr"]
         transcript.pos <- as.numeric(gene.table[transcript.idx,"start"])
-            
+
         layout(matrix(1:19, nrow = 1))
         for(ch in 1:19){
             if(ch == 1){par(mar = c(4,2,4,0))}else{par(mar = c(4,1,4,0))}

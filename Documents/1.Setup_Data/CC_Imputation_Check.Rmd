@@ -41,8 +41,8 @@ needed.packages <- c("pheatmap", "knitr", "qtl2")
 load_libraries(needed.packages, personal.library = TRUE)
 ```
 
-Read in measured CC-RIX gene expression. Also read in DO data.
-We will use that to look at imputation based on LOD score in the DO.
+Read in measured CC-RIX gene expression. Also read in DO 
+data for comparison.
 
 ```{r read_data}
 all.var <- ls()
@@ -80,22 +80,35 @@ adj.cc.expr <- adjust(cc.expr, rnaseq.covar)
 #adj.do.expr <- do.adj.expr <- adjust(do.expr$data$norm, do.expr$covar.matrix)
 ```
 
-Read in imputed CC-RIX gene expression.
+Read in imputed CC-RIX gene expression and variance components.
+The variance components tell us how much variance was explained
+by local genotype, distal genotype, and covariates for each
+transcript in the DO tissues.
 
 ```{r load_imputed}
 imp.cc.expr <- readRDS(here("Data", "imputed", 
     paste0("CC-RIX_", tissue.name, "_imputed_transcriptome_local.RDS")))
+
+var.comp <- readRDS(here("Data", "imputed", 
+    paste0("DO_", tissue.name, "_imputed_variance_decomposition.RDS")))
 ```
 
-Group the true expression based on the CC-RIX crosses.
+The distribution of variance explained by each component is
+as follows:
+
+```{r var_comp_dist}
+boxplot(var.comp)
+```
+
+Group the measured expression based on the CC-RIX crosses.
 
 ```{r group_expr}
 cross.id <- tissue.info[,"User.Defined.Strain"]
 u_cross <- unique(cross.id)
 cross.idx <- lapply(u_cross, function(x) which(cross.id == x))
 cross_expr <- lapply(cross.idx, function(x) adj.cc.expr[x,])
+names(cross_expr) <- u_cross
 mean.cross.expr <- t(sapply(cross_expr, colMeans))
-rownames(mean.cross.expr) <- u_cross
 ```
 
 For each of these crosses pull out the imputed autosomal 
@@ -126,11 +139,11 @@ ind.dad <- sapply(split.cross, function(x) x[3])
 ind.mom.idx <- sapply(ind.mom, function(x) grep(x, rownames(imp.cc.expr[[1]])))
 ind.dad.idx <- sapply(ind.dad, function(x) grep(x, colnames(imp.cc.expr[[1]])))
 
-
 ind.auto.expr <- t(sapply(1:length(ind.mom.idx), function(x) imp.cc.expr[[1]][ind.mom.idx[x], ind.dad.idx[x],]))
 rownames(ind.auto.expr) <- ind.cross
-
 ```
+
+## Correlation between measured and imputed expression
 
 Compare expression between the two data sets. The following 
 histogram shows the distribution of correlations between
@@ -146,6 +159,8 @@ all.cor <- sapply(common.transcripts, function(x) cor(adj.cc.expr[,x], ind.auto.
 mean.cor <- mean(all.cor, na.rm = TRUE)
 hist(all.cor, breaks = 100);abline(v = mean.cor, col = "red")
 ```
+
+## Correlation between CC-RIX - DO correspondence and LOD score
 
 The following plot shows the correlation between the local additive 
 eQTL LOD score for each transcript in the DOs and the correlation 
@@ -184,6 +199,8 @@ for(i in 1:length(common.transcripts)){
 plot.with.model(cis.lod, all.cor, xlab = "Local LOD Score", 
     ylab = "Correlation between imputed and measured")
 ```
+
+## Example comparisons
 
 ```{r var}
 #This code spot checks genes to compare within-strain variance
@@ -253,38 +270,85 @@ transcript.id <- names(test.idx)[idx]
 plot_cc_v_imp(transcript.id)
 ```
 
+## Inter-strain variation
+
 If there is a relationship between LOD score in the DO and 
 across strain variation in the CC, we would expect to see
 greater between-strain variation relative to within-strain
 variation in transcripts with higher LOD scores in the DO. 
 
-We divided the across-strain variation by the maximum 
-within-strain variation. If this ratio is above 1, there
-is more across-strain variation than within-strain variation.
+We used ANOVA to calculate an F statistic for each transcript.
+The larget the F statistic, the more different the strains are 
+in expression.
 
 There does actually appear to be a relationship between LOD 
 score in the DO, and across-strain variation in the CC-RIX.
 
 ```{r var_vs_lod}
-common.transcript.idx <- match(common.transcripts, colnames(cross_expr[[1]]))
-all.within.var <- t(sapply(cross_expr, function(x) apply(x[,common.transcripts], 2, var)))
-max.within.var <- apply(all.within.var, 2, max)
-all.across.var <- sapply(common.transcript.idx, function(y) var(unlist(lapply(cross_expr, function(x) unlist(x[,y])))))
-all.diff.var <- all.across.var/max.within.var
+get_f <- function(transcript.id, strain.factor){
+    test.expr <- lapply(cross_expr, function(x) x[,transcript.id])
+    model <- aov(unlist(test.expr)~strain.factor)
+    f <- summary(model)[[1]]$"F value"[1]
+    return(f)
+}
 
-plot.with.model(cis.lod, log(all.diff.var), xlab = "Local LOD score", 
-    ylab = "Across-Strain Variance/Within-Strain Variance", report = "cor.test")
+f.file <- here("Results", "CCA_Clusters", "imputed_local", "CC-RIX_transcript_F_tests.RDS")
+if(!file.exists(f.file)){
+    strain.list <- lapply(1:length(cross_expr), function(x) rep(names(cross_expr)[x], nrow(cross_expr[[x]])))
+    strain.factor <- as.factor(unlist(strain.list))
+    f <- sapply(common.transcripts, function(x) get_f(x, strain.factor))
+    names(f) <- common.transcripts
+    saveRDS(f, f.file)
+}else{
+    f <- readRDS(f.file)
+}
 
-#test.idx <- which(all.diff.var > 5)
-#test.idx <- which(all.diff.var < 1)
-#plot_cc_v_imp(names(test.idx)[5])
+plot.with.model(log(cis.lod), log(f), xlab = "log(Local LOD score)", 
+    ylab = "Across-Strain Variance (log(F))", report = "cor.test")
+
+#test.idx <- which(f > 100)
+#test.idx <- which(f < 1)
+#plot_cc_v_imp(names(test.idx)[1])
+```
+
+## LOD score and variance components
+
+DO cis eQTL LOD score should correlate very highly with the
+amount of variance explained by the local eQTL.
+
+```{r lod_local_var}
+plot.with.model(cis.lod, var.comp[common.transcripts,"local_VE"],
+    xlab = "Local LOD score", ylab = "Variance Explained by Local eQTL")
+```
+
+There are postive correlations between across-strain variation in 
+the CC-RIX (F), local LOD scores in the DO, and variance explained
+by the local genetics.
+
+
+```{r local_var_f}
+
+comp.table <- cbind(log(f), var.comp[common.transcripts,"local_VE"], cis.lod)
+colnames(comp.table) <- c("log(F)", "Local VE", "Local LOD")
+pairs(comp.table)
+```
+
+## Local VE and imputed-measured correlation
+
+The following plot shows how the variance explained by 
+local genetics in the DO relates to the correlation between
+measured and imputed expression in the CC-RIX. It doesn't.
+
+```{r lod_cor_ve}
+plot.with.model(var.comp[common.transcripts,"local_VE"], all.cor,
+xlab = "VE local", ylab = "Correlation between measured and imputed transcripts in CC-RIX")
 ```
 
 ## Spot Checking
 
-We are going to look at individual genes with high LOD scores in the
-DO and compare allele effects in the CC-RIX. If allele effects don't 
-match, we have no hope of imputing expression.
+We are going to look at individual genes with strange combinations
+of values from above to see if we can dig deeper into what is going
+on.
 
 ```{r match_pheno_geno}
 
@@ -516,14 +580,35 @@ plot_do_cc_coef <- function(transcript.id, bp.buffer = 4e6,
 }
 
 if(is.interactive){
-    rnd.transcript <- sample(common.transcripts, 1)
+
+    plot.with.model(var.comp[common.transcripts,"local_VE"], all.cor,
+    xlab = "VE local", ylab = "Correlation between measured and imputed transcripts in CC-RIX")
+
+    ve.local <- var.comp[common.transcripts,"local_VE"]
+
+    test.transcript <- common.transcripts[intersect(which(ve.local > 0.7), which(all.cor < -0.5))]
+    test.transcript <- common.transcripts[intersect(which(ve.local > 0.7), which(all.cor > 0.6))]
+    
+    rnd.transcript <- sample(test.transcript, 1)
+    #rnd.transcript <- test.transcript[1]
+
+    tr.pos <- get_transcript_pos(rnd.transcript)
+    do.cis.marker <- find_marker(map, tr.pos[1], as.numeric(tr.pos[2]))
+    do.cis.geno <- genoprobs[[tr.pos[1]]][,,do.cis.marker]
+    do.freq <- colMeans(do.cis.geno)  
+
+    cc.cis.marker <- find_marker(cc.map, tr.pos[1], as.numeric(tr.pos[2]))
+    cc.cis.geno <- expanded.geno[[tr.pos[1]]][,,cc.cis.marker]
+    cc.freq <- colMeans(cc.cis.geno)
+    
+    quartz();barplot(rbind(do.freq,cc.freq), beside = TRUE, col = rep(CCcolors, each = 2))
+
     plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
         cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)
     
     plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
         cor.type = "Pearson", do.kinship = TRUE, cc.kinship = TRUE)
 }
-
 
 do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
 do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed", paste0("cc.do.cor.", tissue.name, ".RDS"))
