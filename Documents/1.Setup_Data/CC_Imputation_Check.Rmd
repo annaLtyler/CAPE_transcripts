@@ -328,8 +328,8 @@ by the local genetics.
 
 ```{r local_var_f}
 
-comp.table <- cbind(log(f), var.comp[common.transcripts,"local_VE"], cis.lod)
-colnames(comp.table) <- c("log(F)", "Local VE", "Local LOD")
+comp.table <- cbind(log(f), var.comp[common.transcripts,], cis.lod)
+colnames(comp.table) <- c("log(F)", colnames(var.comp), "Local LOD")
 pairs(comp.table)
 ```
 
@@ -610,8 +610,8 @@ if(is.interactive){
         cor.type = "Pearson", do.kinship = TRUE, cc.kinship = TRUE)
 }
 
-do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
-do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed", paste0("cc.do.cor.", tissue.name, ".RDS"))
+do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed_local", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
+do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed_locale", paste0("cc.do.cor.", tissue.name, ".RDS"))
 if(!file.exists(do.cc.cor.file)){
     all.do.coef.cor.kin <- t(sapply(names(cis.lod), 
         function(x) plot_do_cc_coef(x, plot.results = FALSE, 
