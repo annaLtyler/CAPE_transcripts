@@ -25,8 +25,8 @@ delete_previous <- as.logical(args[2])
 if(is.na(delete_previous)){
     #exp.name = "all_traits"; weight.adjusted = FALSE
     #exp.name = "weight_adjusted"; weight.adjusted = TRUE
-    exp.name = "imputed_full"; weight.adjusted = FALSE
-    exp.name = "imputed_local"; weight.adjusted = FALSE
+    exp.name = "imputed_genetic"; weight.adjusted = FALSE
+    #exp.name = "imputed_local"; weight.adjusted = FALSE
     delete_previous <- FALSE
 }
 
@@ -153,19 +153,18 @@ adj.expr.file <- here("Data", "imputed", paste0("Adjusted_Expression_", exp.name
 
 if(use.imputed){
     if(exp.name == "imputed_local"){
-        imp.expr.files <- get.files(here("Data", "imputed"), want = "RDS", 
-            dont.want = c("adjusted", "local", "CC", "genetic"), full.names = TRUE)
+        imp.expr.files <- get.files(here("Data", "imputed"), want = c("RDS", "local"), 
+            dont.want = c("CC", "Adjusted"), full.names = TRUE)
     }
     if(exp.name == "imputed_full"){
-        imp.expr.files <- get.files(here("Data", "imputed"), want = c("RDS", "local"), 
+        imp.expr.files <- get.files(here("Data", "imputed"), want = c("RDS", "genetic"), 
             dont.want = c("adjusted", "CC"), full.names = TRUE)
     }
     tissue.norm <- lapply(imp.expr.files, readRDS)
-    #add animal names from original expression data
+    #remove any transcripts without any data
     for(i in 1:length(tissue.norm)){
-        tissue.name <- strsplit(basename(imp.expr.files[[i]]), "_")[[1]][2]
-        expr.data <- get(paste0("dataset.DO.Cube.", tissue.name))
-        rownames(tissue.norm[[i]]) <- rownames(expr.data$data$norm)
+        has.data <- which(apply(tissue.norm[[i]], 2, function(x) !all(is.na(x))))
+        tissue.norm[[i]] <- tissue.norm[[i]][,has.data]
     }
 }else{
     tissue.norm <- lapply(tissue.data, function(x) x$data$norm)
@@ -187,11 +186,11 @@ if(is.interactive){
     #test <- scan1(genoprobs, tissue.norm[[tx]][,rnd.id], kinship = K);plot(test, map = map)
     ylim <- c(0, max(c(test.imp, test.measured)))
 
-    quartz(width = 10, height = 5)
-    par(mfrow = c(1,2))
-    plot(test.measured, map = map, col = "red", main = paste(rnd.name, "Chr", rnd.chr),
-        ylim = ylim)
-    plot(test.imp, map = map, add = TRUE)
+    quartz(width = 8, height = 8)
+    par(mfrow = c(2,2))
+    plot(test.measured, map = map, main = paste(rnd.name, "Chr", rnd.chr))
+    abline(v = rnd.pos)
+    plot(test.imp, map = map, main = "Imputed")
     abline(v = rnd.pos)
     legend("topleft", col = c("red", "darkblue"), lty = 1, legend = c("measured", "imputed"), lwd = 2)
 
@@ -211,6 +210,7 @@ if(!file.exists(adj.expr.file)){
     adj.expr <- readRDS(adj.expr.file)
 }
 ```
+
 
 ## Tissue Gene Expression Decomposition
 
@@ -352,7 +352,7 @@ for genes that influence traits in a way that we can trace back to
 genotype through gene expression.
 
 ```{r eqtl, fig.width = 10, fig.height = 6, results = "asis"}
-if(exp.name != "imputed"){
+if(!use.imputed){
     get_max_eqtl <- function(gene.id){
         gene.locale <- which(tissue.eqtl[[1]] == gene.id)
         if(length(gene.locale) == 0){return(NA)}

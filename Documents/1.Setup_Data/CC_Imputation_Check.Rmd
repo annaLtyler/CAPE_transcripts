@@ -57,7 +57,19 @@ if(!data.loaded){
     groups <- read.csv(file.path(cc.dir, "Groups.csv"), row.names = 1)
     group.def <- colnames(groups)
     load(here("Data", "dataset.DO.CUBE.multissue.RData")) #DO data for eQTL LOD scores
+    data.set.name <- paste0("dataset.DO.Cube.", tissue.name)
+    gene.table <- as.matrix(get(data.set.name)$annot.mrna)
 }
+
+do.expr <- get(paste0("dataset.DO.Cube.", tissue.name))
+do.covar <- do.expr$covar.matrix
+expr.annot <- do.expr$annot.mrna
+expr.lod <- do.expr$lod.peaks
+split.lod.markers <- strsplit(expr.lod$additive[,"marker.id"], "_")
+lod.marker.chr <- sapply(split.lod.markers, function(x) x[1])
+lod.marker.pos <- as.numeric(sapply(split.lod.markers, function(x) x[2]))
+bp.buffer <- 4e6 #cis is anything within 4 Mb of the nearest marker
+
 ```
 
 Adjust measured expression for all covariates: RNASeq_Batch, Age, 
@@ -77,8 +89,46 @@ rnaseq.covar <- dummy_covar(covar[orsam.idx,c("Age", "RNAseq_Batch", colnames(gr
 rownames(rnaseq.covar) <- tissue.info[,1]
 cc.expr <- tissue.expr[[tissue.locale]]
 adj.cc.expr <- adjust(cc.expr, rnaseq.covar)
-#adj.do.expr <- do.adj.expr <- adjust(do.expr$data$norm, do.expr$covar.matrix)
+do.adj.expr <- adjust(do.expr$data$norm, do.expr$covar.matrix)
 ```
+
+```{r cc_data}
+match_geno_pheno <- function(mouse.genoprobs, mouse.K, mouse.pheno.id, manifest){
+    #get mouse info from the mouse id
+    all.pheno.id <- t(sapply(mouse.pheno.id, function(x) get_CC_RIX_mouse_info(x, manifest)))
+
+    all.geno.group <- apply(all.pheno.id, 1, function(x) paste(gsub(" X ", "_", x[6]), x[3], sep = "_"))
+    #match up with the genotype data
+    all.pheno.idx <- match(all.geno.group, rownames(mouse.genoprobs[[1]]))
+    #take out na's
+    not.na.locale <- which(!is.na(all.pheno.idx))
+    all.pheno.idx <- all.pheno.idx[not.na.locale]
+    mouse.pheno.id <- mouse.pheno.id[not.na.locale]
+    
+    new.genoprobs <- mouse.genoprobs
+    new.K <- mouse.K
+    #expand genoprobs to incorporate all these individuals
+    #assign unique IDs to all individuals
+    for(i in 1:length(mouse.genoprobs)){
+        new.genoprobs[[i]] <- mouse.genoprobs[[i]][all.pheno.idx,,]
+        rownames(new.genoprobs[[i]]) <- as.vector(mouse.pheno.id)
+        new.K[[i]] <- mouse.K[[i]][all.pheno.idx,all.pheno.idx]
+        rownames(new.K[[i]]) <- colnames(new.K[[i]]) <- as.vector(mouse.pheno.id)
+    }
+
+    result <- list("expanded.geno" = new.genoprobs, "expanded.K" = new.K)
+    return(result)
+}
+
+cc.genoprobs <- readRDS(file.path(cc.dir, "Genoprobs.RDS")) #created by 3.5.CC-RIX_genotypes.Rmd
+cc.K <- readRDS(file.path(cc.dir, "Kinship.RDS"))
+cc.map <- readRDS(file.path(cc.dir, "Map.RDS"))
+expanded.geno.K <- match_geno_pheno(cc.genoprobs, cc.K, rownames(cc.expr), manifest)
+expanded.geno <- expanded.geno.K$expanded.geno
+expanded.K <- expanded.geno.K$expanded.K
+```
+
+
 
 Read in imputed CC-RIX gene expression and variance components.
 The variance components tell us how much variance was explained
@@ -160,21 +210,13 @@ mean.cor <- mean(all.cor, na.rm = TRUE)
 hist(all.cor, breaks = 100);abline(v = mean.cor, col = "red")
 ```
 
-## Correlation between CC-RIX - DO correspondence and LOD score
+## Correlation between CC-RIX - DO correspondence and local eQTL LOD score
 
 The following plot shows the correlation between the local additive 
 eQTL LOD score for each transcript in the DOs and the correlation 
 between the imputed and the actual gene expression.
 
 ```{r lod}
-do.expr <- get(paste0("dataset.DO.Cube.", tissue.name))
-do.covar <- do.expr$covar.matrix
-expr.annot <- do.expr$annot.mrna
-expr.lod <- do.expr$lod.peaks
-split.lod.markers <- strsplit(expr.lod$additive[,"marker.id"], "_")
-lod.marker.chr <- sapply(split.lod.markers, function(x) x[1])
-lod.marker.pos <- as.numeric(sapply(split.lod.markers, function(x) x[2]))
-bp.buffer <- 4e6 #cis is anything within 4 Mb of the nearest marker
 
 cis.lod <- rep(NA, length(common.transcripts))
 names(cis.lod) <- common.transcripts
@@ -200,6 +242,255 @@ plot.with.model(cis.lod, all.cor, xlab = "Local LOD Score",
     ylab = "Correlation between imputed and measured")
 ```
 
+## Diplotypes
+
+It is possible that dominance, recessiveness, and epistasis 
+could be affecting the eQTLs in ways that we are not measuring.
+
+Our first step will be to look at DO diplotypes. What is the
+distribution of diplotypes at any given locus in the DO? What
+about the corresponding diplotypes in the CC-RIX? 
+
+What is the mean expression for each diplotype in the DO? CC-RIX?
+Do these match better than the individual haplotypes?
+
+```{r diplotypes}
+
+#change this to get cis marker
+get_cis_marker <- function(transcript.id, gene.table, pop.genoprobs, pop.map, 
+    round.probs = TRUE){
+
+    trans.idx <- which(gene.table[,1] == transcript.id)[1]
+    #gene.table[trans.idx,]
+    trans.chr <- gene.table[trans.idx,"chr"]
+    trans.start <- as.numeric(gene.table[trans.idx,"start"])
+    cis.marker <- find_marker(pop.map, trans.chr, pos = trans.start)
+    cis.geno <- pop.genoprobs[[trans.chr]][,,cis.marker]
+    if(round.probs){
+        cis.geno <- apply(cis.geno, 2, bin.vector)
+    }
+    return(cis.geno)
+}
+
+diplotype_idx <- function(marker.geno, present.thresh = 0.3){
+    hap.present <- apply(marker.geno, 1, function(x) which(x > present.thresh))
+    allele.pairs <- pair.matrix(colnames(marker.geno), self.pairs = TRUE)
+    dip.idx <- vector(mode = "list", length = nrow(allele.pairs))
+    names(dip.idx) <- apply(allele.pairs, 1, function(x) paste(x, collapse = "_"))
+    for(i in 1:length(hap.present)){
+        haps <- names(hap.present[[i]])
+        if(length(haps) == 1){haps <- c(haps, haps)}
+        test1 <- intersect(which(allele.pairs[,1] == haps[1]), which(allele.pairs[,2] == haps[2]))
+        test2 <- intersect(which(allele.pairs[,2] == haps[1]), which(allele.pairs[,1] == haps[2]))
+        hap.idx <- unique(c(test1, test2))
+        dip.idx[[hap.idx]] <- c(dip.idx[[hap.idx]], i)
+    }
+    return(dip.idx)
+}
+
+dip.vals <- function(marker.geno, dip.idx, pheno.vals, cluster.by.val = TRUE){
+    val.mat <- matrix(0, ncol = ncol(marker.geno), nrow = ncol(marker.geno))
+    rownames(val.mat) <- colnames(val.mat) <- colnames(marker.geno)
+    for(i in 1:length(dip.idx)){
+        dip.type <- strsplit(names(dip.idx)[i], "_")[[1]]
+        val.mat[dip.type[1], dip.type[2]] <- median(pheno.vals[dip.idx[[i]]])
+        val.mat[dip.type[2], dip.type[1]] <- median(pheno.vals[dip.idx[[i]]])
+    }
+    if(cluster.by.val){
+        row.order <- hclust(dist(val.mat))$order
+    }else{
+        row.order <- 1:8
+    }
+    imageWithText(val.mat[row.order, row.order], use.pheatmap.colors = TRUE, col.text.rotation = 0,
+    col.text.shift = 0.1, row.text.shift = 0.1, show.text = FALSE, 
+    main = "Median Expression by Diplotype")
+    return(val.mat)
+}
+
+#look for dominance of individual alleles
+allele_effect_dist <- function(marker.geno, pheno.vals){
+    genotype.vals <- c(0, 0.5, 1)
+    allele.dist <- apply(marker.geno, 2, 
+        function(x) sapply(genotype.vals, function(y) pheno.vals[which(x == y)]))
+    new.list <- lapply(1:length(allele.dist[[1]]), function(x) lapply(allele.dist, function(y) y[[x]]))
+    names(new.list) <- genotype.vals
+    plot.grouped.boxes(new.list, print.vals = NA)
+    #tests <- lapply(allele.dist, aov_list)
+    #p <- sapply(tests, function(x) summary(x)[[1]]$"Pr(>F)"[1])
+}
+
+#create a diploid genotype matrix
+dip_geno <- function(dip.idx){
+    dip.mat <- matrix(0, ncol = length(dip.idx), nrow = length(unlist(dip.idx)))
+    colnames(dip.mat) <- names(dip.idx)
+    for(i in 1:length(dip.idx)){
+        dip.mat[dip.idx[[i]],i] <- 1
+    }
+    return(dip.mat)
+}
+
+add_pred <- function(allele.coef){
+    pair.mat <- pair.matrix(allele.coef, self.pairs = TRUE)
+    add.effect <- rowMeans(pair.mat)
+    return(add.effect)
+}
+
+plot_dev <- function(transcript.id, gene.table, pop.genoprobs, pop.map, pop.expr,
+    bin.genoprobs = TRUE, cluster.med.effect = FALSE, add.predict = NULL, png.name = NULL){
+
+    cis.geno <- get_cis_marker(transcript.id, gene.table, pop.genoprobs, pop.map, bin.genoprobs)
+    matched.geno <- get.xz(cis.geno, pop.expr)
+    dip.idx <- diplotype_idx(marker.geno = matched.geno[[1]])
+
+    if(!is.null(png.name)){
+        png(png.name, width = 7, height = 10, units = "in", res = 180)
+    }
+
+    layout.matrix  <- matrix(c(1,5,2,2,3,3,4,4), ncol = 2, byrow = TRUE)
+    layout(layout.matrix)
+
+    par(mar = c(1,1,2,1))
+    val.mat <- dip.vals(matched.geno[[1]], dip.idx, matched.geno[[2]][,transcript.id], 
+        cluster.by.val = cluster.med.effect)    
+
+    par(mar = c(4,4,2,2))
+    allele_effect_dist(marker.geno = matched.geno[[1]], 
+        pheno.vals = matched.geno[[2]][,transcript.id])    
+
+    marker.scan <- fit1(matched.geno[[1]], matched.geno[[2]][,transcript.id])
+    #quartz();barplot(marker.scan$coef[1:8])
+    #plot(matched.geno[[2]][,transcript.id]~matched.geno[[1]][,"G"])
+    #model <- lm(matched.geno[[2]][,transcript.id]~matched.geno[[1]][,"G"])
+    if(is.null(add.predict)){
+        dip.predicted <- add_pred(marker.scan$coef[1:8])
+    }else{
+        dip.predicted <- add.predict
+    }
+
+    predicted.order <- order(dip.predicted)
+
+    dip.expr <- lapply(dip.idx, function(x) matched.geno[[2]][x,transcript.id])
+    med.centered <- lapply(dip.expr, function(x) x - median(unlist(dip.expr)))
+
+    ylim = c(min(c(unlist(med.centered), dip.predicted)), max(c(unlist(med.centered), dip.predicted)))
+
+    boxplot(med.centered[predicted.order], las = 2, ylim = ylim)
+    #stripchart(med.centered[predicted.order], add = TRUE, vertical = TRUE, pch = 16, col = "darkgray", cex = 0.5)
+    segments(x0 = 0, x1 = length(med.centered)+1, y0 = 0)
+    points(x = 1:length(dip.predicted), y = dip.predicted[predicted.order], col = "red", pch = "*", cex = 2)
+    deviation <- sapply(med.centered, median) - dip.predicted
+    barplot(deviation[predicted.order], las = 2, ylab = "Deviation from Additivity")
+
+    dev.mat <- matrix(NA, nrow = ncol(cis.geno), ncol = ncol(cis.geno))
+    colnames(dev.mat) <- rownames(dev.mat) <- colnames(cis.geno)
+    for(i in 1:length(deviation)){
+        dip.type <- strsplit(names(deviation)[i], "_")[[1]]
+        dev.mat[dip.type[1], dip.type[2]] <- deviation[i]
+        dev.mat[dip.type[2], dip.type[1]] <- deviation[i]
+    }
+    
+    par(mar = c(1,1,2,1))
+    imageWithText(dev.mat, use.pheatmap.colors = TRUE, col.text.rotation = 0,
+    col.text.shift = 0.1, row.text.shift = 0.1, show.text = FALSE, 
+    main = "Deviation by Diplotype")
+
+    #plot.with.model(as.vector(val.mat), as.vector(dev.mat))
+
+    #hist(deviation)
+
+    if(!is.null(png.name)){
+        dev.off()
+    }
+
+    result <- cbind(dip.predicted, deviation)
+    colnames(result)  <- c("Additive_Prediction", "Deviation")
+    return(result)
+
+}
+
+#calculates values similarly to plot_dev, but without plotting
+calc_dev <- function(transcript.id, gene.table, pop.genoprobs, pop.map, pop.expr,
+    bin.genoprobs = FALSE, add.predict = NULL, plot.results = FALSE,
+    present.thresh = 0.8){
+    
+    cis.geno <- get_cis_marker(transcript.id, gene.table, pop.genoprobs, pop.map, bin.genoprobs)
+    matched.geno <- get.xz(cis.geno, pop.expr)
+    marker.scan <- fit1(matched.geno[[1]], matched.geno[[2]][,transcript.id])
+    #barplot(marker.scan$coef[1:8])    
+    mean.expr <- mean(matched.geno[[2]][,transcript.id])
+
+    if(is.null(add.predict)){
+        dip.predicted <- add_pred(marker.scan$coef[1:8])
+    }else{
+        dip.predicted <- add.predict
+    }
+
+    allele.pairs <- pair.matrix(1:ncol(matched.geno[[1]]), self.pairs = TRUE)
+    actual.effect <- rep(NA, length = nrow(allele.pairs))
+    for(i in 1:nrow(allele.pairs)){
+        dip.genotype <- rowMeans(matched.geno[[1]][,allele.pairs[i,]])
+        dip.locale <- which(dip.genotype > present.thresh)
+        #model <- lm(matched.geno[[2]][,transcript.id]~dip.genotype)
+        #plot.with.model(dip.genotype, matched.geno[[2]][,transcript.id], report = "cor.test")
+        actual.effect[i] <- mean.expr - mean(matched.geno[[2]][dip.locale,transcript.id])
+    }
+
+    pair.labels <- apply(allele.pairs, 1, function(x) paste(LETTERS[x], collapse = "_"))
+
+    if(plot.results){
+        plot(dip.predicted, actual.effect, xlab = "Additive Prediction", 
+            ylab = "Actual Effect", pch = 16, cex = 0.5)
+        abline(0,1)
+        text(dip.predicted, actual.effect, labels = pair.labels)
+    }
+    
+    add.dev <- dip.predicted - pred.expr
+    names(add.dev) <- pair.labels
+    result <- cbind(pred.expr, dip.predicted)
+    colnames(result) <- c("Additive_Prediction", "Actual_Expression")
+    rownames(result) <- pair.labels
+    return(result)
+}
+
+
+transcript.id <- sample(common.transcripts, 1)
+transcript.id <- names(cis.lod)[which(cis.lod > 200)][1]
+
+#do dev
+do.dev <- plot_dev(transcript.id, gene.table, pop.genoprobs = genoprobs, 
+    pop.map = map, pop.expr = do.adj.expr, bin.genoprobs = TRUE, 
+    cluster.med.effect = FALSE, add.predict = NULL, 
+    png.name = here("Results", "CCA_Clusters", "Validation", "Deviation.DO.png"))
+
+test.dev <- calc_dev(transcript.id, gene.table, pop.genoprobs = genoprobs, 
+    pop.map = map, pop.expr = do.adj.expr, bin.genoprobs = FALSE, add.predict = NULL,
+    plot.results = TRUE)
+
+plot(do.dev)
+plot(test.dev);abline(0,1)
+plot(do.dev[,1], test.dev[,1])
+plot(do.dev[,2], test.dev[,2])
+
+#CC-RIX deviation relative to DO predictions
+cc.dev <- plot_dev(transcript.id, gene.table, pop.genoprobs = expanded.geno, 
+    pop.map = cc.map, pop.expr = adj.cc.expr, bin.genoprobs = TRUE, 
+    cluster.med.effect = FALSE, add.predict = do.dev[,"Additive_Prediction"], 
+    png.name = here("Results", "CCA_Clusters", "Validation", "Deviation.CC.png"))
+
+plot.with.model(do.dev[,2], cc.dev[,2], xlab = "DO deviation from additivity",
+    ylab = "CC deviation from DO additivity")
+
+
+#dip.geno <- dip_geno(dip.idx)
+#rownames(dip.geno) <- rownames(matched.do.geno[[1]])
+#dip.scan <- fit1(dip.geno, do.adj.expr[,transcript.id])
+#quartz();barplot(sort(dip.scan$coef[1:length(dip.scan$coef)-1]), las = 2)
+#allele_effect_dist(matched.do.geno[[1]], matched.do.geno[[2]][,transcript.id])
+#marker.geno <- matched.do.geno[[1]]
+#pheno.vals <- matched.do.geno[[2]][,transcript.id]
+
+```
+
 ## Example comparisons
 
 ```{r var}
@@ -207,7 +498,10 @@ plot.with.model(cis.lod, all.cor, xlab = "Local LOD Score",
 #and between-strain variance across the CC with the imputed 
 #values and local LOD scores.
 
-plot_cc_v_imp <- function(transcript.id){
+plot_cc_v_imp <- function(transcript.id, gene.table, pop.genoprobs, pop.map, bin.genoprobs){
+
+    cis.geno <- get_cis_marker(transcript.id, gene.table, pop.genoprobs, pop.map, bin.genoprobs)
+    cross.geno <- sapply(cross_expr, function(x) cis.geno[which(rownames(cis.geno) %in% rownames(x))[1],])
 
     test.expr <- lapply(cross_expr, function(x) x[,transcript.id])
     mean.test <- sapply(test.expr, mean)
@@ -225,15 +519,14 @@ plot_cc_v_imp <- function(transcript.id){
     mtext("Imputed Expression", side = 2, line = 2.5)
     axis(2)
     par(mar = c(0,4,0,4))
-    boxplot(test.expr[mean.order], names = u_cross[mean.order], las = 2, axes = FALSE)
+    boxplot(test.expr[mean.order], names = NA, las = 2, axes = FALSE)
     mtext("Measured Expression", side = 2, line = 2.5)
     axis(2)
     plot.dim <- par("usr")
-    par(mar = c(0,4,0,4))
-    plot.new()
-    plot.window(xlim = plot.dim[1:2], ylim = c(0,1))
-    text(x = 1:length(u_cross), y = 1, 
-        labels = u_cross[mean.order], srt = 90, adj = 1)    
+    
+    par(mar = c(8,4,0,4))
+    imageWithText(cross.geno[,mean.order], use.pheatmap.colors = TRUE, 
+        row.text.shift = 0.05)
 
     instrain.var <- sapply(test.expr, var)
     betstrain.var <- var(sapply(test.expr, mean))
@@ -327,7 +620,6 @@ by the local genetics.
 
 
 ```{r local_var_f}
-
 comp.table <- cbind(log(f), var.comp[common.transcripts,], cis.lod)
 colnames(comp.table) <- c("log(F)", colnames(var.comp), "Local LOD")
 pairs(comp.table)
@@ -350,48 +642,12 @@ We are going to look at individual genes with strange combinations
 of values from above to see if we can dig deeper into what is going
 on.
 
-```{r match_pheno_geno}
-
-match_geno_pheno <- function(mouse.genoprobs, mouse.K, mouse.pheno.id, manifest){
-    #get mouse info from the mouse id
-    all.pheno.id <- t(sapply(mouse.pheno.id, function(x) get_CC_RIX_mouse_info(x, manifest)))
-
-    all.geno.group <- apply(all.pheno.id, 1, function(x) paste(gsub(" X ", "_", x[6]), x[3], sep = "_"))
-    #match up with the genotype data
-    all.pheno.idx <- match(all.geno.group, rownames(mouse.genoprobs[[1]]))
-    #take out na's
-    not.na.locale <- which(!is.na(all.pheno.idx))
-    all.pheno.idx <- all.pheno.idx[not.na.locale]
-    mouse.pheno.id <- mouse.pheno.id[not.na.locale]
-    
-    new.genoprobs <- mouse.genoprobs
-    new.K <- mouse.K
-    #expand genoprobs to incorporate all these individuals
-    #assign unique IDs to all individuals
-    for(i in 1:length(mouse.genoprobs)){
-        new.genoprobs[[i]] <- mouse.genoprobs[[i]][all.pheno.idx,,]
-        rownames(new.genoprobs[[i]]) <- as.vector(mouse.pheno.id)
-        new.K[[i]] <- mouse.K[[i]][all.pheno.idx,all.pheno.idx]
-        rownames(new.K[[i]]) <- colnames(new.K[[i]]) <- as.vector(mouse.pheno.id)
-    }
-
-    result <- list("expanded.geno" = new.genoprobs, "expanded.K" = new.K)
-    return(result)
-}
-
-```
 
 The following histogram shows the overall distribution of correlations
 between DO allele coefficients and CC coefficients at the marker
 for the cis eQTL in the DO.
 
 ```{r, do_cc_cor}
-cc.genoprobs <- readRDS(file.path(cc.dir, "Genoprobs.RDS")) #created by 3.5.CC-RIX_genotypes.Rmd
-cc.K <- readRDS(file.path(cc.dir, "Kinship.RDS"))
-cc.map <- readRDS(file.path(cc.dir, "Map.RDS"))
-expanded.geno.K <- match_geno_pheno(cc.genoprobs, cc.K, rownames(cc.expr), manifest)
-expanded.geno <- expanded.geno.K$expanded.geno
-expanded.K <- expanded.geno.K$expanded.K
 
 #to parallelize the DO and CC analyses, use fit1 for 
 #both
@@ -591,6 +847,7 @@ if(is.interactive){
     
     rnd.transcript <- sample(test.transcript, 1)
     #rnd.transcript <- test.transcript[1]
+    #rnd.transcript <- transcript.id
 
     tr.pos <- get_transcript_pos(rnd.transcript)
     do.cis.marker <- find_marker(map, tr.pos[1], as.numeric(tr.pos[2]))
@@ -601,7 +858,7 @@ if(is.interactive){
     cc.cis.geno <- expanded.geno[[tr.pos[1]]][,,cc.cis.marker]
     cc.freq <- colMeans(cc.cis.geno)
     
-    quartz();barplot(rbind(do.freq,cc.freq), beside = TRUE, col = rep(CCcolors, each = 2))
+    #quartz();barplot(rbind(do.freq,cc.freq), beside = TRUE, col = rep(CCcolors, each = 2))
 
     plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
         cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)
@@ -692,7 +949,7 @@ compare_do_cc <- function(transcript.id){
 
     do.cis.marker <- find_marker(map, trans.chr, transcript.pos)
     binned.do.geno <- apply(genoprobs[[trans.chr]][,,do.cis.marker],2, bin.vector)
-    adj.do.expr <- adjust(do.expr$data$rz[,transcript.id,drop=FALSE], do.expr$covar.matrix)
+    adj.do.expr <- adjust(do.expr$data$norm[,transcript.id,drop=FALSE], do.expr$covar.matrix)
     common.do.ind <- intersect(rownames(adj.do.expr), rownames(binned.do.geno))
     common.do.trans.idx <- match(common.do.ind, rownames(adj.do.expr))
     common.do.geno.idx <- match(common.do.ind, rownames(binned.do.geno))
@@ -731,6 +988,8 @@ check.idx <- which(cis.lod > 150)
 check.id <- names(cis.lod)[check.idx[6]]
 check.id <- names(cis.lod)[2]
 check.id <- "ENSMUSG00000031101" #Sash3
+check.id <- "ENSMUSG00000028619"
+
 
 quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)
 quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)

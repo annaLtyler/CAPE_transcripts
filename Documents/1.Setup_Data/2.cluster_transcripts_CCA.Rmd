@@ -24,7 +24,7 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    #exp.name <- "imputed_full"
+    #exp.name <- "imputed_genetic"
     exp.name <- "imputed_local"
     #exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
@@ -81,6 +81,7 @@ cca.pheno <- adjust(cca.pheno[,2:ncol(cca.pheno)], cca.pheno[,1,drop=FALSE]) #re
 cca.pheno <- apply(cca.pheno, 2, rankZ)
 num.components <- ncol(cca.pheno)
 
+#need to run 1.adjust_transcripts_traits to generate the following files
 if(use.imputed){
     tissue.adj.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS")))
 }else{   
@@ -94,6 +95,11 @@ data.set.names <- lapply(1:length(tissue.names),
 function(x) paste0("dataset.DO.Cube.", tissue.names[x]))
 gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, 
     function(x) get(x)$annot.mrna))))
+
+var.decomp <- lapply(tissue.names[1:3], function(x) readRDS(here("Data", "imputed", 
+    paste0("DO_", x, "_imputed_variance_decomposition.RDS"))))
+names(var.decomp) <- tissue.names[1:3]
+
 ```
 
 
@@ -299,7 +305,52 @@ for(tx in 1:length(all.tissue.cor)){
         xlab = "Imputed Transcript PC2", ylab = colnames(cca.pheno)[tr])
 
 }
+```
 
+```{r imputed_measured_cor, eval = FALSE}
+#if looking at imputed data, test the correlation with meaasured data
+for(tx in 1:length(tissue.names)){
+    measured.expr <- adjust(get(data.set.names[[tx]])$data$norm, get(data.set.names[[tx]])$covar.matrix)
+    matched.expr <- get.xz(matched.mats[[tx]]$X, measured.expr)
+    common.expr <- Reduce("intersect", lapply(matched.expr, colnames))
+    expr.cor <- sapply(common.expr, function(x) cor(matched.expr[[1]][,x], matched.expr[[2]][,x]))
+    hist(expr.cor, breaks = 100)
+
+    plot.with.model(expr.cor, var.decomp[[tx]][common.expr,"local_VE"])
+    plot.with.model(expr.cor, var.decomp[[tx]][common.expr,"distal_VE"])
+    #plot.with.model(expr.cor, var.decomp[[tx]][common.expr,"covar_VE"])
+
+    cor.col <- colors.from.values(expr.cor, use.pheatmap.colors = TRUE)
+    plot(var.decomp[[tx]][common.expr,"local_VE"], var.decomp[[tx]][common.expr,"distal_VE"],
+        col = cor.col, pch = 16)
+    
+    par(mfrow = c(1,2))
+    distal.col <- colors.from.values(var.decomp[[tx]][common.expr,"distal_VE"], use.pheatmap.colors = TRUE)
+    plot(expr.cor, var.decomp[[tx]][common.expr,"local_VE"], xlab = "correlation", 
+        ylab = "local_VE", col = distal.col, pch = 16, cex = 0.5, main = "colored by distal VE",
+        ylim = c(0,0.9))
+
+    local.col <- colors.from.values(var.decomp[[tx]][common.expr,"local_VE"], use.pheatmap.colors = TRUE)
+    plot(expr.cor, var.decomp[[tx]][common.expr,"distal_VE"], xlab = "correlation",
+        ylab = "distal_VE", col = local.col, pch = 16, cex = 0.5, main = "colored by local VE",
+        ylim = c(0,0.9))
+
+    #from these we see that we can predict transcription well when
+    #the variance explained by local genotype is high.
+    #It also helps to have high variance explained by distal genetics (for the full model),
+    #but not as much 
+
+    gene.name = "Lep"
+    gene.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1]
+    plot.with.model(matched.expr[[1]][,gene.id], matched.expr[[2]][,gene.id])
+
+    
+    measured.scan <- scan1(genoprobs, matched.expr[[2]][,gene.id], kinship = K)
+    plot(measured.scan, map = map)
+
+    imputed.scan <- scan1(genoprobs, matched.expr[[1]][,gene.id], kinship = K)
+    plot(imputed.scan, map = map)
+}
 
 ```
 
