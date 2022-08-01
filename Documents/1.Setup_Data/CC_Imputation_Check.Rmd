@@ -561,7 +561,8 @@ test.idx <- which(cis.lod < 6.5)
 idx <- 1
 transcript.id <- names(test.idx)[idx]
 
-plot_cc_v_imp(transcript.id)
+plot_cc_v_imp(transcript.id, gene.table, pop.genoprobs = expanded.geno, 
+    pop.map = cc.map, bin.genoprobs = TRUE)
 ```
 
 ## Inter-strain variation
