@@ -25,8 +25,8 @@ delete_previous <- as.logical(args[2])
 if(is.na(delete_previous)){
     #exp.name = "all_traits"; weight.adjusted = FALSE
     #exp.name = "weight_adjusted"; weight.adjusted = TRUE
-    exp.name = "imputed_genetic"; weight.adjusted = FALSE
-    #exp.name = "imputed_local"; weight.adjusted = FALSE
+    #exp.name = "imputed_genetic"; weight.adjusted = FALSE
+    exp.name = "imputed_local"; weight.adjusted = FALSE
     delete_previous <- FALSE
 }
 
@@ -156,7 +156,7 @@ if(use.imputed){
         imp.expr.files <- get.files(here("Data", "imputed"), want = c("RDS", "local"), 
             dont.want = c("CC", "Adjusted"), full.names = TRUE)
     }
-    if(exp.name == "imputed_full"){
+    if(exp.name == "imputed_genetic"){
         imp.expr.files <- get.files(here("Data", "imputed"), want = c("RDS", "genetic"), 
             dont.want = c("adjusted", "CC"), full.names = TRUE)
     }
