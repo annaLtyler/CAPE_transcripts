@@ -129,7 +129,6 @@ expanded.K <- expanded.geno.K$expanded.K
 ```
 
 
-
 Read in imputed CC-RIX gene expression and variance components.
 The variance components tell us how much variance was explained
 by local genotype, distal genotype, and covariates for each
@@ -206,8 +205,8 @@ common.transcripts <- intersect(colnames(adj.cc.expr), colnames(ind.auto.expr))
 #    xlab = "CC-RIX expression", ylab = "Imputed Expression")
 
 all.cor <- sapply(common.transcripts, function(x) cor(adj.cc.expr[,x], ind.auto.expr[,x]))
-mean.cor <- mean(all.cor, na.rm = TRUE)
-hist(all.cor, breaks = 100);abline(v = mean.cor, col = "red")
+med.cor <- median(all.cor, na.rm = TRUE)
+hist(all.cor, breaks = 100);abline(v = med.cor, col = "red")
 ```
 
 ## Correlation between CC-RIX - DO correspondence and local eQTL LOD score
@@ -455,6 +454,7 @@ calc_dev <- function(transcript.id, gene.table, pop.genoprobs, pop.map, pop.expr
 
 transcript.id <- sample(common.transcripts, 1)
 transcript.id <- names(cis.lod)[which(cis.lod > 200)][1]
+transcript.id <- "ENSMUSG00000028619" #transcript for which E/E is very low
 
 #do dev
 do.dev <- plot_dev(transcript.id, gene.table, pop.genoprobs = genoprobs, 
@@ -462,14 +462,14 @@ do.dev <- plot_dev(transcript.id, gene.table, pop.genoprobs = genoprobs,
     cluster.med.effect = FALSE, add.predict = NULL, 
     png.name = here("Results", "CCA_Clusters", "Validation", "Deviation.DO.png"))
 
-test.dev <- calc_dev(transcript.id, gene.table, pop.genoprobs = genoprobs, 
-    pop.map = map, pop.expr = do.adj.expr, bin.genoprobs = FALSE, add.predict = NULL,
-    plot.results = TRUE)
+#test.dev <- calc_dev(transcript.id, gene.table, pop.genoprobs = genoprobs, 
+#    pop.map = map, pop.expr = do.adj.expr, bin.genoprobs = FALSE, add.predict = NULL,
+#    plot.results = TRUE)
 
-plot(do.dev)
-plot(test.dev);abline(0,1)
-plot(do.dev[,1], test.dev[,1])
-plot(do.dev[,2], test.dev[,2])
+#plot(do.dev)
+#plot(test.dev);abline(0,1)
+#plot(do.dev[,1], test.dev[,1])
+#plot(do.dev[,2], test.dev[,2])
 
 #CC-RIX deviation relative to DO predictions
 cc.dev <- plot_dev(transcript.id, gene.table, pop.genoprobs = expanded.geno, 
@@ -552,7 +552,8 @@ test.idx <- which(cis.lod > 200)
 idx <- 1
 transcript.id <- names(test.idx)[idx]
 
-plot_cc_v_imp(transcript.id)
+plot_cc_v_imp(transcript.id, gene.table, pop.genoprobs = expanded.geno, 
+    pop.map = cc.map, bin.genoprobs = TRUE)
 ```
 
 ```{r, low_strain_var}
@@ -585,7 +586,7 @@ get_f <- function(transcript.id, strain.factor){
     return(f)
 }
 
-f.file <- here("Results", "CCA_Clusters", "imputed_local", "CC-RIX_transcript_F_tests.RDS")
+f.file <- here("Results", "CCA_Clusters", "Validation", "CC-RIX_transcript_F_tests.RDS")
 if(!file.exists(f.file)){
     strain.list <- lapply(1:length(cross_expr), function(x) rep(names(cross_expr)[x], nrow(cross_expr[[x]])))
     strain.factor <- as.factor(unlist(strain.list))
