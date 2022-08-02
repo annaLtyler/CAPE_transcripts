@@ -24,8 +24,8 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(exp.name)){
-    exp.name <- "imputed_genetic"
-    #exp.name <- "imputed_local"
+    #exp.name <- "imputed_genetic"
+    exp.name <- "imputed_local"
     #exp.name = "all_traits"
     #exp.name <- "weight_adjusted"
     #delete_previous <- TRUE
@@ -1847,9 +1847,13 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
     latent_trait_trans <- get_latent_var(tissue.mats, tissue.results)
 
     for(ct in has.vals){
-        cat("#### CT", ct, "\n")
+        #cat("#### CT", ct, "\n")
         
-        layout.mat <- matrix(c(1,7,2,3,5,5,5,4,6,6,6,4), nrow = 3, byrow = TRUE)
+        if(use.imputed){
+            layout.mat <- matrix(c(1,8,2,3,6,6,6,4,7,7,7,5), nrow = 3, byrow = TRUE)
+        }else{
+            layout.mat <- matrix(c(1,7,2,3,5,5,5,4,6,6,6,4), nrow = 3, byrow = TRUE)
+        }
         layout(layout.mat, heights = c(1, 0.7, 0.7), widths = c(0.7, 1, 1))
         
         #1 - plot trait contributions to composite trait
@@ -1885,69 +1889,73 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
 
         gene.expr <- tissue.expr[,gene.idx,drop=FALSE]
         colnames(gene.expr) <- gene.names
-        #pheatmap(t(gene.expr), show_colnames = FALSE)
-        #pheatmap(t(gene.expr[,which(ct.loadings < 0)]), show_colnames = FALSE)
-        #pheatmap(t(gene.expr[,which(ct.loadings > 0)]), show_colnames = FALSE)
-        #pheatmap(cor(gene.expr))
-        #pheatmap(cor(gene.expr[,which(ct.loadings < 0)]))
-        #pheatmap(cor(gene.expr[,which(ct.loadings > 0)]))
-        #plot.decomp(t(gene.expr[,which(ct.loadings < 0)]), label.points = TRUE)
-        #plot.decomp(t(gene.expr[,which(ct.loadings > 0)]), label.points = TRUE)
-        #plot.decomp(cor(gene.expr[,which(ct.loadings < 0)]), label.points = TRUE)
-        #plot.decomp(cor(t(gene.expr[,which(ct.loadings > 0)])), label.points = TRUE)
-        #plot.decomp(cor(t(gene.expr[,which(ct.loadings > 0)])), label.points = TRUE)
+        
+        if(use.imputed){
+            #if we are using imputed transcripts, plot the top loadings
+            plot.top = 25
+            #label.top = 7
+            par(mar = c(6,4,4,2))
+            neg.loadings <- sort(ct.loadings[which(ct.loadings < 0)])
+            #plot(1:plot.top, neg.loadings[1:plot.top], pch = 16, cex = 0.5, 
+            #col = colors.from.values(neg.loadings, col.scale = "blue", grad.dir = "low")) 
+            #text(x = 1:label.top, y = neg.loadings[1:label.top], 
+            #    labels = names(neg.loadings)[1:label.top], pos = 4, offset = 0.1, cex = 0.7)
+
+            barplot(neg.loadings[1:plot.top], las = 2, cex.names = 0.5, 
+                col = colors.from.values(neg.loadings, col.scale = "blue", grad.dir = "low"),
+                main = "top negative loadings")
+
+            pos.loadings <- sort(ct.loadings[which(ct.loadings > 0)], decreasing = TRUE)
+            #plot(1:plot.top, pos.loadings[1:plot.top], pch = 16, cex = 0.5, 
+            #col = colors.from.values(pos.loadings, col.scale = "brown", grad.dir = "high")) 
+            #text(x = 1:label.top, y = pos.loadings[1:label.top], 
+            #    labels = names(pos.loadings)[1:label.top], pos = 4, offset = 0.1, cex = 0.7)
+
+            barplot(pos.loadings[1:plot.top], las = 2, cex.names = 0.5, 
+                col = colors.from.values(pos.loadings, col.scale = "brown", grad.dir = "high"),
+                main = "top positive loadings")
+
+        }else{
 
 
-        if(ncol(gene.expr) <= 5){        
-            plot.text(paste(paste(gene.names, collapse = "\n")))
-        }
-
-        if(ncol(gene.expr) > 5 && ncol(gene.expr) <= 50){
-            expr.cor <- cor(gene.expr)
-            col.order <- hclust(dist(expr.cor))$order
-            par(mar = c(4, 2, 2, 0))
-            if(all(sign(expr.cor) == 1) || all(sign(expr.cor) == -1)){
-                imageWithText(expr.cor[col.order,col.order], split.at.vals = FALSE, 
-                col.scale = "blue", show.text = FALSE, grad.dir = "high",
-                col.text.shift = 1, row.text.shift = 1, row.text.cex = 0.6, col.text.cex = 0.6)
-            }else{
-                imageWithText(expr.cor[col.order,col.order], split.at.vals = TRUE, 
-                col.scale = c("blue", "red"), show.text = FALSE, grad.dir = "ends",
-                col.text.shift = 1, row.text.shift = 1, row.text.cex = 0.6, col.text.cex = 0.6)
+            if(ncol(gene.expr) <= 5){        
+                plot.text(paste(paste(gene.names, collapse = "\n")))
             }
-            par(xpd = FALSE)
-        }
-        #plot the decomposition of the gene expression matrix. 
-        #color based on loadings, and label the genes with the five
-        #largest magnitudes in both directions.
-        if(ncol(gene.expr) > 50){
 
-            expr.col <- colors.from.values(transcript.loadings[gene.idx,ct], split.at.vals = TRUE,
-                split.points = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
+            if(ncol(gene.expr) > 5 && ncol(gene.expr) <= 50){
+                expr.cor <- cor(gene.expr)
+                col.order <- hclust(dist(expr.cor))$order
+                par(mar = c(4, 2, 2, 0))
+                if(all(sign(expr.cor) == 1) || all(sign(expr.cor) == -1)){
+                    imageWithText(expr.cor[col.order,col.order], split.at.vals = FALSE, 
+                    col.scale = "blue", show.text = FALSE, grad.dir = "high",
+                    col.text.shift = 1, row.text.shift = 1, row.text.cex = 0.6, col.text.cex = 0.6)
+                }else{
+                    imageWithText(expr.cor[col.order,col.order], split.at.vals = TRUE, 
+                    col.scale = c("blue", "red"), show.text = FALSE, grad.dir = "ends",
+                    col.text.shift = 1, row.text.shift = 1, row.text.cex = 0.6, col.text.cex = 0.6)
+                }
+                par(xpd = FALSE)
+            }
+            #plot the decomposition of the gene expression matrix. 
+            #color based on loadings, and label the genes with the five
+            #largest magnitudes in both directions.
+            if(ncol(gene.expr) > 50){
 
-            par(mar = c(4,4,4,1))
-            ct.decomp <- plot.decomp(t(gene.expr), cols = expr.col, main = "Transcript PCs")
+                expr.col <- colors.from.values(transcript.loadings[gene.idx,ct], split.at.vals = TRUE,
+                    split.points = 0, col.scale = c("blue", "brown"), grad.dir = "ends")
 
-            top.high <- which(ct.loadings >= sort(ct.loadings, decreasing = TRUE)[5]) 
-            top.low <- which(ct.loadings <= sort(ct.loadings, decreasing = FALSE)[5]) 
-            text(x = ct.decomp$u[top.high,1], y = ct.decomp$u[top.high,2], 
-                labels = names(ct.loadings)[top.high], pos = 4, offset = 0.1)
-            text(x = ct.decomp$u[top.low,1], y = ct.decomp$u[top.low,2], 
-                labels = names(ct.loadings)[top.low], pos = 4, offset = 0.1)
+                par(mar = c(4,4,4,1))
+                ct.decomp <- plot.decomp(t(gene.expr), cols = expr.col, main = "Transcript PCs")
 
+                top.high <- which(ct.loadings >= sort(ct.loadings, decreasing = TRUE)[5]) 
+                top.low <- which(ct.loadings <= sort(ct.loadings, decreasing = FALSE)[5]) 
+                text(x = ct.decomp$u[top.high,1], y = ct.decomp$u[top.high,2], 
+                    labels = names(ct.loadings)[top.high], pos = 4, offset = 0.1)
+                text(x = ct.decomp$u[top.low,1], y = ct.decomp$u[top.low,2], 
+                    labels = names(ct.loadings)[top.low], pos = 4, offset = 0.1)
 
-            #I tried mapping the first two PCs of the expression matrix
-            #it doesn't look very interesting. The first PC looks essentially
-            #identical to the map of the CTranscript. The second is similar,
-            #but a little messier.
-            #expr.decomp <- plot.decomp(gene.expr)
-            #expr.pc <- expr.decomp$u
-            #rownames(expr.pc) <- names(expr.decomp$rows.used)
-            #colnames(expr.pc) <- c("PC1", "PC2")
-            #expr.scan <- scan1(genoprobs, expr.pc, kinship = K)
-            #quartz();plot(expr.scan, map = map, lodcol = 1, main = "Expr PC1")
-            #quartz();plot(expr.scan, map = map, lodcol = 2, main = "Expr PC2")
-
+            }
         }
 
         #5-6 transcript and trait mapping
@@ -1967,14 +1975,11 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
             col = "red", cex = )
 
 
-        
-
-
         #7 plot latent transcript-latent trait correlation
         plot.with.model(latent_trait_trans[[2]][,ct], latent_trait_trans[[1]][,ct],
         xlab = paste("Latent Transcript", ct), ylab = paste("Latent Trait", ct),
         report = "cor.test")
-        cat("\n\n")
+        #cat("\n\n")
     }
 }
 
@@ -1990,7 +1995,7 @@ for(i in 1:length(tissue.names)){
         tissue.enrich.summary = tissue.enrich[[i]],
         tissue.qtl = qtl.results[[i]], tissue.gene.list = tissue.gene.list, 
         tissue.expr = tissue.adj.expr[[i]], tissue.info = gene.info[[i]])
-        dev.off()
+    dev.off()
 }
 ```
 
