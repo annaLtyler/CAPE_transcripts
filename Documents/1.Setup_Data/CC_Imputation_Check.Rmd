@@ -37,7 +37,7 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-needed.packages <- c("pheatmap", "knitr", "qtl2", "stringr")
+needed.packages <- c("pheatmap", "knitr", "qtl2", "stringr", "hexbin")
 load_libraries(needed.packages, personal.library = TRUE)
 ```
 

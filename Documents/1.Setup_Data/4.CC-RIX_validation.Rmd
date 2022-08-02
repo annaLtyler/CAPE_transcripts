@@ -69,7 +69,12 @@ is.interactive = FALSE
 #is.interactive = TRUE
 library("here")
 
-exp.name = "imputed_local"
+exp.name = "imputed_genetic"
+
+#set whether to set genes by hand or to use a CT from the DO study
+manual.or.CT <- "manual"; gene.name = "Aldh2"
+
+
 data.dir <- here("Data", "CC-RIX")
 results.dir <- here("Results", "CCA_Clusters", "Validation")
 if(!file.exists(results.dir)){dir.create(results.dir)}
@@ -95,12 +100,12 @@ are all set below. After setting the manual or CT parameter, set
 the corresponding parameters in the appropriate if chunk.
 
 ```{r set_param}
-manual.or.CT <- "CT" #set whether to set genes by hand or to use a CT from the DO study
 
 if(manual.or.CT == "manual"){
-    gene.name <- "Sash3" #set gene name(s) here
+    #gene.name <- "Sash3" #set gene name(s) here
     #gene.name <- "Igfbp2"
     #gene.name <- c("Ifi44","Trim30a","Usp18","Ifit1","Ifit3","Oasl2","Rtp4","Irf7","Cxcl10","Ube2l6","Rnf213","Bst2","Stat1","Isg15","Lgals3bp","Rnf213","Parp12","Samd9l","Apol9a","Gbp2","Irgm2","Xaf1","Ifi205","Ifi203","Stat2","Ifih1","Oas1g","Apol9b","Sp100","Gbp6","Ddx58","Gbp3","Ifi204","Tor3a","Dtx3l","Oas1b","Ccl5","Parp14","Agrn","Tgtp1","Cmpk2","Nell2","Eif2ak2")
+    gene.name = "Aldh2"
     gene.weights <- rep(1, length(gene.name)) #set weights here
 
     #convert to ensembl ID
