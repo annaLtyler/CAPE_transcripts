@@ -37,7 +37,7 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-needed.packages <- c("pheatmap", "knitr", "qtl2")
+needed.packages <- c("pheatmap", "knitr", "qtl2", "stringr")
 load_libraries(needed.packages, personal.library = TRUE)
 ```
 
@@ -96,14 +96,11 @@ do.adj.expr <- adjust(do.expr$data$norm, do.expr$covar.matrix)
 match_geno_pheno <- function(mouse.genoprobs, mouse.K, mouse.pheno.id, manifest){
     #get mouse info from the mouse id
     all.pheno.id <- t(sapply(mouse.pheno.id, function(x) get_CC_RIX_mouse_info(x, manifest)))
+    all.pheno.id[,"User.Defined.Strain"] <- str_to_upper(all.pheno.id[,"User.Defined.Strain"])
 
     all.geno.group <- apply(all.pheno.id, 1, function(x) paste(gsub(" X ", "_", x[6]), x[3], sep = "_"))
     #match up with the genotype data
     all.pheno.idx <- match(all.geno.group, rownames(mouse.genoprobs[[1]]))
-    #take out na's
-    not.na.locale <- which(!is.na(all.pheno.idx))
-    all.pheno.idx <- all.pheno.idx[not.na.locale]
-    mouse.pheno.id <- mouse.pheno.id[not.na.locale]
     
     new.genoprobs <- mouse.genoprobs
     new.K <- mouse.K
@@ -207,6 +204,11 @@ common.transcripts <- intersect(colnames(adj.cc.expr), colnames(ind.auto.expr))
 all.cor <- sapply(common.transcripts, function(x) cor(adj.cc.expr[,x], ind.auto.expr[,x]))
 med.cor <- median(all.cor, na.rm = TRUE)
 hist(all.cor, breaks = 100);abline(v = med.cor, col = "red")
+
+full.table <- cbind(var.comp[common.transcripts,], all.cor)
+colnames(full.table) <- c(colnames(var.comp), "Imputed-Measured_Correlation")
+write.table(full.table, here("Results", "CCA_Clusters", "Validation", "var_comp_correlation.csv"),
+    sep = ",", quote = FALSE)
 ```
 
 ## Correlation between CC-RIX - DO correspondence and local eQTL LOD score
@@ -237,8 +239,14 @@ for(i in 1:length(common.transcripts)){
     if(length(cis.locale) > 1){stop}
 }
 
+par(mfrow = c(1,2))
 plot.with.model(cis.lod, all.cor, xlab = "Local LOD Score", 
     ylab = "Correlation between imputed and measured")
+
+plot.hexbin.as.plot(cis.lod, all.cor, xlab = "Local LOD Score", 
+    ylab = "Correlation between imputed and measured", n.bins = 20, max.cex = 2.5,
+    count.scale.fun = log, legend.pos = "bottomright", 
+    round.legend = 100, use.pheatmap.colors = TRUE)
 ```
 
 ## Diplotypes
@@ -300,6 +308,7 @@ dip.vals <- function(marker.geno, dip.idx, pheno.vals, cluster.by.val = TRUE){
     }else{
         row.order <- 1:8
     }
+    #val.mat[lower.tri(val.mat, diag = FALSE)] <- NA
     imageWithText(val.mat[row.order, row.order], use.pheatmap.colors = TRUE, col.text.rotation = 0,
     col.text.shift = 0.1, row.text.shift = 0.1, show.text = FALSE, 
     main = "Median Expression by Diplotype")
@@ -378,7 +387,9 @@ plot_dev <- function(transcript.id, gene.table, pop.genoprobs, pop.map, pop.expr
     segments(x0 = 0, x1 = length(med.centered)+1, y0 = 0)
     points(x = 1:length(dip.predicted), y = dip.predicted[predicted.order], col = "red", pch = "*", cex = 2)
     deviation <- sapply(med.centered, median) - dip.predicted
-    barplot(deviation[predicted.order], las = 2, ylab = "Deviation from Additivity")
+    
+    ylim <- c(min(unlist(med.centered), na.rm = TRUE), max(unlist(med.centered), na.rm = TRUE))
+    barplot(deviation[predicted.order], las = 2, ylab = "Deviation from Additivity", ylim = ylim)
 
     dev.mat <- matrix(NA, nrow = ncol(cis.geno), ncol = ncol(cis.geno))
     colnames(dev.mat) <- rownames(dev.mat) <- colnames(cis.geno)
@@ -389,6 +400,7 @@ plot_dev <- function(transcript.id, gene.table, pop.genoprobs, pop.map, pop.expr
     }
     
     par(mar = c(1,1,2,1))
+    #dev.mat[lower.tri(dev.mat, diag = FALSE)] <- NA
     imageWithText(dev.mat, use.pheatmap.colors = TRUE, col.text.rotation = 0,
     col.text.shift = 0.1, row.text.shift = 0.1, show.text = FALSE, 
     main = "Deviation by Diplotype")
@@ -456,6 +468,9 @@ transcript.id <- sample(common.transcripts, 1)
 transcript.id <- names(cis.lod)[which(cis.lod > 200)][1]
 transcript.id <- "ENSMUSG00000028619" #transcript for which E/E is very low
 
+gene.name = "Sash3"
+transcript.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1]
+
 #do dev
 do.dev <- plot_dev(transcript.id, gene.table, pop.genoprobs = genoprobs, 
     pop.map = map, pop.expr = do.adj.expr, bin.genoprobs = TRUE, 
@@ -477,8 +492,8 @@ cc.dev <- plot_dev(transcript.id, gene.table, pop.genoprobs = expanded.geno,
     cluster.med.effect = FALSE, add.predict = do.dev[,"Additive_Prediction"], 
     png.name = here("Results", "CCA_Clusters", "Validation", "Deviation.CC.png"))
 
-plot.with.model(do.dev[,2], cc.dev[,2], xlab = "DO deviation from additivity",
-    ylab = "CC deviation from DO additivity")
+#plot.with.model(do.dev[,2], cc.dev[,2], xlab = "DO deviation from additivity",
+#    ylab = "CC deviation from DO additivity")
 
 
 #dip.geno <- dip_geno(dip.idx)
@@ -526,7 +541,7 @@ plot_cc_v_imp <- function(transcript.id, gene.table, pop.genoprobs, pop.map, bin
     
     par(mar = c(8,4,0,4))
     imageWithText(cross.geno[,mean.order], use.pheatmap.colors = TRUE, 
-        row.text.shift = 0.05)
+        row.text.shift = 0.05, col.text.shift = 0.1)
 
     instrain.var <- sapply(test.expr, var)
     betstrain.var <- var(sapply(test.expr, mean))
@@ -551,14 +566,18 @@ differences. For example...
 test.idx <- which(cis.lod > 200)
 idx <- 1
 transcript.id <- names(test.idx)[idx]
+#gene.name <- "Irf2"
+#transcript.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1]
 
 plot_cc_v_imp(transcript.id, gene.table, pop.genoprobs = expanded.geno, 
     pop.map = cc.map, bin.genoprobs = TRUE)
+
 ```
 
 ```{r, low_strain_var}
 test.idx <- which(cis.lod < 6.5)
 idx <- 1
+idx = idx + 1
 transcript.id <- names(test.idx)[idx]
 
 plot_cc_v_imp(transcript.id, gene.table, pop.genoprobs = expanded.geno, 
@@ -598,8 +617,14 @@ if(!file.exists(f.file)){
     f <- readRDS(f.file)
 }
 
+par(mfrow = c(1,2))
 plot.with.model(log(cis.lod), log(f), xlab = "log(Local LOD score)", 
     ylab = "Across-Strain Variance (log(F))", report = "cor.test")
+
+plot.hexbin.as.plot(log(cis.lod), log(f), xlab = "Log Local LOD Score", 
+    ylab = "Inter-Strain Variance (log(F))", n.bins = 20, max.cex = 2.5,
+    count.scale.fun = NULL, legend.pos = "bottomright", 
+    round.legend = 25, use.pheatmap.colors = TRUE)
 
 #test.idx <- which(f > 100)
 #test.idx <- which(f < 1)
@@ -634,8 +659,17 @@ local genetics in the DO relates to the correlation between
 measured and imputed expression in the CC-RIX. It doesn't.
 
 ```{r lod_cor_ve}
+par(mfrow = c(1,2))
+
 plot.with.model(var.comp[common.transcripts,"local_VE"], all.cor,
 xlab = "VE local", ylab = "Correlation between measured and imputed transcripts in CC-RIX")
+
+plot.hexbin.as.plot(var.comp[common.transcripts,"local_VE"], all.cor,
+    xlab = "VE local",
+    ylab = "Correlation between imputed and measured", n.bins = 20, max.cex = 2.5,
+    count.scale.fun = log, legend.pos = "bottomright", 
+    round.legend = 100, use.pheatmap.colors = TRUE)
+
 ```
 
 ## Spot Checking
@@ -871,7 +905,7 @@ if(is.interactive){
 
 do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed_local", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
 do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed_locale", paste0("cc.do.cor.", tissue.name, ".RDS"))
-if(!file.exists(do.cc.cor.file)){
+if(!file.exists(do.cc.cor.file) || !file.exists(do.dd.cor.kin.file)){
     all.do.coef.cor.kin <- t(sapply(names(cis.lod), 
         function(x) plot_do_cc_coef(x, plot.results = FALSE, 
         cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)))
@@ -915,7 +949,6 @@ The plot below shows that the correlation between DO and CC-RIX
 coefficients is not related to the number of trans eQTL in the DO.
 
 ```{r trans_check}
-
 
 plot.with.model(all.do.coef.cor[,1], all.do.coef.cor[,2], report = "cor.test", 
     ylab = "Number of Trans eQTL",

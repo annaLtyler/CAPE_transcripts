@@ -69,6 +69,7 @@ is.interactive = FALSE
 #is.interactive = TRUE
 library("here")
 
+exp.name = "imputed_local"
 data.dir <- here("Data", "CC-RIX")
 results.dir <- here("Results", "CCA_Clusters", "Validation")
 if(!file.exists(results.dir)){dir.create(results.dir)}
@@ -77,6 +78,8 @@ all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
 for(i in 1:length(all.fun)){source(all.fun[i])}
 
 gene.info <- read.delim(here("data", "mouse_gene_info.txt"))
+
+use.imputed <- as.logical(length(grep("imputed", exp.name)))
 ```
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
@@ -119,14 +122,18 @@ if(manual.or.CT == "CT"){
 
     #tissue.name <- "Adipose"; CT <- 1
     #tissue.name <- "Islet"; CT <- 1
-    #tissue.name <- "Liver"; CT <- 1
-    tissue.name <- "SkeletalMuscle"; CT <- 1
+    tissue.name <- "Liver"; CT <- 4
+    #tissue.name <- "SkeletalMuscle"; CT <- 1
 
     #read expression data to get transcript names
-    do.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
+    if(use.imputed){
+        do.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS")))
+    }else{
+        do.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
+    }
 
     #read CT data
-    boot.CCA.results <- readRDS(here("Results", "CCA_Clusters", "all_traits", "Aggregate.Results.RDS"))
+    boot.CCA.results <- readRDS(here("Results", "CCA_Clusters", exp.name, "Aggregate.Results.RDS"))
     tissue.idx <- which(names(boot.CCA.results) == tissue.name)
     expr.vector <- boot.CCA.results[[tissue.idx]]$u[,CT]
     names(expr.vector) <- colnames(do.expr[[tissue.idx]])
@@ -250,7 +257,7 @@ for(i in 1:length(tissue.expr)){
     rownames(group.cor.mat) <- apply(groups, 1, function(x) paste(x, collapse = "_"))
     for(g in 1:nrow(groups)){
         cat("####", paste(groups[g,], collapse = " "), "\n")
-        #quartz(width = 10, height = 5)
+        if(is.interactive){quartz(width = 10, height = 5)}
         group.locale <- Reduce("intersect", lapply(group.def, 
             function(x) which(matched.chem[[i]][,x] == groups[g,x])))
 
@@ -409,7 +416,7 @@ given CT pair, this part is skipped.
 ```{r, plot_orig, fig.width = 9, fig.height = 5, results = "asis"}
 if(manual.or.CT == "CT"){
 
-    qtl.file <- list.files(here("Results", "CCA_Clusters", "all_traits"), 
+    qtl.file <- list.files(here("Results", "CCA_Clusters", exp.name), 
         pattern = paste0("Individual.QTL.", tissue.name, ".Composite_Trait", CT, ".Chr"), 
         full.names = TRUE)
     if(length(qtl.file) >0){
