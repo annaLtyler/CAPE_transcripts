@@ -72,7 +72,10 @@ library("here")
 exp.name = "imputed_genetic"
 
 #set whether to set genes by hand or to use a CT from the DO study
-manual.or.CT <- "manual"; gene.name = "Aldh2"
+#manual.or.CT <- "manual"; gene.name = "Aldh2"
+#manual.or.CT <- "manual"; gene.name <- c("Ifi44","Trim30a","Usp18","Ifit1","Ifit3","Oasl2","Rtp4","Irf7","Cxcl10","Ube2l6","Rnf213","Bst2","Stat1","Isg15","Lgals3bp","Rnf213","Parp12","Samd9l","Apol9a","Gbp2","Irgm2","Xaf1","Ifi205","Ifi203","Stat2","Ifih1","Oas1g","Apol9b","Sp100","Gbp6","Ddx58","Gbp3","Ifi204","Tor3a","Dtx3l","Oas1b","Ccl5","Parp14","Agrn","Tgtp1","Cmpk2","Nell2","Eif2ak2")
+
+manual.or.CT = "CT"; tissue.name <- "Liver"; CT <- 4
 
 
 data.dir <- here("Data", "CC-RIX")
@@ -102,10 +105,6 @@ the corresponding parameters in the appropriate if chunk.
 ```{r set_param}
 
 if(manual.or.CT == "manual"){
-    #gene.name <- "Sash3" #set gene name(s) here
-    #gene.name <- "Igfbp2"
-    #gene.name <- c("Ifi44","Trim30a","Usp18","Ifit1","Ifit3","Oasl2","Rtp4","Irf7","Cxcl10","Ube2l6","Rnf213","Bst2","Stat1","Isg15","Lgals3bp","Rnf213","Parp12","Samd9l","Apol9a","Gbp2","Irgm2","Xaf1","Ifi205","Ifi203","Stat2","Ifih1","Oas1g","Apol9b","Sp100","Gbp6","Ddx58","Gbp3","Ifi204","Tor3a","Dtx3l","Oas1b","Ccl5","Parp14","Agrn","Tgtp1","Cmpk2","Nell2","Eif2ak2")
-    gene.name = "Aldh2"
     gene.weights <- rep(1, length(gene.name)) #set weights here
 
     #convert to ensembl ID
@@ -124,11 +123,6 @@ if(manual.or.CT == "manual"){
 if(manual.or.CT == "CT"){
     #set tissue, CT, and region from DO study to analyze
     #doing this by hand now, but maybe can automate later.
-
-    #tissue.name <- "Adipose"; CT <- 1
-    #tissue.name <- "Islet"; CT <- 1
-    tissue.name <- "Liver"; CT <- 4
-    #tissue.name <- "SkeletalMuscle"; CT <- 1
 
     #read expression data to get transcript names
     if(use.imputed){

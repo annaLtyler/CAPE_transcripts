@@ -18,10 +18,16 @@ plot.hexbin.as.plot <- function(x, y, xlab = "x", ylab = "y", main = "",
     xy <- hcell2xy(hb)
     pt.cex = scale.between.vals(hb@count, target.min = min.cex, target.max = max.cex)
     if(!is.null(count.scale.fun)){
-        scale.fun <- match.fun(count.scale.fun)
+        count.scale.fun <- match.fun(count.scale.fun)
+        cols <- colors.from.values(count.scale.fun(hb@count), 
+        use.pheatmap.colors = use.pheatmap.colors,
+        col.scale = col.scale, grad.dir = grad.dir, 
+        color.fun = col.fun, exp.steepness = exp.steepness)    
+    }else{
+        cols <- colors.from.values(hb@count, use.pheatmap.colors = use.pheatmap.colors,
+        col.scale = col.scale, grad.dir = grad.dir, color.fun = col.fun, 
+        exp.steepness = exp.steepness)    
     }
-    cols <- colors.from.values(scale.fun(hb@count+1), use.pheatmap.colors = use.pheatmap.colors,
-    col.scale = col.scale, grad.dir = grad.dir, color.fun = col.fun, exp.steepness = exp.steepness)
     
     plot(xy, xlab = xlab, 
         ylab = ylab, pch = 16,
