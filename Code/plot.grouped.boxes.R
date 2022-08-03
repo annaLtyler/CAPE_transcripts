@@ -14,6 +14,7 @@ text.cex = 0.7, label.srt = 0, legend.x = NULL, legend.y = NULL, notch = FALSE){
 
 	if(plot.grouping == "inner"){
 		new.list <- lapply(1:length(group.list[[1]]), function(x) lapply(group.list, function(y) y[[x]]))
+		names(new.list) <- names(group.list[[1]])
 		group.list <- new.list
 	}
 

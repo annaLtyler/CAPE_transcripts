@@ -69,13 +69,13 @@ is.interactive = FALSE
 #is.interactive = TRUE
 library("here")
 
-exp.name = "imputed_genetic"
+exp.name = "imputed_local"
 
 #set whether to set genes by hand or to use a CT from the DO study
 #manual.or.CT <- "manual"; gene.name = "Aldh2"
 #manual.or.CT <- "manual"; gene.name <- c("Ifi44","Trim30a","Usp18","Ifit1","Ifit3","Oasl2","Rtp4","Irf7","Cxcl10","Ube2l6","Rnf213","Bst2","Stat1","Isg15","Lgals3bp","Rnf213","Parp12","Samd9l","Apol9a","Gbp2","Irgm2","Xaf1","Ifi205","Ifi203","Stat2","Ifih1","Oas1g","Apol9b","Sp100","Gbp6","Ddx58","Gbp3","Ifi204","Tor3a","Dtx3l","Oas1b","Ccl5","Parp14","Agrn","Tgtp1","Cmpk2","Nell2","Eif2ak2")
 
-manual.or.CT = "CT"; tissue.name <- "Liver"; CT <- 4
+manual.or.CT = "CT"; tissue.name <- "Adipose"; CT <- 4
 
 
 data.dir <- here("Data", "CC-RIX")
@@ -832,6 +832,7 @@ treat_effect <- function(contrast = c("Diet", "Treatment")){
     test.factors <- colnames(no_contrast_groups)
     results <- vector(mode = "list", length = length(matched.chem))
     names(results) <- names(matched.chem)
+    contrast.names <- unique(groups[,contrast.locale])
 
     for(tx in 1:length(chem.matched.expr)){
         cat("####", names(chem.matched.expr)[tx], "\n")
@@ -839,7 +840,8 @@ treat_effect <- function(contrast = c("Diet", "Treatment")){
         colnames(results.table) <- c(sort(unique(groups[,contrast])), "p")
         if(is.interactive){quartz()}
         tx.expr <- chem.matched.expr[[tx]]
-        par(mfrow = c(2,2))
+        all.group.vals <- vector(mode = "list", length = nrow(no_contrast_groups))
+        all.group.names <- rep(NA, nrow(no_contrast_groups))
         for(g in 1:nrow(no_contrast_groups)){
             factor1.idx <- which(matched.chem[[tx]][,test.factors[1]] == no_contrast_groups[g,test.factors[1]])
             factor2.idx <- which(matched.chem[[tx]][,test.factors[2]] == no_contrast_groups[g,test.factors[2]])
@@ -847,14 +849,16 @@ treat_effect <- function(contrast = c("Diet", "Treatment")){
             model <- lm(tx.expr[group.idx]~matched.chem[[tx]][group.idx,contrast])
             f <- summary(model)$fstatistic
             p <- pf(f[1],f[2],f[3],lower.tail=F)
-            a <- boxplot(tx.expr[group.idx]~matched.chem[[tx]][group.idx,contrast],
-            ylab = "Expression", xlab = "", 
-            main = paste0(paste(no_contrast_groups[g,], collapse = " "), " (p = ", signif(p, 2), ")"))
-            group.means <- colMeans(a[[1]])
-            names(group.means) <- a$names
+            g.labels <- matched.chem[[tx]][group.idx,contrast]
+            group.vals <- lapply(unique(g.labels), function(x) tx.expr[group.idx][which(g.labels == x)])
+            names(group.vals) <- unique(g.labels)
+            all.group.vals[[g]] <- group.vals
+            all.group.names[g] = paste0(paste(no_contrast_groups[g,], collapse = " "), "\n(p = ", signif(p, 2), ")")
             results.table[g,] <- c(group.means, p)
         }
-        mtext(names(chem.matched.expr)[tx], side = 3, outer = TRUE, line = -1.5)
+        names(all.group.vals) <- all.group.names
+        plot.grouped.boxes(all.group.vals, plot.grouping = "inner", print.vals = NA)
+        mtext(names(chem.matched.expr)[tx], side = 3, cex = 2)
         results.table <- cbind(no_contrast_groups, results.table)
         rownames(results.table) <- NULL    
         results[[tx]] <- results.table
@@ -923,7 +927,7 @@ treat_int <- function(int.factors = c("Diet", "Treatment")){
 
 The following figures show the effect of Diet on expression.
 
-```{r diet_effect, fig.height = 8, fig.width = 8, results = "asis"}
+```{r diet_effect, fig.height = 4, fig.width = 8, results = "asis"}
 diet.effect.tables <- treat_effect("Diet")
 ```
 
@@ -931,7 +935,7 @@ diet.effect.tables <- treat_effect("Diet")
 
 The following figures show the effect of Metforming treatment on expression
 
-```{r met_effect, fig.height = 8, fig.width = 8, results = "asis"}
+```{r met_effect, fig.height = 4, fig.width = 8, results = "asis"}
 met.effect.tables <- treat_effect("Treatment")
 ```
 

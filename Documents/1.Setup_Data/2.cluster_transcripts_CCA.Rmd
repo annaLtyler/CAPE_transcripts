@@ -2007,29 +2007,88 @@ for(i in 1:length(tissue.names)){
 }
 ```
 
-## All together trait loadings
+## All together trait loadings {.tabset .tabset-fade .tabset-pills}
 
 ```{r tissue_trait_comparison, fig.height = 11, fig.width = 7}
-all.loadings <- lapply(boot.CCA.results, function(x) x$v)
-for(i in 1:length(all.loadings)){
-    rownames(all.loadings[[i]]) <- colnames(matched.mats[[i]]$Z)
-    colnames(all.loadings[[i]]) <- paste0(tissue.names[i], "_Trait", 1:ncol(all.loadings[[i]]))
+all.trait.loadings <- lapply(boot.CCA.results, function(x) x$v)
+for(i in 1:length(all.trait.loadings)){
+    rownames(all.trait.loadings[[i]]) <- colnames(matched.mats[[i]]$Z)
+    colnames(all.trait.loadings[[i]]) <- paste0(tissue.names[i], "_Trait", 1:ncol(all.trait.loadings[[i]]))
 }
-loading.mat <- Reduce("cbind", all.loadings)
+trait.loading.mat <- Reduce("cbind", all.loadings)
 
-tissue.col <- data.frame(sapply(strsplit(colnames(loading.mat), "_"), function(x) x[1]))
+tissue.col <- data.frame(sapply(strsplit(colnames(trait.loading.mat), "_"), function(x) x[1]))
 colnames(tissue.col) <- "Tissue"
-rownames(tissue.col) <- colnames(loading.mat)
+rownames(tissue.col) <- colnames(trait.loading.mat)
 
 row.order <- order(rownames(loading.mat))
+```
+
+### Clustered
+
+```{r clustered}
 #pdf("~/Desktop/loading_mat.pdf", width = 7, height = 11)
 pheatmap(t(loading.mat), annotation_row = tissue.col)
+```
+
+### By Tissue
+
+```{r by_tissue}
 pheatmap(t(loading.mat), annotation_row = tissue.col, cluster_rows = FALSE)
 #dev.off()
+```
 
-#pheatmap(cor(loading.mat))
-#has.vals <- which(rowSums(loading.mat) != 0)
-#pheatmap(cor(t(loading.mat[has.vals,])))
+### Cross-Tissue Correlations
+
+The following figure shows the correlations between trait loadings across
+all tissues and composite traits. Some composite traits from different 
+tissues are very highly correlated with each other.
+
+```{r cross-tissue_cor, fig.width = 10, fig.height = 10}
+pheatmap(cor(loading.mat))
+```
+
+## All together transcript loadings
+
+The following figure shows the correlation of all composite transcipt
+pairs. The composite transcript pairs are much less correlated than the
+composite trait pairs.
+
+Within skeletal muscle there is some redundancy, the first 4 composite
+transcripts are positively correlated, and are negatively correlated
+with the fifth. 
+
+Across tissues there is very little correlation. The first composite
+transcript from each tissue is slightly positively correlated with 
+the first composite transcript from the other tissues (and the first
+four components from skeletal muscle)
+
+```{r trans_loadings, fig.width = 10, fig.height = 10}
+common.trans <- Reduce("intersect", lapply(matched.mats, function(x) colnames(x$X)))
+common.idx <- lapply(matched.mats, function(x) match(common.trans, colnames(x$X)))
+all.trans.loadings <- lapply(1:length(boot.CCA.results), function(x) boot.CCA.results[[x]]$u[common.idx[[x]],])
+all.trans.mat <- Reduce("cbind", all.trans.loadings)
+rownames(all.trans.mat) <- common.trans
+colnames(all.trans.mat) <- paste(rep(tissue.names, each = ncol(boot.CCA.results[[1]]$u)), 1:ncol(boot.CCA.results[[1]]$u), sep = "_")
+has.vals <- which(apply(all.trans.mat, 2, function(x) length(which(x != 0))) > 0)
+#pdf("~/Desktop/trans_heat.pdf", width = 10, height = 10)
+pheatmap(cor(all.trans.mat[,has.vals]), cluster_rows = FALSE, cluster_cols = FALSE)
+#dev.off()
+
+trans.vals <- apply(all.trans.mat, 1, function(x) length(which(x != 0)))
+head(sort(trans.vals, decreasing = TRUE))
+
+#first.comp <- sapply(all.trans.loadings, function(x) x[,1])
+#colnames(first.comp) <- tissue.names
+
+#tissue.col <- as.numeric(as.factor(sapply(strsplit(colnames(all.trans.mat), "_"), function(x) x[1])))
+#plot.decomp(t(all.trans.mat), cols = tissue.col)
+#plot.decomp(all.trans.mat)
+#rownames(first.comp) <- common.trans
+#plot.decomp(first.comp)
+#pheatmap(t(first.comp))
+
+comp.sums <- sort(rowSums(first.comp))
 ```
 
 
