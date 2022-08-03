@@ -1901,9 +1901,13 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
             #text(x = 1:label.top, y = neg.loadings[1:label.top], 
             #    labels = names(neg.loadings)[1:label.top], pos = 4, offset = 0.1, cex = 0.7)
 
-            barplot(neg.loadings[1:plot.top], las = 2, cex.names = 0.5, 
-                col = colors.from.values(neg.loadings, col.scale = "blue", grad.dir = "low"),
-                main = "top negative loadings")
+            if(length(neg.loadings) > 0){
+                barplot(neg.loadings[1:plot.top], las = 2, cex.names = 0.5, 
+                    col = colors.from.values(neg.loadings, col.scale = "blue", grad.dir = "low"),
+                    main = "top negative loadings")
+            }else{
+                plot.text("No negative loadings")
+            }
 
             pos.loadings <- sort(ct.loadings[which(ct.loadings > 0)], decreasing = TRUE)
             #plot(1:plot.top, pos.loadings[1:plot.top], pch = 16, cex = 0.5, 
@@ -1911,9 +1915,13 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
             #text(x = 1:label.top, y = pos.loadings[1:label.top], 
             #    labels = names(pos.loadings)[1:label.top], pos = 4, offset = 0.1, cex = 0.7)
 
-            barplot(pos.loadings[1:plot.top], las = 2, cex.names = 0.5, 
-                col = colors.from.values(pos.loadings, col.scale = "brown", grad.dir = "high"),
-                main = "top positive loadings")
+            if(length(pos.loadings) > 0){
+                barplot(pos.loadings[1:plot.top], las = 2, cex.names = 0.5, 
+                    col = colors.from.values(pos.loadings, col.scale = "brown", grad.dir = "high"),
+                    main = "top positive loadings")
+            }else{
+                plot.text("No positive loadings")
+            }
 
         }else{
 
