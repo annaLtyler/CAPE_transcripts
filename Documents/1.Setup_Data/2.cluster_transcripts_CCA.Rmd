@@ -87,7 +87,6 @@ if(use.imputed){
 }else{   
     tissue.adj.expr <- readRDS(here("Data", paste0("Adjusted_Expression_", exp.name, ".RDS")))
 }
-names(tissue.adj.expr) <- c("Adipose", "Islet", "Liver", "SkeletalMuscle")
 tissue.names <- names(tissue.adj.expr)
 
 tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
@@ -307,53 +306,6 @@ for(tx in 1:length(all.tissue.cor)){
 }
 ```
 
-```{r imputed_measured_cor, eval = FALSE}
-#if looking at imputed data, test the correlation with meaasured data
-for(tx in 1:length(tissue.names)){
-    measured.expr <- adjust(get(data.set.names[[tx]])$data$norm, get(data.set.names[[tx]])$covar.matrix)
-    matched.expr <- get.xz(matched.mats[[tx]]$X, measured.expr)
-    common.expr <- Reduce("intersect", lapply(matched.expr, colnames))
-    expr.cor <- sapply(common.expr, function(x) cor(matched.expr[[1]][,x], matched.expr[[2]][,x]))
-    hist(expr.cor, breaks = 100)
-
-    plot.with.model(expr.cor, var.decomp[[tx]][common.expr,"local_VE"])
-    plot.with.model(expr.cor, var.decomp[[tx]][common.expr,"distal_VE"])
-    #plot.with.model(expr.cor, var.decomp[[tx]][common.expr,"covar_VE"])
-
-    cor.col <- colors.from.values(expr.cor, use.pheatmap.colors = TRUE)
-    plot(var.decomp[[tx]][common.expr,"local_VE"], var.decomp[[tx]][common.expr,"distal_VE"],
-        col = cor.col, pch = 16)
-    
-    par(mfrow = c(1,2))
-    distal.col <- colors.from.values(var.decomp[[tx]][common.expr,"distal_VE"], use.pheatmap.colors = TRUE)
-    plot(expr.cor, var.decomp[[tx]][common.expr,"local_VE"], xlab = "correlation", 
-        ylab = "local_VE", col = distal.col, pch = 16, cex = 0.5, main = "colored by distal VE",
-        ylim = c(0,0.9))
-
-    local.col <- colors.from.values(var.decomp[[tx]][common.expr,"local_VE"], use.pheatmap.colors = TRUE)
-    plot(expr.cor, var.decomp[[tx]][common.expr,"distal_VE"], xlab = "correlation",
-        ylab = "distal_VE", col = local.col, pch = 16, cex = 0.5, main = "colored by local VE",
-        ylim = c(0,0.9))
-
-    #from these we see that we can predict transcription well when
-    #the variance explained by local genotype is high.
-    #It also helps to have high variance explained by distal genetics (for the full model),
-    #but not as much 
-
-    gene.name = "Lep"
-    gene.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1]
-    plot.with.model(matched.expr[[1]][,gene.id], matched.expr[[2]][,gene.id])
-
-    
-    measured.scan <- scan1(genoprobs, matched.expr[[2]][,gene.id], kinship = K)
-    plot(measured.scan, map = map)
-
-    imputed.scan <- scan1(genoprobs, matched.expr[[1]][,gene.id], kinship = K)
-    plot(imputed.scan, map = map)
-}
-
-```
-
 ## Penalty Optimization {.tabset .tabset-fade .tabset-pills}
 
 In the code below we do a sweep over a grid of penalties to look for 
@@ -404,9 +356,16 @@ for(i in 1:length(matched.mats)){
     perm.file <- file.path(results.dir, paste0(tissue.names[i], ".", file.text, ".perm.RDS"))
 
     if(!perm.components){
+        if(use.imputed){
+            standardize = FALSE
+        }else{
+            standardize = TRUE
+        }
+
         tissue.perm <- CCA_permute_grid(matched.mats[[i]]$X, matched.mats[[i]]$Z, 
         filename = perm.file, search_grid = TRUE, nperms = nperms, 
-        x_penalty = seq(0, 1, 0.1), z_penalty = seq(0, 1, 0.1))
+        x_penalty = seq(0, 1, 0.1), z_penalty = seq(0, 1, 0.1), 
+        standardize = standardize)
     }else{
         #do permutations for all components
         tissue.perm <- CCA_permute_components(
@@ -414,7 +373,7 @@ for(i in 1:length(matched.mats)){
         Z = matched.mats[[i]]$Z, filename = perm.file,
         search_grid = TRUE, nperms = nperms,
         x_penalty = seq(0, 1, 0.1), z_penalty = seq(0, 1, 0.1),
-        verbose = TRUE, plot.results = TRUE)
+        verbose = TRUE, plot.results = TRUE, standardize = standardize)
     }
 
 

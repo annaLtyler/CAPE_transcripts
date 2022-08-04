@@ -77,7 +77,6 @@ exp.name = "imputed_local"
 
 manual.or.CT = "CT"; tissue.name <- "Adipose"; CT <- 4
 
-
 data.dir <- here("Data", "CC-RIX")
 results.dir <- here("Results", "CCA_Clusters", "Validation")
 if(!file.exists(results.dir)){dir.create(results.dir)}

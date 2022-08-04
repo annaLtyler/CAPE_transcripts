@@ -3,7 +3,7 @@
 
 CCA_permute_components <- function(X, Z, chromx = NULL, x_penalty = seq(0,1,0.1), 
 z_penalty = seq(0,1,0.1), nperms = 100, search_grid = TRUE, num_components = NULL,
-filename, verbose = TRUE, plot.results = FALSE){
+standardize = FALSE, filename, verbose = TRUE, plot.results = FALSE){
 
     if(is.null(num_components)){num_components = ncol(Z)}
 
@@ -33,7 +33,8 @@ filename, verbose = TRUE, plot.results = FALSE){
                     rnd.order <- sample(1:nrow(X))
                     perm.result <- CCA(x = X[rnd.order,], Z, typex = "standard", 
                     typez = "standard", penaltyx = penalty_pairs[pen,1], 
-                    penaltyz = penalty_pairs[pen,2], K = num_components, trace = FALSE)
+                    penaltyz = penalty_pairs[pen,2], K = num_components, 
+                    trace = FALSE, standardize = standardize)
                     perm.cor.mat[perm,] <- perm.result$cors
                 }
                 perm.cors[[pen]] <- perm.cor.mat
@@ -44,7 +45,7 @@ filename, verbose = TRUE, plot.results = FALSE){
                 if(verbose){cat("Running CCA for", penalty_pairs[pen,], "\n")}
                 observed.result <- CCA(x = X, Z, typex = "ordered", typez = "standard", 
                 penaltyx = penalty_pairs[pen,1], penaltyz = penalty_pairs[pen,2],
-                K = num_components, trace = FALSE, chromx = chromx)
+                K = num_components, trace = FALSE, chromx = chromx, standardize = standardize)
                 observed.cors[pen,] <- observed.result$cors
                 
                 if(verbose){"Running Permutations...\n"}
@@ -55,7 +56,7 @@ filename, verbose = TRUE, plot.results = FALSE){
                     perm.result <- CCA(x = X[rnd.order,], Z, typex = "ordered", 
                     typez = "standard", penaltyx = penalty_pairs[pen,1], 
                     penaltyz = penalty_pairs[pen,2], K = num_components, trace = FALSE,
-                    chromx = chromx)
+                    chromx = chromx, standardize = standardize)
                     perm.cor.mat[perm,] <- perm.result$cors
                 }
                 perm.cors[[pen]] <- perm.cor.mat
