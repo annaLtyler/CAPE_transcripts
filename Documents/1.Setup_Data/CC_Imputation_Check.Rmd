@@ -905,17 +905,21 @@ if(is.interactive){
 
 do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed_local", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
 do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed_locale", paste0("cc.do.cor.", tissue.name, ".RDS"))
-if(!file.exists(do.cc.cor.file) || !file.exists(do.dd.cor.kin.file)){
+if(!file.exists(do.cc.cor.kin.file)){
     all.do.coef.cor.kin <- t(sapply(names(cis.lod), 
         function(x) plot_do_cc_coef(x, plot.results = FALSE, 
         cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)))
     saveRDS(all.do.coef.cor.kin, do.cc.cor.kin.file)
+}else{
+    all.do.coef.cor.kin <- readRDS(do.cc.cor.kin.file)
+}
+
+if(!file.exists(do.cc.cor.file)){
     all.do.coef.cor <- t(sapply(names(cis.lod), 
         function(x) plot_do_cc_coef(x, plot.results = FALSE, 
         cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)))
     saveRDS(all.do.coef.cor, do.cc.cor.file)
 }else{
-    all.do.coef.cor.kin <- readRDS(do.cc.cor.kin.file)
     all.do.coef.cor <- readRDS(do.cc.cor.file)
 }
 
