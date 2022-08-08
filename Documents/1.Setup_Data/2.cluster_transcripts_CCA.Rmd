@@ -943,6 +943,20 @@ enrichment_plus_genes <- function(enrichment.plus, search.terms){
     }
     return(sub.results)
 }
+
+#if there are too many genes to do enrichment, just take the 
+#genes with the strongest loadings
+
+get_top_genes <- function(named.genes, max.n = 500){
+    if(length(named.genes) <= 500){
+        return(named.genes)
+    }else{
+        return(named.genes[1:max.n])
+    }
+}
+
+
+
 ```
 
 
@@ -961,8 +975,9 @@ for(i in 1:length(tissue.names)){
     write.table(assoc.transcript.table, 
         file.path(results.dir, paste0("Transcripts.Associated.", tissue.names[i], ".csv")),
         quote = FALSE, sep = ",", row.names = FALSE)
-    tissue.enrich[[i]] <- gprofiler_enrichment(tissue.gene.list, ordered_query = TRUE,
-    filename = file.path(results.dir, 
+    for_enrichment <- lapply(tissue.gene.list, function(x) get_top_genes(x, 500))
+    tissue.enrich[[i]] <- gprofiler_enrichment(for_enrichment, ordered_query = TRUE,
+        filename = file.path(results.dir, 
     paste0(tissue.names[i], ".Composite.Transcript.Enrichments.RDS")))
     gene.info[[i]] <- assoc.transcript.table
 }
