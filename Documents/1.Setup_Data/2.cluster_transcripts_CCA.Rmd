@@ -1995,20 +1995,20 @@ tissue.col <- data.frame(sapply(strsplit(colnames(trait.loading.mat), "_"), func
 colnames(tissue.col) <- "Tissue"
 rownames(tissue.col) <- colnames(trait.loading.mat)
 
-row.order <- order(rownames(loading.mat))
+row.order <- order(rownames(trait.loading.mat))
 ```
 
 ### Clustered
 
 ```{r clustered}
 #pdf("~/Desktop/loading_mat.pdf", width = 7, height = 11)
-pheatmap(t(loading.mat), annotation_row = tissue.col)
+pheatmap(t(trait.loading.mat), annotation_row = tissue.col)
 ```
 
 ### By Tissue
 
 ```{r by_tissue}
-pheatmap(t(loading.mat), annotation_row = tissue.col, cluster_rows = FALSE)
+pheatmap(t(trait.loading.mat), annotation_row = tissue.col, cluster_rows = FALSE)
 #dev.off()
 ```
 
@@ -2019,7 +2019,7 @@ all tissues and composite traits. Some composite traits from different
 tissues are very highly correlated with each other.
 
 ```{r cross-tissue_cor, fig.width = 10, fig.height = 10}
-pheatmap(cor(loading.mat))
+pheatmap(cor(trait.loading.mat))
 ```
 
 ## All together transcript loadings
