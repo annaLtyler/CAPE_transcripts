@@ -1989,7 +1989,7 @@ for(i in 1:length(all.trait.loadings)){
     rownames(all.trait.loadings[[i]]) <- colnames(matched.mats[[i]]$Z)
     colnames(all.trait.loadings[[i]]) <- paste0(tissue.names[i], "_Trait", 1:ncol(all.trait.loadings[[i]]))
 }
-trait.loading.mat <- Reduce("cbind", all.loadings)
+trait.loading.mat <- Reduce("cbind", all.trait.loadings)
 
 tissue.col <- data.frame(sapply(strsplit(colnames(trait.loading.mat), "_"), function(x) x[1]))
 colnames(tissue.col) <- "Tissue"
