@@ -904,7 +904,6 @@ if(is.interactive){
 }
 
 do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed_local", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
-do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed_locale", paste0("cc.do.cor.", tissue.name, ".RDS"))
 if(!file.exists(do.cc.cor.kin.file)){
     all.do.coef.cor.kin <- t(sapply(names(cis.lod), 
         function(x) plot_do_cc_coef(x, plot.results = FALSE, 
@@ -914,6 +913,7 @@ if(!file.exists(do.cc.cor.kin.file)){
     all.do.coef.cor.kin <- readRDS(do.cc.cor.kin.file)
 }
 
+do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed_local", paste0("cc.do.cor.", tissue.name, ".RDS"))
 if(!file.exists(do.cc.cor.file)){
     all.do.coef.cor <- t(sapply(names(cis.lod), 
         function(x) plot_do_cc_coef(x, plot.results = FALSE, 
