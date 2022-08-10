@@ -217,7 +217,7 @@ The following plot shows the correlation between the local additive
 eQTL LOD score for each transcript in the DOs and the correlation 
 between the imputed and the actual gene expression.
 
-```{r lod}
+```{r lod, fig.width = 8, fig.height = 4}
 
 cis.lod <- rep(NA, length(common.transcripts))
 names(cis.lod) <- common.transcripts
@@ -598,7 +598,7 @@ in expression.
 There does actually appear to be a relationship between LOD 
 score in the DO, and across-strain variation in the CC-RIX.
 
-```{r var_vs_lod}
+```{r var_vs_lod, fig.width = 8, fig.height = 4}
 get_f <- function(transcript.id, strain.factor){
     test.expr <- lapply(cross_expr, function(x) x[,transcript.id])
     model <- aov(unlist(test.expr)~strain.factor)
@@ -658,7 +658,7 @@ The following plot shows how the variance explained by
 local genetics in the DO relates to the correlation between
 measured and imputed expression in the CC-RIX. It doesn't.
 
-```{r lod_cor_ve}
+```{r lod_cor_ve, fig.height = 4, fig.width = 8}
 par(mfrow = c(1,2))
 
 plot.with.model(var.comp[common.transcripts,"local_VE"], all.cor,

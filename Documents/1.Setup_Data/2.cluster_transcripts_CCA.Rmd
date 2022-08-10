@@ -584,6 +584,7 @@ if(!file.exists(aggregate.results) || delete_previous){
 }else{
     boot.CCA.results <- readRDS(aggregate.results)
 }
+#stop()
 ```
 
 ## Compare Original CCA and Bootsrapped Results {.tabset .tabset-fade .tabset-pills}
@@ -2019,7 +2020,9 @@ all tissues and composite traits. Some composite traits from different
 tissues are very highly correlated with each other.
 
 ```{r cross-tissue_cor, fig.width = 10, fig.height = 10}
-pheatmap(cor(trait.loading.mat))
+has.vals <- which(apply(trait.loading.mat, 2, function(x) !all(x == 0)))
+trait.loading.cor <- cor(trait.loading.mat[,has.vals], use = "pairwise.complete.obs")
+pheatmap(trait.loading.cor)
 ```
 
 ## All together transcript loadings
@@ -2050,7 +2053,7 @@ pheatmap(cor(all.trans.mat[,has.vals]), cluster_rows = FALSE, cluster_cols = FAL
 #dev.off()
 
 trans.vals <- apply(all.trans.mat, 1, function(x) length(which(x != 0)))
-head(sort(trans.vals, decreasing = TRUE))
+#head(sort(trans.vals, decreasing = TRUE))
 
 #first.comp <- sapply(all.trans.loadings, function(x) x[,1])
 #colnames(first.comp) <- tissue.names
@@ -2062,7 +2065,7 @@ head(sort(trans.vals, decreasing = TRUE))
 #plot.decomp(first.comp)
 #pheatmap(t(first.comp))
 
-comp.sums <- sort(rowSums(first.comp))
+#comp.sums <- sort(rowSums(first.comp))
 ```
 
 
@@ -2550,12 +2553,68 @@ plot(adj.scan, map = map, add = TRUE, col = "red")
 #way. The effect it weak but consistent.
 ```
 
+## Mediation with imputed transcripts {.tabset .tabset-fade .tabset-pills}
+
+For the imputed transcripts we will do a different kind of check.
+We first calculate the heritability of the composite trait. 
+We then regress out the effect of the composite transcript and
+check the heritability of the residuals. 
+
+```{r imputed_mediation, results = "asis"}
+if(use.imputed){
+    kin.file <- file.path(results.dir, "overall.kinship.RDS")
+    if(!file.exists(kin.file)){
+        overall.k <- calc_kinship(genoprobs, type = "overall")
+        saveRDS(overall.k, kin.file)
+    }else{
+        overall.k <- readRDS(kin.file)
+    }
+    all.trait.herit <- vector(mode = "list", length = length(tissue.names))
+    names(all.trait.herit) <- tissue.names
+    for(tx in 1:length(tissue.names)){
+        trait.trans <- get_latent_var(tissue.mats = matched.mats[[tx]], 
+            tissue.results = boot.CCA.results[[tx]])
+        trait.herit <- matrix(NA, nrow = ncol(trait.trans$Composite_Traits), ncol = 3)
+        colnames(trait.herit) <- c("Full", "Residuals", "Trait_Transcript_Correlation")
+        rownames(trait.herit) <- colnames(trait.trans$Composite_Traits)
+        for(tr in 1:ncol(trait.trans$Composite_Traits)){
+            if(!all(trait.trans$Composite_Transcripts[,tr] == 0)){
+                full.herit <- est_herit(trait.trans$Composite_Traits[,tr], kinship = overall.k)
+                trait.herit[tr,1] <- full.herit
+                adj.trait <- adjust(trait.trans$Composite_Traits[,tr,drop=FALSE], trait.trans$Composite_Transcripts[,tr,drop=FALSE])
+                resid.herit <- est_herit(adj.trait, kinship = overall.k)
+                trait.herit[tr,2] <- resid.herit
+                trait.transcript.cor <- cor(trait.trans$Composite_Traits[,tr], trait.trans$Composite_Transcripts[,tr])
+                trait.herit[tr,3] <- trait.transcript.cor
+            }
+        }
+        all.trait.herit[[tx]] <- trait.herit
+    }
+
+    for(tx in 1:length(tissue.names)){
+        cat("###", tissue.names[tx],"\n")
+        if(is.interactive){quartz()}
+        pt.col <- colors.from.values(all.trait.herit[[tx]][,3], grad.dir = "high")
+        plot(all.trait.herit[[tx]], main = tissue.names[tx], cex = 1.2,
+        xlab = "Composite Trait Heritability", ylab = "Residual Heritability")
+        abline(0,1)
+        points(all.trait.herit[[tx]], main = tissue.names[tx], col = pt.col, pch = 16)
+        text(all.trait.herit[[tx]][,1], all.trait.herit[[tx]][,2], gsub("Composite_Trait", "", 
+        rownames(all.trait.herit[[tx]])), pos = 4)
+        cat("\n\n")
+    }
+
+}
+
+
+```
+
 ## Loading by LOD {.tabset .tabset-fade .tabset-pills}
 
 The following plots show imputed transcript loadings plotted
 agains their eQTL LOD score in the DO. 
 
-```{r eqtl, results = "asis"}
+```{r eqtl, results = "asis", fig.width = 5, fig.height = 5}
 get_cis_lod <- function(transcript.id, eqtl.table, marker.chr, marker.pos, 
     bp.buffer = 4e6){
 
