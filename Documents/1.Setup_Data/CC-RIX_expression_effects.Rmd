@@ -222,7 +222,7 @@ group.idx <- apply(u_groups, 1, function(x) Reduce("intersect",
     which(tissue.info[,"Treatment"] == x[3]))))
 group.expr <- lapply(group.idx, function(x) adj.cc.expr[x,])
 
-pdf("~/Desktop/Group_Decomp.pdf", width = 16, height = 8)
+#pdf("~/Desktop/Group_Decomp.pdf", width = 16, height = 8)
 par(mfrow = c(2,4))
 for(i in 1:length(group.expr)){
     group.decomp <- plot.decomp(group.expr[[i]], plot.results = FALSE)
@@ -233,7 +233,7 @@ for(i in 1:length(group.expr)){
     text(group.decomp$u[,1], group.decomp$u[,2], 
         labels = as.numeric(as.factor(tissue.info[group.idx[[i]],"User.Defined.Strain"])))
 }
-dev.off()
+#dev.off()
 ```
 
 For each measured transcript, we fit a model that indludes Sex, Diet, 
