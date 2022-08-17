@@ -62,8 +62,8 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-needed.packages <- c("pheatmap", "qtl2", "RColorBrewer", 
-    "biomaRt", "gprofiler2", "stringr")
+needed.packages <- c("gprofiler2", "pheatmap", "qtl2", "RColorBrewer", 
+    "biomaRt", "stringr")
 load_libraries(needed.packages, personal.library = TRUE)
 
 load_latest_cape(here("Code", "cape"))
