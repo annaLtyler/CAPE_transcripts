@@ -62,6 +62,8 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
+update.packages("vctrs", repos = "http://cran.us.r-project.org")
+
 needed.packages <- c("gprofiler2", "pheatmap", "qtl2", "RColorBrewer", 
     "biomaRt", "stringr")
 load_libraries(needed.packages, personal.library = TRUE)
