@@ -62,9 +62,9 @@ for(j in 1:length(all.fun)){source(all.fun[j])}
 
 
 ```{r load_libraries,  warning = FALSE, message = FALSE, error = FALSE}
-update.packages("vctrs", repos = "http://cran.us.r-project.org")
+#update.packages("vctrs", repos = "http://cran.us.r-project.org")
 
-needed.packages <- c("gprofiler2", "pheatmap", "qtl2", "RColorBrewer", 
+needed.packages <- c("pheatmap", "qtl2", "RColorBrewer", 
     "biomaRt", "stringr")
 load_libraries(needed.packages, personal.library = TRUE)
 
@@ -386,7 +386,7 @@ barplot_with_num(num.sig, las = 2, horiz = TRUE, text.gap = 0.15, text.shift = 0
 The following plot shows functional enrichment for transcripts that
 were significantly up or downregulated by metformin.
 
-```{r up_down_treat, fig.width = 8, fig.height = 7, results = "asis"}
+```{r up_down_treat, fig.width = 8, fig.height = 7, results = "asis", eval = FALSE}
 treat.up.enrich <- gost(sig.up$Treatment, organism = "mmusculus")
 treat.down.enrich <- gost(sig.down$Treatment, organism = "mmusculus")
 
@@ -606,7 +606,7 @@ mtext("Effect of metformin relative to diet", side = 3, outer = TRUE, line = -2.
 The following plots show enrichments for the transcripts 
 that are significantly affected by both diet and metformin.
 
-```{r shared_enrich}
+```{r shared_enrich, eval = FALSE}
 shared.enrich <- gost(common.transcripts, organism = "mmusculus")
 plot.enrichment(shared.enrich, num.terms = 20, order.by = "p_value", max.term.size = 4000,
 plot.label = "Transcripts affected by diet and metformin")
