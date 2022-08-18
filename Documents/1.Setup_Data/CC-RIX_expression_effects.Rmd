@@ -186,7 +186,7 @@ matrix. Each point represents one individual. Its strain ID is
 indicated by a number. Points are colored by Sex, Diet, or Treatment.
 
 ```{r expr_decomp, fig.width = 8, fig.height = 8}
-expr.decomp <- plot.decomp(adj.cc.expr)
+expr.decomp <- plot.decomp(adj.cc.expr, plot.results = FALSE)
 xlab = paste0("PC1 (", signif(expr.decomp$var.exp[1], 2)*100, "%)")
 ylab = paste0("PC2 (", signif(expr.decomp$var.exp[2], 2)*100, "%)")
 
@@ -213,9 +213,27 @@ text(expr.decomp$u[,1], expr.decomp$u[,2],
 ```
 
 For a given group with the same cofactors, does expression
-cluster by strain?
+cluster by strain? Sort of. In the plots below, each strain
+is indicated by a number 1 through 20. Individuals from a
+given strain do tend to appear in the same region of the 
+plot, however, there isn't the same tight clustering of 
+strains that we see in the inbred founders. I think this
+is because CAST and PWK are so so so different from the
+domesticus strains that they blow up the scale on which
+we are plotting expression differences. Strains appear
+to cluster very tightly because there is so much distance
+between them. In the CC-RIX, all animals have a mix of 
+CAST, PWK, and domesticus strains, so there are no individual
+mice that are very distant from the others. Individuals do 
+appear near each other, but because we are zoomed in to the
+level of noise, the strains don't appear to cluster as 
+tightly as they would if there were wildy divergent strains.
+I bet if you put BxD mice in the same plot, they would cluster
+well away from the CC-RIX in a way that distinctly separated
+the two populations. As it is, though, all CC-RIX are pretty
+close to each other in transcription space.
 
-```{r group_pc}
+```{r group_pc, fig.width = 8, fig.height = 8}
 u_groups <- unique(tissue.info[,c("Sex", "Diet", "Treatment")])
 group.idx <- apply(u_groups, 1, function(x) Reduce("intersect", 
     list(which(tissue.info[,"Sex"] == x[1]), which(tissue.info[,"Diet"] == x[2]), 
@@ -223,7 +241,7 @@ group.idx <- apply(u_groups, 1, function(x) Reduce("intersect",
 group.expr <- lapply(group.idx, function(x) adj.cc.expr[x,])
 
 #pdf("~/Desktop/Group_Decomp.pdf", width = 16, height = 8)
-par(mfrow = c(2,4))
+par(mfrow = c(2,2))
 for(i in 1:length(group.expr)){
     group.decomp <- plot.decomp(group.expr[[i]], plot.results = FALSE)
     xlab = paste0("PC1 (", signif(group.decomp$var.exp[1], 2)*100, "%)")
@@ -287,22 +305,28 @@ boxplot(all.coef[,2:ncol(all.coef)], las = 2)
 ```
 
 The following plots show the p value distributions for each set of 
-factors. The all look weirdly inflated to me. Do we need to take kinship 
-into account here? We will look at this below after creating the kinship
-matrix.
+factors. These are all inflated, except for Treatment, and the 
+Treatment by strain effects. I think this is because all the rest
+of the factors have widespread effects on transcription. So the 
+inflation is just an indication of the widespread effects, not 
+an indication that we've done something wrong. We do expect each
+of these factors to have widespread effects.
 
 ```{r qqunif, fig.width = 10, fig.height = 6}
 par(mfrow = c(2,4))
 for(i in 2:ncol(all.p)){
     qqunif.plot(all.p[,i], plot.label = colnames(all.p)[i])
 }
-
 ```
 
+## Model Fitting
 
 For each measured transcript we fit a model including Sex, Diet, Treatment,
-imputed transcript, and all the interactions between imputed transcript and
-the other covariates.
+local genetic effect (imputed transcript), and all the interactions between 
+local genetic effect and the other covariates.
+
+Relative to the other factors, strain has a negligible effect, and is overall
+less than the effect of local genetics.
 
 ```{r fit_models}
 common.transcripts <- intersect(colnames(adj.cc.expr), colnames(ind.auto.expr)[has.vals])
@@ -351,16 +375,16 @@ the -log(fdr) for all independent variables in the model. Each
 dot is a transcript
 
 ```{r effect_summary, fig.width = 10, fig.height = 6}
+fdr.level = 0.1
 fdr <- apply(all.p, 2, function(x) p.adjust(x, "fdr"))
 layout.mat <- matrix(c(rep(1:3, each = 4), rep(4:7, each = 3)), nrow = 2, byrow = TRUE)
 layout(layout.mat)
 for(i in 2:ncol(all.coef)){
     plot(all.coef[,i], -log(fdr[,i]), main = colnames(all.coef)[i], 
     xlab = "Beta coefficient", ylab = "-log(p value)")
-    abline(h = -log(0.1))
+    abline(h = -log(fdr.level))
+    #abline(h = -log(0.05/nrow(all.coef)))
 }
-
-
 ```
 
 ## Number of Significant Effects
@@ -369,9 +393,9 @@ The following plot shows the number of significant effects per
 category.
 
 ```{r num_sig}
-sig.transcripts <- apply(fdr, 2, function(x) rownames(all.coef)[which(x <= 0.1)])
-sig.up <- lapply(1:ncol(fdr), function(x) rownames(all.coef)[intersect(which(fdr[,x] <= 0.1), which(all.coef[,x] > 0))])
-sig.down <- lapply(1:ncol(fdr), function(x) rownames(all.coef)[intersect(which(fdr[,x] <= 0.1), which(all.coef[,x] < 0))])
+sig.transcripts <- apply(fdr, 2, function(x) rownames(all.coef)[which(x <= fdr.level)])
+sig.up <- lapply(1:ncol(fdr), function(x) rownames(all.coef)[intersect(which(fdr[,x] <= fdr.level), which(all.coef[,x] > 0))])
+sig.down <- lapply(1:ncol(fdr), function(x) rownames(all.coef)[intersect(which(fdr[,x] <= fdr.level), which(all.coef[,x] < 0))])
 names(sig.up) <- names(sig.down) <- colnames(fdr)
 
 num.sig <- sapply(sig.transcripts, length)
@@ -387,6 +411,7 @@ The following plot shows functional enrichment for transcripts that
 were significantly up or downregulated by metformin.
 
 ```{r up_down_treat, fig.width = 8, fig.height = 7, results = "asis", eval = FALSE}
+library(gprofiler2)
 treat.up.enrich <- gost(sig.up$Treatment, organism = "mmusculus")
 treat.down.enrich <- gost(sig.down$Treatment, organism = "mmusculus")
 
@@ -526,31 +551,6 @@ for(i in 1:num.examples){
 #gene.id <- gene.info[which(gene.info[,"external_gene_name"] == gene.name),1]
 #gene.id <- "ENSMUSG00000019787"
 #plot_example(gene.id)
-```
-
-## Expression of genes changed by metformin
-
-```{r clustering_differences, eval = FALSE}
-met.effect <- rownames(fdr)[which(fdr[,"Treatment"] <= 0.1)]
-met.expr <- cc.measured[,met.effect]
-adj.met.expr <- adjust(met.expr, dummy_covar(matched.covar[,c("Sex", "Diet")]))
-adj.met.expr <- met.expr
-scaled.expr <- apply(adj.met.expr, 2, rankZ)
-
-treat.locale <- which(matched.covar[,"Treatment"] == "Metformin")
-none.locale <- which(matched.covar[,"Treatment"] == "None")
-
-treat.df <- data.frame(apply(matched.covar[,c("Treatment", "Diet", "Sex")], 2, as.factor))
-
-treatment.idx <- lapply(c("None", "Metformin"), function(x) which(matched.covar[,"Treatment"] == x))
-row.order <- lapply(treatment.idx, function(x) hclust(dist(scaled.expr[x,]))$order)
-col.order <- hclust(dist(t(scaled.expr)))$order 
-
-full.row.order <- unlist(lapply(1:length(treatment.idx), function(x) treatment.idx[[x]][row.order[[x]]]))
-
-pheatmap(scaled.expr[full.row.order,col.order], annotation_row = treat.df, 
-    cluster_rows = FALSE, cluster_cols = FALSE, show_rownames = FALSE, 
-    show_colnames = FALSE)
 ```
 
 How do the effects of diet and metformin compare? Which genes do
@@ -750,69 +750,49 @@ saveRDS(expanded.K, file.path(results.dir, "cross_kinship.RDS"))
 
 ```
 
-```{r model_kin, eval = FALSE}
-test.K <- expand_K(cc.K, rownames(adj.cc.expr), manifest)
-test.kin <- test.K[[20]]
-kin.decomp <- plot.decomp(test.K[[19]])
-kin.pc <- kin.decomp$u
-colnames(kin.pc) <- c("PC1", "PC2")
+Run cape
 
-matched.covar <- get.xz(adj.cc.expr, mouse.info)$Z
+```{r run_cape}
 
-model.coef.file <- here("Results", "CC-RIX_Expression", paste0("model_kin_coef_", tissue.name, ".RDS"))
-model.p.file <- here("Results", "CC-RIX_Expression", paste0("model_kin_p_", tissue.name, ".RDS"))
+if(cape_type == "query"){
+    results.dir <- here("Results", "CAPE", "metformin_interaction", paste0(tissue.name, "_query"))
+    results.file <- file.path(results.dir, "cross.RDS")
 
-if(!file.exists(model.coef.file) || !file.exists(model.p.file) || delete_previous){
-    pc.coef <- pc.p <- matrix(NA, nrow = ncol(adj.cc.expr), ncol = 10)
-    rownames(pc.coef) <- rownames(pc.p) <- colnames(adj.cc.expr)
+    query_geno <- cape_geno[rownames(cape_pheno$pheno),,]
+    query_allele <- cape.covar[rownames(query_geno),"Metformin",drop=FALSE]
 
-    for(i in 1:ncol(adj.cc.expr)){
-        if(is.interactive){report.progress(i, ncol(adj.cc.expr))}
-
-        df <- data.frame(cbind(adj.cc.expr[,i], kin.pc, as.factor(matched.covar[,"Sex"]), 
-            as.factor(matched.covar[,"Diet"]), as.factor(matched.covar[,"Treatment"]), 
-            as.factor(matched.covar[,"User.Defined.Strain"])))
-        colnames(df) <- c("measured_expression", "PC1", "PC2", "Sex", "Diet", "Treatment", "Strain")
-
-        model <- lm(measured_expression~PC1+PC2+Sex+Diet+Treatment+Strain+Sex:Strain+Diet:Strain+Treatment:Strain, data = df)
-        #summary(model)
-
-        model.sum <- summary(model)
-        pc.coef[i,] <- model.sum$coefficients[,"Estimate"]
-        pc.p[i,] <- model.sum$coefficients[,"Pr(>|t|)"]
+    if(!file.exists(results.file)){
+        final_obj <- run_query_cape(cape_pheno, query_geno,  
+            query_genotype = query_allele,
+            results_file = "cross.RDS", p_or_q = 0.05, n_cores = 4, 
+            initialize_only = FALSE, verbose = TRUE, run_parallel = FALSE, 
+            param_file = file.path(results.dir, "cape.parameters.yml"), 
+            yaml_params = NULL, results_path = results.dir, plot_pdf = TRUE)
+    }else{
+        final_obj <- readRDS(results.file)
     }
-    colnames(all.coef) <- colnames(all.p) <- rownames(model.sum$coefficients)
-    saveRDS(all.coef, model.coef.file)
-    saveRDS(all.p, model.p.file)
 }else{
-all.coef <- readRDS(model.coef.file)
-all.p <- readRDS(model.p.file)
+    results.file <- file.path(results.dir, "cross.RDS")
+    if(!file.exists(results.file)){
+        final_obj <- run_cape(cape_pheno, cape_geno, 
+            results_file = "cross.RDS", p_or_q = 1e-4, n_cores = 4, 
+            initialize_only = FALSE, verbose = TRUE, run_parallel = FALSE, 
+            param_file = file.path(results.dir, "cape.parameters.yml"), 
+            yaml_params = NULL, results_path = results.dir, 
+            plot_pdf = TRUE)
+    }else{
+    final_obj <- readRDS(results.file)
+    }
 }
-
 ```
 
-test run cape
-
-```{r run_cape, eval = FALSE}
-final_obj <- run_cape(cape_pheno, cape_geno, 
-    results_file = "cross.RDS", p_or_q = 1e-4, n_cores = 4, 
-    initialize_only = FALSE, verbose = TRUE, run_parallel = FALSE, 
-    param_file = file.path(results.dir, "cape.parameters.yml"), 
-    yaml_params = NULL, results_path = results.dir, 
-    plot_pdf = TRUE)
-```
-
-```{r run_query_cape, eval = TRUE}
-results.dir <- here("Results", "CAPE", "metformin_interaction", paste0(tissue.name, "_query"))
-
-query_geno <- cape_geno[rownames(cape_pheno$pheno),,]
-query_allele <- cape.covar[rownames(query_geno),"Metformin",drop=FALSE]
-
-final_obj <- run_query_cape(cape_pheno, query_geno,  
-    query_genotype = query_allele,
-    results_file = "cross.RDS", p_or_q = 0.05, n_cores = 4, 
-    initialize_only = FALSE, verbose = TRUE, run_parallel = FALSE, 
-    param_file = file.path(results.dir, "cape.parameters.yml"), 
-    yaml_params = NULL, results_path = results.dir, plot_pdf = TRUE)
+```{r plot_variant_effects}
+if(cape_type == "query"){
+    pdf(file.path(results.dir, "Variant_Effects.pdf"), width = 10, height = 7)
+    plot_variant_effects_query(final_obj, cape_geno, 
+    pheno_type = "norm_pheno", p_or_q = 0.01, scale_coord = 1e6, 
+    verbose = FALSE)
+    dev.off()
+}
 
 ```
