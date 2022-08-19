@@ -54,10 +54,13 @@ if(!data.loaded){
     tissue.expr <- readRDS(file.path(cc.dir, "Expression.by.Tissue.RDS"))
     manifest <- as.matrix(read.csv(file.path(cc.dir, "Original_Samples_Manifest.csv")))
     covar <- as.matrix(read.csv(file.path(cc.dir, "Covar.csv"), row.names = 1))
+    bw <- as.matrix(read.csv(file.path(cc.dir, "Weight.Summarized.csv"), header = TRUE, row.names = 1))
+    chem.mat <- read.csv(file.path(cc.dir, "Blood.Chemistries.Summarized.csv"), row.names = 1)
     groups <- read.csv(file.path(cc.dir, "Groups.csv"), row.names = 1)
     group.def <- colnames(groups)
     load(here("Data", "dataset.DO.CUBE.multissue.RData")) #DO data for eQTL LOD scores
     data.set.name <- paste0("dataset.DO.Cube.", tissue.name)
+    do.pheno <- read.csv(here("Data", "DO_clinical_phenotypes.csv"))
     gene.table <- as.matrix(get(data.set.name)$annot.mrna)
 }
 
@@ -129,7 +132,9 @@ expanded.K <- expanded.geno.K$expanded.K
 Read in imputed CC-RIX gene expression and variance components.
 The variance components tell us how much variance was explained
 by local genotype, distal genotype, and covariates for each
-transcript in the DO tissues.
+transcript in the DO tissues. Also read in the DO imputed 
+transcripts, so we can compare trait correlations between
+the two data sets.
 
 ```{r load_imputed}
 imp.cc.expr <- readRDS(here("Data", "imputed", 
@@ -137,6 +142,27 @@ imp.cc.expr <- readRDS(here("Data", "imputed",
 
 var.comp <- readRDS(here("Data", "imputed", 
     paste0("DO_", tissue.name, "_imputed_variance_decomposition.RDS")))
+
+do.imputed.local <- readRDS(here("Data", "imputed", 
+    paste0("DO_", tissue.name, "_imputed_transcriptome_local.RDS")))
+
+do.imputed.genetic <- readRDS(here("Data", "imputed", 
+    paste0("DO_", tissue.name, "_imputed_transcriptome_genetic.RDS")))
+
+```
+
+```{r do_check, eval = FALSE}
+common.transcripts <- intersect(colnames(do.imputed.local), colnames(do.imputed.genetic))
+local.genetic.cor <- sapply(common.transcripts, function(x) cor(do.imputed.local[,x], do.imputed.genetic[,x]))
+
+par(mfrow = c(1,2))
+hist(local.genetic.cor, main = "Correlation between local and\ngenetic imputed transcripts",
+    xlab = "Pearson Correlation")
+
+plot(var.comp[common.transcripts,"local_VE"], local.genetic.cor, xlab = 
+    "Local VE", ylab = "Correlation between genetic and local imputed transcripts")
+
+
 ```
 
 The distribution of variance explained by each component is
@@ -1037,4 +1063,101 @@ quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = FALSE, cc
 quartz();compare_do_cc(check.id)
 
 
+```
+
+## Trait Correlation Check
+
+We are interested in whether imputed transcripts are correlated with
+traits. We also want to see if the correlations are similar in the
+DO and the CC. 
+
+The following boxplots show the correlation magnitude between imputed 
+CC transcripts and the CC traits. The correlations are on par with 
+what we've seen for measured transcripts. The best correlated trait
+is weight. The second measurement of insulin is the next most highly
+correlated with imputed transcripts.
+
+```{r cc_trait_cor}
+#adjust body weight and chemistries for Diet, Sex, Treatment
+trait.covar <- dummy_covar(tissue.info[,c("Sex", "Diet", "Treatment")])
+rownames(trait.covar) <- tissue.info[,1]
+adj.bw <- adjust(bw, trait.covar)
+num.chem <- apply(as.matrix(chem.mat[,c(5:ncol(chem.mat))]), 2, as.numeric)
+rownames(num.chem) <- chem.mat[,1]
+adj.chem <- adjust(num.chem, trait.covar)
+
+#correlate body weight, glucose and insulin with imputed transcripts
+
+weight.cor <- apply(adj.cc.expr[rownames(adj.bw),], 2, function(x) cor(x, adj.bw[,1]))
+chem.cor <- t(apply(adj.cc.expr[rownames(adj.chem),], 2, 
+    function(x) apply(adj.chem, 2, 
+    function(y) cor(x,y, use = "pairwise.complete.obs"))))
+cc.cor.mat <- cbind(weight.cor, chem.cor)
+
+boxplot(abs(cc.cor.mat), las = 2)
+```
+
+The following boxplots show the magnitude of correlation between
+the DO imputed transcripts and traits. Surprisingly, these are 
+much lower than the correlations for the CC-RIX. 
+
+```{r do_trait_cor}
+do.imputed <- do.imputed.local
+do.imputed <- do.imputed.genetic
+
+num.pheno <- apply(do.pheno[,11:30], 2, as.numeric)
+rownames(num.pheno) <- do.pheno[,"mouse.id"]
+do.covar <- dummy_covar(do.pheno[,c("sex", "DOwave")])
+adj.do.pheno <- adjust(num.pheno, do.covar)
+
+do.local.cor.mat <- t(apply(do.imputed.local, 2, 
+    function(x) apply(adj.do.pheno[rownames(do.imputed.local),], 2, 
+    function(y) cor(x,y, use = "pairwise.complete.obs"))))
+
+do.genetic.cor.mat <- t(apply(do.imputed.genetic, 2, 
+    function(x) apply(adj.do.pheno[rownames(do.imputed.genetic),], 2, 
+    function(y) cor(x,y, use = "pairwise.complete.obs"))))
+
+
+boxplot(abs(do.cor.mat), las = 2)
+
+max.cor <- apply(do.cor.mat, 1, max)
+test <- names(local.genetic.cor)[intersect(which(local.genetic.cor > 0.4), which(max.cor > 0.4))]
+test <- names(local.genetic.cor)[which(max.cor > 0.5)]
+plot(local.genetic.cor, max.cor)
+
+par(mfrow = c(2,2))
+plot.with.model(do.imputed.local[,test[1]], do.imputed.genetic[,test[1]], report = "cor.test",
+    xlab = "Local model", ylab = "Genetic model")
+plot.with.model(do.imputed.local[,test[1]], adj.do.pheno[rownames(do.imputed.local),"weight_6wk"],
+    xlab = "Local Model", ylab = "Weight", report = "cor.test")
+plot.with.model(do.imputed.genetic[,test[1]], adj.do.pheno[rownames(do.imputed.local),"weight_6wk"],
+    xlab = "Genetic Model", ylab = "Weight", report = "cor.test")
+plot.with.model(do.imputed.local[,test[1]], adj.do.pheno[rownames(do.imputed.local),"weight_6wk"],
+    xlab = "Genetic Model", ylab = "Weight", report = "cor.test")
+
+```
+
+```{r do_cc_comparison}
+do.cor.mat <- do.local.cor.mat
+do.cor.mat <- do.genetic.cor.mat
+
+common.transcripts <- intersect(rownames(do.cor.mat), rownames(cc.cor.mat))
+comparison.cor <- matrix(NA, nrow = ncol(do.cor.mat), ncol = ncol(cc.cor.mat))
+rownames(comparison.cor) <- colnames(do.cor.mat)
+colnames(comparison.cor) <- colnames(cc.cor.mat)
+for(i in 1:ncol(do.cor.mat)){
+    for(j in 1:ncol(cc.cor.mat)){
+        comparison.cor[i,j] <- cor(do.cor.mat[common.transcripts,i], 
+            cc.cor.mat[common.transcripts,j], use = "pairwise.complete.obs")
+    }
+}
+
+pheatmap(comparison.cor, display_numbers = TRUE)
+
+hist(comparison.cor);abline(v = 0, col = "red", lwd = 3)
+
+plot.with.model(do.cor.mat[common.transcripts,"weight_6wk"], 
+    cc.cor.mat[common.transcripts,"weight.cor"], xlab = "DO Weight 6 wk",
+    ylab = "CC Final Weight", report = "cor.test")
 ```

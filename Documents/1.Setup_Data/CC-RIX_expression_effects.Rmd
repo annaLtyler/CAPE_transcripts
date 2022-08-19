@@ -755,13 +755,15 @@ Run cape
 ```{r run_cape}
 
 if(cape_type == "query"){
+    #change results.dir to a query-based directory
     results.dir <- here("Results", "CAPE", "metformin_interaction", paste0(tissue.name, "_query"))
-    results.file <- file.path(results.dir, "cross.RDS")
+    finished_run <- file.exists(file.path(results.dir, "Variant_Influences_Interactions.csv"))
+    results_file <- file.path(results.dir, "cross.RDS")
 
     query_geno <- cape_geno[rownames(cape_pheno$pheno),,]
     query_allele <- cape.covar[rownames(query_geno),"Metformin",drop=FALSE]
 
-    if(!file.exists(results.file)){
+    if(!finished_run){
         final_obj <- run_query_cape(cape_pheno, query_geno,  
             query_genotype = query_allele,
             results_file = "cross.RDS", p_or_q = 0.05, n_cores = 4, 
@@ -769,11 +771,12 @@ if(cape_type == "query"){
             param_file = file.path(results.dir, "cape.parameters.yml"), 
             yaml_params = NULL, results_path = results.dir, plot_pdf = TRUE)
     }else{
-        final_obj <- readRDS(results.file)
+        final_obj <- readRDS(results_file)
     }
 }else{
-    results.file <- file.path(results.dir, "cross.RDS")
-    if(!file.exists(results.file)){
+    finished_run <- file.exists(file.path(results.dir, "Variant_Influences_Interactions.csv"))
+    results_file <- file.path(results.dir, "cross.RDS")
+    if(!finished_run){
         final_obj <- run_cape(cape_pheno, cape_geno, 
             results_file = "cross.RDS", p_or_q = 1e-4, n_cores = 4, 
             initialize_only = FALSE, verbose = TRUE, run_parallel = FALSE, 
@@ -788,11 +791,57 @@ if(cape_type == "query"){
 
 ```{r plot_variant_effects}
 if(cape_type == "query"){
+
+    #pdf(file.path(results.dir, "Variant_Influences.pdf"), width = 10, height = 7)
+    #plot_variant_influences_query(final_obj, cape_geno, p_or_q = 0.01)
+    #dev.off()
+
     pdf(file.path(results.dir, "Variant_Effects.pdf"), width = 10, height = 7)
     plot_variant_effects_query(final_obj, cape_geno, 
     pheno_type = "norm_pheno", p_or_q = 0.01, scale_coord = 1e6, 
     verbose = FALSE)
     dev.off()
+
+}else{
+    pdf(file.path(results.dir, "Variant_Effects.pdf"), width = 10, height = 7)
+    plot_variant_effects(final_obj, cape_geno, 
+    pheno_type = "norm_pheno", p_or_q = 0.01, scale_coord = 1e6, 
+    verbose = FALSE)
+    dev.off()
 }
+
+```
+
+
+```{r eval = FALSE}
+var_int <- write_variant_influences(final_obj, p_or_q = 0.01, include_main_effects = FALSE,
+    write_file = FALSE)
+
+all_int_trans <- unique(c(var_int[,"Source"], var_int[,"Target"]))
+all_int_trans <- all_int_trans[which(all_int_trans != "query")]
+all_int_trans <- sapply(strsplit(all_int_trans, "_"), function(x) x[1])
+
+int_enrich <- gost(all_int_trans, organism = "mmusculus")
+plot.enrichment(int_enrich, num.terms = 30)
+
+
+source.idx <- which(var_int[,"Source"] == "query")
+chr.idx <- which(var_int[,5] == 11)
+
+test.idx <- intersect(source.idx, chr.idx)
+
+chr11.targets <- var_int[test.idx,]
+
+
+
+target.trans <- sapply(strsplit(var_int[test.idx,"Target"], "_"), function(x) x[1])
+target.enrich <- gost(target.trans, organism = "mmusculus")
+plot.enrichment(target.enrich, num.terms = 30, order.by = "p_value")
+
+i = 0
+i = i + 1
+par(mfrow = c(2,3))
+plot_one_variant_effect(final_obj, geno_obj, marker_name = var_int[test.idx[i], "Target"],
+allele_name = NULL, pheno_type = "norm_pheno", p_or_q = 0.05, verbose = FALSE)
 
 ```
