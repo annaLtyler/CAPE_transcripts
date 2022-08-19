@@ -742,8 +742,12 @@ Expand the kinship matrix.
 ```{r geno_obj}
 expanded.K <- expand_K(cc.K, rownames(pheno.mat), manifest)
 
-results.dir <- here("Results", "CAPE", "metformin_interaction", tissue.name)
-if(!file.exists(results.dir)){dir.create(results.dir)}
+if(cape_type == "query"){
+    results.dir <- here("Results", "CAPE", "metformin_interaction", paste0(tissue.name, "_query"))
+}else{
+    results.dir <- here("Results", "CAPE", "metformin_interaction", tissue.name)
+    if(!file.exists(results.dir)){dir.create(results.dir)}
+}
 
 #save this in our results folder
 saveRDS(expanded.K, file.path(results.dir, "cross_kinship.RDS"))
@@ -754,12 +758,10 @@ Run cape
 
 ```{r run_cape}
 
-if(cape_type == "query"){
-    #change results.dir to a query-based directory
-    results.dir <- here("Results", "CAPE", "metformin_interaction", paste0(tissue.name, "_query"))
-    finished_run <- file.exists(file.path(results.dir, "Variant_Influences_Interactions.csv"))
-    results_file <- file.path(results.dir, "cross.RDS")
+finished_run <- file.exists(file.path(results.dir, "Variant_Influences_Interactions.csv"))
+results_file <- file.path(results.dir, "cross.RDS")
 
+if(cape_type == "query"){
     query_geno <- cape_geno[rownames(cape_pheno$pheno),,]
     query_allele <- cape.covar[rownames(query_geno),"Metformin",drop=FALSE]
 
@@ -774,8 +776,6 @@ if(cape_type == "query"){
         final_obj <- readRDS(results_file)
     }
 }else{
-    finished_run <- file.exists(file.path(results.dir, "Variant_Influences_Interactions.csv"))
-    results_file <- file.path(results.dir, "cross.RDS")
     if(!finished_run){
         final_obj <- run_cape(cape_pheno, cape_geno, 
             results_file = "cross.RDS", p_or_q = 1e-4, n_cores = 4, 
