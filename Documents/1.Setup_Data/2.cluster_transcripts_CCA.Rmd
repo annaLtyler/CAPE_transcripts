@@ -84,6 +84,7 @@ num.components <- ncol(cca.pheno)
 #need to run 1.adjust_transcripts_traits to generate the following files
 if(use.imputed){
     tissue.adj.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_DO_", exp.name, ".RDS")))
+    tissue.names <- names(tissue.adj.expr)
     #filter to transcripts that we can actually predict with local genetics
     #above a variance of 0.2 is a reasonable threshold.
     var.exp.thresh <- 0.2
@@ -91,6 +92,7 @@ if(use.imputed){
     above.thresh.idx <- lapply(tissue.var, function(x) which(x >= var.exp.thresh))
     filtered.expr <- lapply(1:length(tissue.adj.expr), function(x) tissue.adj.expr[[x]][,above.thresh.idx[[x]]])
     tissue.adj.expr <- filtered.expr
+    names(tissue.adj.expr) <- tissue.names
 }else{   
     tissue.adj.expr <- readRDS(here("Data", paste0("Adjusted_Expression.RDS")))
 }
