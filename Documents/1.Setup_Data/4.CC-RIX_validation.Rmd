@@ -75,7 +75,7 @@ exp.name = "imputed_local"
 #manual.or.CT <- "manual"; gene.name = "Aldh2"
 #manual.or.CT <- "manual"; gene.name <- c("Ifi44","Trim30a","Usp18","Ifit1","Ifit3","Oasl2","Rtp4","Irf7","Cxcl10","Ube2l6","Rnf213","Bst2","Stat1","Isg15","Lgals3bp","Rnf213","Parp12","Samd9l","Apol9a","Gbp2","Irgm2","Xaf1","Ifi205","Ifi203","Stat2","Ifih1","Oas1g","Apol9b","Sp100","Gbp6","Ddx58","Gbp3","Ifi204","Tor3a","Dtx3l","Oas1b","Ccl5","Parp14","Agrn","Tgtp1","Cmpk2","Nell2","Eif2ak2")
 
-manual.or.CT = "CT"; tissue.name <- "Adipose"; CT <- 4
+manual.or.CT = "CT"; tissue.name <- "Islet"; CT <- 1
 
 data.dir <- here("Data", "CC-RIX")
 results.dir <- here("Results", "CCA_Clusters", "Validation")
@@ -125,7 +125,7 @@ if(manual.or.CT == "CT"){
 
     #read expression data to get transcript names
     if(use.imputed){
-        do.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS")))
+        do.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_DO_", exp.name, ".RDS")))
     }else{
         do.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
     }
@@ -852,6 +852,7 @@ treat_effect <- function(contrast = c("Diet", "Treatment")){
             group.vals <- lapply(unique(g.labels), function(x) tx.expr[group.idx][which(g.labels == x)])
             names(group.vals) <- unique(g.labels)
             all.group.vals[[g]] <- group.vals
+            group.means <- sapply(group.vals, mean)
             all.group.names[g] = paste0(paste(no_contrast_groups[g,], collapse = " "), "\n(p = ", signif(p, 2), ")")
             results.table[g,] <- c(group.means, p)
         }

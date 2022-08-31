@@ -149,7 +149,7 @@ imputed data, read it in here and overwrite the measured
 expression data.
 
 ```{r adjust_covar}
-adj.expr.file <- here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS"))
+adj.expr.file <- here("Data", "imputed", paste0("Adjusted_Expression_DO_", exp.name, ".RDS"))
 
 if(use.imputed){
     if(exp.name == "imputed_local"){

@@ -25,11 +25,12 @@ pair.
 #delete_previous <- TRUE
 delete_previous <- FALSE
 
+results.name = "imputed_local"
 n.cores = 4
 
 #tissue.name = "Adipose"; network.name = "adipose tissue";CT = 1; qtl.chr = "X";exp.name = "ChrX"
-#tissue.name = "Islet"; network.name = "islets of langerhans";CT = 1; qtl.chr = "X";exp.name = "ChrX"
-tissue.name = "Adipose"; network.name = "adipose tissue";CT = 13; qtl.chr = 11;exp.name = "Chr11"
+tissue.name = "Islet"; network.name = "islets of langerhans";CT = 1; qtl.chr = "11";exp.name = "Chr11"
+#tissue.name = "Adipose"; network.name = "adipose tissue";CT = 13; qtl.chr = 11; exp.name = "Chr11"
 #tissue.name = "Adipose"; network.name = "adipose tissue";CT = 14; qtl.chr = 11;exp.name = "Chr11"
 #tissue.name = "Adipose"; network.name = "adipose tissue"; CT = 16; qtl.chr = 11;exp.name = "Chr11"
 #tissue.name = "Adipose"; network.name = "adipose tissue"; CT = 17; qtl.chr = 11;exp.name = "Chr11"
@@ -52,7 +53,7 @@ is.interactive = FALSE
 #is.interactive = TRUE
 library("here")
 
-data.dir <- here("Results", "CCA_Clusters", "all_traits")
+data.dir <- here("Results", "CCA_Clusters", results.name)
 results.dir <- here("Results", "Prioritization", exp.name)
 if(!file.exists(results.dir)){dir.create(results.dir)}
 
@@ -73,8 +74,8 @@ for finding peaks, and use a 95\% confidence interval to define the QTL boundari
 
 ```{r find_prioritization_region}
 map <- readRDS(here("Data", "map.RDS")) #from dataset.DO.CUBE.multissue.RData, saved separately so we don't have to load the whole object
-qtl.scan <- readRDS(here("Results", "CCA_clusters", "all_traits", paste0("QTL.", tissue.name, ".trait.RDS")))
-peak.table <- find_peaks(qtl.scan$CTrait_QTL[,paste0("Composite_Trait", CT),drop=FALSE], 
+qtl.scan <- readRDS(here("Results", "CCA_clusters", results.name, paste0("QTL.", tissue.name, ".trait.RDS")))
+peak.table <- find_peaks(qtl.scan$CTranscript_QTL[,paste0("Composite_Transcript", CT),drop=FALSE], 
     map = map, prob = 0.95)
 chr.locale <- which(peak.table[,"chr"] == qtl.chr)
 chr.peak <- peak.table[chr.locale,]

@@ -26,7 +26,8 @@ perm_best_results <- function(perm_grid, use.score = c("cor.diff", "cor"),
     if(use.score == "cor"){
         cor.diff <- round(perm_grid$Cor, 2)
     }
-    max.cor.diff <- floor(max(cor.diff[pass.p])*10000)/10000
+    scale.factor <- 10000
+    max.cor.diff <- floor(max(cor.diff[pass.p])*scale.factor)/scale.factor
     pass.cor <- which(cor.diff[pass.p] >= max.cor.diff)
 
     best.penalty.idx <- pass.p[pass.cor]

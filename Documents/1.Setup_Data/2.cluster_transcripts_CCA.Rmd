@@ -83,9 +83,16 @@ num.components <- ncol(cca.pheno)
 
 #need to run 1.adjust_transcripts_traits to generate the following files
 if(use.imputed){
-    tissue.adj.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_", exp.name, ".RDS")))
+    tissue.adj.expr <- readRDS(here("Data", "imputed", paste0("Adjusted_Expression_DO_", exp.name, ".RDS")))
+    #filter to transcripts that we can actually predict with local genetics
+    #above a variance of 0.2 is a reasonable threshold.
+    var.exp.thresh <- 0.2
+    tissue.var <- lapply(tissue.adj.expr, function(x) apply(x, 2, var))
+    above.thresh.idx <- lapply(tissue.var, function(x) which(x >= var.exp.thresh))
+    filtered.expr <- lapply(1:length(tissue.adj.expr), function(x) tissue.adj.expr[[x]][,above.thresh.idx[[x]]])
+    tissue.adj.expr <- filtered.expr
 }else{   
-    tissue.adj.expr <- readRDS(here("Data", paste0("Adjusted_Expression_", exp.name, ".RDS")))
+    tissue.adj.expr <- readRDS(here("Data", paste0("Adjusted_Expression.RDS")))
 }
 tissue.names <- names(tissue.adj.expr)
 
@@ -101,6 +108,39 @@ names(var.decomp) <- tissue.names[1:3]
 
 ```
 
+```{r test_herit, eval = FALSE}
+
+common.transcripts <- intersect(colnames(measured.tissue.adj.expr[[1]]), colnames(tissue.adj.expr.genetic[[1]]))
+measured.v.genetic <- sapply(common.transcripts, function(x) summary(lm(measured.tissue.adj.expr[[1]][,x]~tissue.adj.expr.genetic[[1]][,x]))$adj.r.squared)
+
+common.transcripts <- intersect(colnames(measured.tissue.adj.expr[[1]]), colnames(tissue.adj.expr.local[[1]]))
+measured.v.local <- sapply(common.transcripts, function(x) summary(lm(measured.tissue.adj.expr[[1]][,x]~tissue.adj.expr.local[[1]][,x]))$adj.r.squared)
+
+boxplot(list(measured.v.genetic, measured.v.local), names = c("Genetic", "Local"),
+ylab = "Variance Explained")
+
+eqtl.scan <- scan1(genoprobs, measured.tissue.adj.expr[[1]][,"ENSMUSG00000000579"])
+plot(eqtl.scan, map = map)
+
+covar <- dataset.DO.Cube.Islet$covar.matrix
+test.scan <- scan1(genoprobs, cca.pheno[,"HOMA_B_0min"], addcovar = )
+plot(test.scan, map = map)
+peak.map <- find_peaks(test.scan, map)
+
+common.ind <- Reduce("intersect", list(rownames(cca.pheno), rownames(covar), rownames(genoprobs[[1]])))
+
+peak_marker <- find_marker(map, chr = 11, pos = 84.95444, interval = NULL)
+peak_geno <- genoprobs[[11]][,,peak_marker]
+test <- lm(cca.pheno[common.ind,"HOMA_B_0min"]~peak_geno[common.ind,]+covar[common.ind,])
+summary(test)
+
+#variance explained by locus 10-12.5%
+all.herit <- lapply(1:20, function(x) est_herit(cca.pheno[,"HOMA_B_0min"], K[[x]]))
+herit.v <- sapply(all.herit, function(x) x[1])
+barplot(herit.v, names = 1:20)
+#estimated total heritability: 1.4-14.6%
+
+```
 
 ## Trait Correlation
 
@@ -628,7 +668,7 @@ for(i in 1:length(tissue.names)){
     barplot(count.mat, beside = TRUE,
     names = paste("CT", 1:ncol(trans.loadings)), las = 2, main = tissue.names[i],
     col = bar.cols, ylab = "Number of Transcripts")
-    legend("topleft", legend = c("CCA Positive", "CCA Negative", 
+    legend("bottomright", legend = c("CCA Positive", "CCA Negative", 
     "Boot Positive", "Boot Negative"), fill = bar.cols)
     cat("\n\n")
 }
@@ -1442,6 +1482,10 @@ while(length(any.open) > 0){
 We used qtl2 to map each of the composite traits and 
 each of the composite transcripts.
 
+The following heatmaps show correlations between physiological traits
+and composite transcripts and correlations between physiological
+traits and composite traits.
+
 ```{r map_transcripts, results = "asis", fig.height = 7, fig.width = 7}
 qtl.results <- vector(mode = "list", length = length(tissue.names))
 names(qtl.results) <- tissue.names
@@ -1960,15 +2004,14 @@ plot.all.together <- function(tissue.mats, tissue.results, tissue.enrich.summary
 
         #7 plot latent transcript-latent trait correlation
         plot.with.model(latent_trait_trans[[2]][,ct], latent_trait_trans[[1]][,ct],
-        xlab = paste("Latent Transcript", ct), ylab = paste("Latent Trait", ct),
-        report = "cor.test")
+        xlab = paste("Latent Transcript", ct), ylab = paste("Latent Trait", ct))
         #cat("\n\n")
     }
 }
 
 ```
 
-```{r plot_all}
+```{r plot_all, warning = FALSE}
 for(i in 1:length(tissue.names)){
     pdf(file.path(results.dir, paste0("All.together.", tissue.names[i], ".pdf")), width = 12, height = 7)
     tissue.gene.list <- get_transcript_list(tissue.mats = matched.mats[[i]], 
@@ -2558,7 +2601,15 @@ plot(adj.scan, map = map, add = TRUE, col = "red")
 For the imputed transcripts we will do a different kind of check.
 We first calculate the heritability of the composite trait. 
 We then regress out the effect of the composite transcript and
-check the heritability of the residuals. 
+check the heritability of the residuals. A large drop in 
+heritability, after adjusting for the composite transcript
+suggests the effects of the composite genotype on the 
+trait are mediated through gene expression.
+
+Dots are colored based on the trait-transcript correlation. Darker
+points had higher correlations between the composite trait and 
+composite transcript pair. Those with higher correlations between
+them tend to have larger heritability drops.    
 
 ```{r imputed_mediation, results = "asis"}
 if(use.imputed){
@@ -2612,7 +2663,8 @@ if(use.imputed){
 ## Loading by LOD {.tabset .tabset-fade .tabset-pills}
 
 The following plots show imputed transcript loadings plotted
-agains their eQTL LOD score in the DO. 
+agains their eQTL LOD score in the DO. Transcripts with
+higher LOD scores tend to have smaller loadings. 
 
 ```{r eqtl, results = "asis", fig.width = 5, fig.height = 5}
 get_cis_lod <- function(transcript.id, eqtl.table, marker.chr, marker.pos, 
@@ -2687,7 +2739,7 @@ for(tx in 1:length(matched.mats)){
 The plots below show where the transcripts selected by CCA are positioned
 in the genome.
 
-```{r imputed_marker_position, fig.width = 10, fig.height = 5, results = "asis"}
+```{r imputed_marker_position, fig.width = 10, fig.height = 5, results = "asis", eval = FALSE}
 for(tx in 1:length(matched.mats)){
     tissue.name <- tissue.names[tx]
     cat("###", tissue.name, "{.tabset .tabset-fade .tabset-pills}\n")
@@ -2749,6 +2801,187 @@ for(tx in 1:length(matched.mats)){
     cat("\n\n")
 }
 
+```
+
+## Kinship {.tabset .tabset-fade .tabset-pills}
+
+We have observed that, individually, locally imputed transcripts
+are not correlated with traits. However, as a group, composite
+transcripts can be very highly correlated with traits.
+
+Individuals that are more highly related to each other tend
+to cluster together in trait space. By using CCA with locally
+imputed transcripts, we can identify which pieces of their 
+kinship are the most important to the traits through their
+influence on gene expression. 
+
+The figures below show the correlation between individual 
+composite transcripts and the PCs of the kinship matrix
+in the DO. These show us that the composite transcripts
+are not related to the first principle component of the
+kinship matrix. They are more closely related to smaller 
+PCs suggesting that we are not simply finding the dominant
+axis of variance in genotype space. 
+
+```{r kin_vs_ct, results = "asis", fig.width = 10, fig.height = 5}
+kin.file <- file.path(results.dir, "overall.kinship.RDS")
+overall.k <- readRDS(kin.file)
+
+for(tx in 1:length(tissue.names)){
+    cat("###", tissue.names[tx], "\n")
+    #pdf(paste0("~/Desktop/PC_", tissue.names[tx], ".pdf"), width = 10, height = 6)
+    latent_trait_trans <- get_latent_var(tissue.mats = matched.mats[[tx]], 
+        tissue.results = boot.CCA.results[[tx]])
+    ind.id <- rownames(latent_trait_trans[[1]])
+    k.decomp <- plot.decomp(overall.k[ind.id, ind.id], pc = length(ind.id), plot.results = FALSE)
+    tissue.kin.cor <- vector(mode = "list", length = ncol(latent_trait_trans[[1]]))
+    names(tissue.kin.cor) <- paste0("CT", 1:ncol(latent_trait_trans[[1]]))
+    
+    for(ct in 1:ncol(latent_trait_trans[[1]])){
+        
+        trait.pc.cor <- trans.pc.cor <- rep(NA, length(ind.id))
+
+        if(length(which(latent_trait_trans[[1]][,ct] != 0)) > 0){
+            trait.pc.cor <- apply(k.decomp$u, 2, 
+                function(x) abs(cor(latent_trait_trans[[1]][,ct], x)))
+        }
+        if(length(which(latent_trait_trans[[2]][,ct] != 0)) > 0){
+            trans.pc.cor <- apply(k.decomp$u, 2, 
+                function(x) abs(cor(latent_trait_trans[[2]][,ct], x)))
+        }
+
+       #plot(trait.pc.cor, type = "h", xlab = "PC", ylab = "correlation", 
+       #     main = "Composite Trait")
+
+        #plot(trans.pc.cor, type = "h", xlab = "PC", ylab = "correlation", 
+        #    main = "Composite Transcript")
+
+        tissue.kin.cor[[ct]] <- list("transcript.pc.cor" = trans.pc.cor, 
+            "trait.pc.cor" = trait.pc.cor)
+    }
+
+    all.trans.pc.cor <- sapply(tissue.kin.cor, function(x) x$transcript.pc.cor)
+    has.vals <- which(apply(all.trans.pc.cor, 2, function(x) !all(is.na(x))))
+    pheatmap(t(all.trans.pc.cor[,has.vals]), cluster_rows = FALSE, cluster_cols = FALSE, 
+    main = tissue.names[tx])
+    #apply(all.trans.pc.cor[,has.vals], 2, which.max)
+
+    #all.trait.pc.cor <- sapply(tissue.kin.cor, function(x) x$trait.pc.cor)
+    #has.vals <- which(apply(all.trait.pc.cor, 2, function(x) !all(is.na(x))))
+    #pheatmap(t(all.trait.pc.cor[,has.vals]), cluster_rows = FALSE, cluster_cols = FALSE, 
+    #main = tissue.names[tx])
+
+    #plot.with.model(as.vector(all.trans.pc.cor), as.vector(all.trait.pc.cor))
+
+    #barplot(all.trans.pc.cor[1:30,1], names = 1:30)
+    #plot.with.model(latent_trait_trans[[2]][,1], k.decomp$u[,23], 
+    #    xlab = "Latent Transcript", ylab = "Kinship PC 23", report = "cor.test")
+
+    #dev.off()
+    cat("\n\n")
+
+}
+```
+
+## Combining Results Across Tissues
+
+If we are interested in a single trait, HOMA_B for example,
+can we tell which transcripts in which traits are most likely
+associated with it?
+
+```{r combining, eval = FALSE}
+
+all.trait.loadings <- all.transcript.loadings <- vector(mode = "list", length = length(tissue.names))
+names(all.trait.loadings) <- names(all.transcript.loadings) <- tissue.names
+for(tx in 1:length(tissue.names)){
+    tissue.results <- boot.CCA.results[[tx]]
+    tissue.mats <- matched.mats[[tx]]
+    trait.loadings <- tissue.results$v
+    trait.description <- get_trait_description(tissue.mats, tissue.results, 
+    short_version = TRUE)
+    rownames(trait.loadings) <- colnames(matched.mats[[tx]]$Z)
+    colnames(trait.loadings) <- trait.description
+    
+    transcript.loadings <- tissue.results$u
+    rownames(transcript.loadings) <- colnames(matched.mats[[tx]]$X)
+
+    all.trait.loadings[[tx]] <- trait.loadings
+    all.transcript.loadings[[tx]] <- transcript.loadings
+
+}
+
+#get all loadings for particular trait
+#colnames(cca.pheno)
+trait.name <- colnames(cca.pheno)
+#trait.name <- c("HOMA_B_0min", "HOMA_IR_0min")
+ind.trait.loadings <- t(Reduce("cbind", lapply(all.trait.loadings, function(x) x[trait.name,,drop=FALSE])))
+rownames(ind.trait.loadings) <- paste(rep(tissue.names, each = length(trait.name)), gsub("Composite_Trait", "", rownames(ind.trait.loadings)), sep = "_")
+
+pdf("~/Desktop/all_loadings.pdf", width = 12, height = 6)
+pheatmap(abs(t(ind.trait.loadings)), cluster_cols = FALSE)
+dev.off()
+
+
+
+common.transcripts <- Reduce("intersect", lapply(all.transcript.loadings, rownames))
+ind.transcript.loadings <- Reduce("cbind", lapply(all.transcript.loadings, function(x) x[common.transcripts,1,drop=FALSE]))
+#colnames(ind.transcript.loadings) <- tissue.names
+colnames(ind.transcript.loadings) <- paste(rep(tissue.names, each = length(trait.name)), gsub("Composite_Transcript", "", colnames(ind.trait.loadings)), sep = "_")
+row.vals <- which(rowSums(ind.transcript.loadings) != 0)
+col.vals <- which(colSums(ind.transcript.loadings) != 0)
+
+pdf("~/Desktop/all_transcript_loadings2.pdf", width = 4, height = 30)
+pheatmap(abs(ind.transcript.loadings[row.vals,col.vals]), 
+    cluster_cols = FALSE, show_rownames = FALSE)
+dev.off()
+
+ind.list <- apply(ind.transcript.loadings, 2, function(x) which(x != 0))
+plotVenn(ind.list)
+#core transcript network: connect transcripts to tissue node by product of 
+#trait weight and transcript weight
+trait.name <- "HOMA_B_0min"
+trans.by.trait <- lapply(1:length(tissue.names), function(x) all.trait.loadings[[x]] %*% t(all.transcript.loadings[[x]]))
+common.trans <- Reduce("intersect", lapply(trans.by.trait, colnames))
+one.trans.by.trait <- sapply(trans.by.trait, function(x) x[trait.name,common.trans])
+colnames(one.trans.by.trait) <- tissue.names
+#hist(trans.by.trait[trait.name,])
+
+pdf("~/Desktop/homa_b_transcripts.pdf", width = 4, height = 20)
+pheatmap(one.trans.by.trait, show_rownames = FALSE)
+dev.off()
+
+
+#transcript correlations with traits
+trans.cor <- lapply(matched.mats, function(x) apply(x$X, 2, function(y) apply(x$Z, 2, function(z) cor(y,z,use = "pairwise.complete.obs"))))
+
+pdf(paste0("~/Desktop/", exp.name, "_cor.pdf"), width = 8, height = 7)
+par(mar = c(8, 4, 4, 4))
+for(i in 1:length(trans.cor)){
+    boxplot(t(trans.cor[[i]]), las = 2, main = tissue.names[i], ylim = c(-0.6, 0.6))
+}
+dev.off()
+
+tx = 1
+ordered.cor <- apply(t(trans.cor[[tx]]), 2, function(x) sort(abs(x), decreasing = TRUE))
+head(ordered.cor)
+ordered.names <- apply(t(trans.cor[[tx]]), 2, function(x) gene.info[[tx]][match(colnames(trans.cor[[tx]])[order(abs(x), decreasing = TRUE)], gene.info[[tx]][,1]),"symbol"])
+head(ordered.names)
+
+apply(ordered.names, 2, function(x) which(x == "Slfn3"))
+
+gene.name = "Slfn3";trait.name = "HOMA_B_0min"
+gene.name <- "Gm11427"; trait.name = "Ins_tAUC"
+gene.id <- gene.info[[tx]][which(gene.info[[tx]][,"symbol"] == gene.name),1]
+plot.with.model(matched.mats[[tx]]$X[,gene.id], matched.mats[[tx]]$Z[,trait.name],
+xlab = gene.name, ylab = trait.name)
+
+#used transcript var explained
+for(tx in 1:length(tissue.names)){
+    tissue.transcripts <- boot.CCA.results[[tx]]$u
+    rownames(tissue.transcripts) <- colnames(matched.mats[[tx]]$X)
+    used.var.exp <- apply(tissue.transcripts, 2, function(x) var.decomp[[tx]][rownames(tissue.transcripts)[which(x != 0)],])
+    plot.grouped.boxes(used.var.exp, type = "matrix")
+}
 ```
 
 ## Checking

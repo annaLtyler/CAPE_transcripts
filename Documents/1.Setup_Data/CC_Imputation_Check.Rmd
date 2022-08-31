@@ -698,372 +698,6 @@ plot.hexbin.as.plot(var.comp[common.transcripts,"local_VE"], all.cor,
 
 ```
 
-## Spot Checking
-
-We are going to look at individual genes with strange combinations
-of values from above to see if we can dig deeper into what is going
-on.
-
-
-The following histogram shows the overall distribution of correlations
-between DO allele coefficients and CC coefficients at the marker
-for the cis eQTL in the DO.
-
-```{r, do_cc_cor}
-
-#to parallelize the DO and CC analyses, use fit1 for 
-#both
-get_transcript_pos <- function(transcript.id){
-    trans.idx <- which(expr.annot[,1] == transcript.id)
-    trans.chr <- expr.annot[trans.idx,"chr"]
-    trans.start <- expr.annot[trans.idx,"start"]
-    return(c(trans.chr, trans.start))
-}
-
-get_coef <- function(transcript.chr, transcript.pos, mouse.expr, mouse.geno, mouse.map, 
-    mouse.K, mouse.covar, use.kinship = TRUE, plot.results = FALSE){
-    
-    cis.marker <- find_marker(mouse.map, transcript.chr, transcript.pos)
-    
-    #bin the genotype into 0, 0.5, and 1. Otherwise we get super crazy coefficients
-    binned.geno <- apply(mouse.geno[[transcript.chr]][,,cis.marker], 2, bin.vector)
-    if(use.kinship){
-        norm.expr <- mouse.expr[,transcript.id,drop=FALSE]
-        names(norm.expr) <- rownames(mouse.expr)
-        marker.fit <- fit1(binned.geno, pheno = norm.expr, 
-            kinship = mouse.K[[transcript.chr]],
-            addcovar = mouse.covar)
-    }else{
-        norm.expr <- mouse.expr[,transcript.id,drop=FALSE]
-        names(norm.expr) <- rownames(mouse.expr)
-        marker.fit <- fit1(binned.geno, pheno = norm.expr, 
-            addcovar = mouse.covar)
-    }
-    
-    mouse.coef <- marker.fit$coef[1:8]
-
-    if(plot.results){
-        coef.order <- order(mouse.coef)
-        barplot(mouse.coef[coef.order], col = CCcolors[coef.order])
-    }
-
-    return(mouse.coef)
-}
-
-#This function does not use fit1, but fits a linear model to 
-#each allele separately. This method does take covariates into 
-#account, but not kinship. This method also 
-
-get_coef_by_allele <- function(transcript.chr, transcript.pos, mouse.expr, 
-    mouse.geno, mouse.map, mouse.K, mouse.covar, plot.results = FALSE){
-    
-    cis.marker <- find_marker(mouse.map, transcript.chr, transcript.pos)
-    binned.geno <- apply(mouse.geno[[transcript.chr]][,,cis.marker], 2, bin.vector)
-    common.ind <- Reduce("intersect", list(rownames(binned.geno), rownames(mouse.expr), rownames(mouse.covar)))
-    common.geno.ind <- match(common.ind, rownames(binned.geno))
-    common.expr.ind <- match(common.ind, rownames(mouse.expr))
-    common.covar.ind <- match(common.ind, rownames(mouse.covar))
-    allele.tests <- apply(binned.geno[common.geno.ind,], 2, 
-        function(x) lm(rankZ(mouse.expr[common.expr.ind,transcript.id,drop=FALSE])~mouse.covar[common.covar.ind,]+x))
-    allele.coef <- t(sapply(allele.tests, function(x) c(head(coef(x), 1), tail(coef(x), 1))))
-    mouse.coef <- allele.coef[,2] - allele.coef[,1]
-    #barplot(allele.coef[,2])
-    #barplot(mouse.coef)
-    #plot(allele.coef[,2], mouse.coef, col = CCcolors, pch = 16, cex = 2)
-
-    marker.fit <- fit1(binned.geno, 
-        pheno = mouse.expr[,transcript.id,drop=FALSE], kinship = mouse.K[[transcript.chr]],
-        addcovar = mouse.covar)
-    
-    mouse.coef <- marker.fit$coef[1:8]
-
-    if(plot.results){
-        par(mfrow = c(1,2))
-        plot.with.model(allele.coef[,2], mouse.coef, col = CCcolors, pch = 16, cex = 2, 
-            main = "Allele Effects", xlab = "fit1 with kinship",
-            ylab = "allele lm")
-        plot.with.model(rankZ(allele.coef[,2]), rankZ(mouse.coef), col = CCcolors, 
-            pch = 16, cex = 2, main = "RankZ Allele Effects",
-            xlab = "rankZ fit1 with kinship coef", ylab = "rankZ allele lm")
-        #coef.order <- order(mouse.coef)
-        #barplot(rankZ(mouse.coef[coef.order]), col = CCcolors[coef.order])
-    }
-    result <- rbind(allele.coef[,2], mouse.coef)
-    rownames(result) <- c("individual_fit", "fit_with_kinship")
-    return(result)
-}
-
-get_num_trans <- function(transcript.id, bp.buffer = 4e6){
-    transcript.idx <- which(do.expr$lod.peaks$additive[,1] == transcript.id)
-    if(length(transcript.idx) == 0){return(0)}
-    #do.expr$lod.peaks$additive[transcript.idx,]
-    transcript.pos <- get_transcript_pos(transcript.id)
-    qtl.markers <- do.expr$lod.peaks$additive[transcript.idx,2]
-    split.markers <- strsplit(qtl.markers, "_")
-    qtl.chr <- sapply(split.markers, function(x) x[1])
-    qtl.pos <- sapply(split.markers, function(x) as.numeric(x[2]))
-    chr.locale <- which(qtl.chr == transcript.pos[1])
-    above.min <- which(qtl.pos/1e6 >= (as.numeric(transcript.pos[2])-(bp.buffer/1e6)))
-    below.max <- which(qtl.pos/1e6 <= (as.numeric(transcript.pos[2])+(bp.buffer/1e6)))
-    cis.idx <- Reduce("intersect", list(chr.locale, above.min, below.max))
-    trans.idx <- setdiff(transcript.idx, cis.idx)
-    return(length(trans.idx))
-}
-
-#transcript.id <- sample(common.transcripts, 1) #random transcript
-plot_do_cc_coef <- function(transcript.id, bp.buffer = 4e6, 
-    cor.type = c("Spearman", "Pearson"), do.kinship = TRUE, 
-    cc.kinship = FALSE, plot.results = TRUE){
-
-        cor.type = cor.type[1]
-        transcript.info <- get_transcript_pos(transcript.id)
-        transcript.chr <- transcript.info[1]
-        transcript.pos <- as.numeric(transcript.info[2])
-
-        #get allele coefficients using fit1 and a kinship correction
-        do.coef <- get_coef(transcript.chr, transcript.pos, mouse.expr = do.expr$data$norm, 
-            mouse.geno = genoprobs, mouse.map = map, mouse.K = K, 
-            mouse.covar = do.expr$covar.matrix, use.kinship = do.kinship, 
-            plot.results = FALSE)
-
-        if(is.interactive){
-            #compare allele coefficients using fit1 and independent model fitting
-            quartz(width = 8, height = 4)
-            test.do.coef <- get_coef_by_allele(transcript.chr, transcript.pos, 
-                mouse.expr = do.expr$data$norm, 
-                mouse.geno = genoprobs, mouse.map = map, mouse.K = K, 
-                mouse.covar = do.expr$covar.matrix, plot.results = TRUE)
-                #plot(do.coef, test.do.coef[2,], col = CCcolors, pch = 16, cex = 2);abline(0,1)
-            mtext("DO", side = 3, outer = TRUE, line = -1.5, font = 2)
-        }
-
-        cc.coef <- get_coef(transcript.chr, transcript.pos, 
-            mouse.expr = tissue.expr[[tissue.locale]], 
-            mouse.geno = expanded.geno, mouse.map = cc.map, mouse.K = expanded.K, 
-            mouse.covar = rnaseq.covar, plot.results = FALSE, use.kinship = cc.kinship)
-
-        if(is.interactive){
-            quartz(width = 8, height = 4)
-            test.cc.coef <- get_coef_by_allele(transcript.chr, transcript.pos, 
-                mouse.expr = tissue.expr[[tissue.locale]], 
-                mouse.geno = expanded.geno, mouse.map = cc.map, mouse.K = expanded.K, 
-                mouse.covar = rnaseq.covar, plot.results = TRUE)
-            mtext("CC-RIX", side = 3, outer = TRUE, line = -1.5, font = 2)
-            #plot(cc.coef, test.cc.coef[2,], col = CCcolors, pch = 16, cex = 2);abline(0,1)
-        }
-
-        if(is.interactive){
-            #compare DO and CC effects to each other with and without kinship
-            all.coef <- cbind(t(test.do.coef), t(test.cc.coef))
-            colnames(all.coef) <- paste0(c(rep("DO_", 2), rep("CC-RIX_", 2)), colnames(all.coef))
-            type.pairs <- pair.matrix(1:4)
-            quartz()
-            par(mfrow = c(2,2))
-            for(i in 2:(nrow(type.pairs)-1)){
-                type1 <- type.pairs[i,1]
-                type2 <- type.pairs[i,2]
-                plot.with.model(all.coef[,type1], all.coef[, type2], 
-                xlab = colnames(all.coef)[type1], ylab = colnames(all.coef)[type2], 
-                col = CCcolors, cex = 2, report = "cor.test", 
-                main = paste(colnames(all.coef)[type1], "vs.\n", colnames(all.coef)[type2]))
-
-            }
-
-        }
-
-        num.trans <- get_num_trans(transcript.id, bp.buffer)
-
-        if(cor.type == "Spearman"){
-            norm.do.coef <- rankZ(do.coef)
-            norm.cc.coef <- rankZ(cc.coef)
-        }else{
-            norm.do.coef <- do.coef
-            norm.cc.coef <- cc.coef
-        }
-
-        if(plot.results){
-            if(is.interactive){quartz()}
-            r <- plot.with.model(norm.do.coef, norm.cc.coef,
-                xlab = "DO Coefficient", ylab = "CC Coefficient",
-                pch = 16, col = CCcolors, cex = 2, report = "cor.test",
-                main = transcript.id)[1]
-        }else{
-            r <- cor(norm.do.coef, norm.cc.coef, 
-                use = "pairwise.complete.obs")
-        }
-
-    result <- c(r, num.trans)
-    names(result) <- c("r", "num_trans")
-    invisible(result)
-}
-
-if(is.interactive){
-
-    plot.with.model(var.comp[common.transcripts,"local_VE"], all.cor,
-    xlab = "VE local", ylab = "Correlation between measured and imputed transcripts in CC-RIX")
-
-    ve.local <- var.comp[common.transcripts,"local_VE"]
-
-    test.transcript <- common.transcripts[intersect(which(ve.local > 0.7), which(all.cor < -0.5))]
-    test.transcript <- common.transcripts[intersect(which(ve.local > 0.7), which(all.cor > 0.6))]
-    
-    rnd.transcript <- sample(test.transcript, 1)
-    #rnd.transcript <- test.transcript[1]
-    #rnd.transcript <- transcript.id
-
-    tr.pos <- get_transcript_pos(rnd.transcript)
-    do.cis.marker <- find_marker(map, tr.pos[1], as.numeric(tr.pos[2]))
-    do.cis.geno <- genoprobs[[tr.pos[1]]][,,do.cis.marker]
-    do.freq <- colMeans(do.cis.geno)  
-
-    cc.cis.marker <- find_marker(cc.map, tr.pos[1], as.numeric(tr.pos[2]))
-    cc.cis.geno <- expanded.geno[[tr.pos[1]]][,,cc.cis.marker]
-    cc.freq <- colMeans(cc.cis.geno)
-    
-    #quartz();barplot(rbind(do.freq,cc.freq), beside = TRUE, col = rep(CCcolors, each = 2))
-
-    plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
-        cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)
-    
-    plot_do_cc_coef(rnd.transcript, plot.results = TRUE, 
-        cor.type = "Pearson", do.kinship = TRUE, cc.kinship = TRUE)
-}
-
-do.cc.cor.kin.file <- here("Results", "CCA_Clusters", "imputed_local", paste0("cc.do.cor.", tissue.name, ".kin.RDS"))
-if(!file.exists(do.cc.cor.kin.file)){
-    all.do.coef.cor.kin <- t(sapply(names(cis.lod), 
-        function(x) plot_do_cc_coef(x, plot.results = FALSE, 
-        cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)))
-    saveRDS(all.do.coef.cor.kin, do.cc.cor.kin.file)
-}else{
-    all.do.coef.cor.kin <- readRDS(do.cc.cor.kin.file)
-}
-
-do.cc.cor.file <- here("Results", "CCA_Clusters", "imputed_local", paste0("cc.do.cor.", tissue.name, ".RDS"))
-if(!file.exists(do.cc.cor.file)){
-    all.do.coef.cor <- t(sapply(names(cis.lod), 
-        function(x) plot_do_cc_coef(x, plot.results = FALSE, 
-        cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)))
-    saveRDS(all.do.coef.cor, do.cc.cor.file)
-}else{
-    all.do.coef.cor <- readRDS(do.cc.cor.file)
-}
-
-
-hist(all.do.coef.cor[test.idx,1], breaks = 100, 
-    main = "Without Kinship",
-    xlab = "Spearman Rank Correlation")
-abline(v = median(all.do.coef.cor[test.idx,1], na.rm = TRUE), col = "red")
-
-hist(all.do.coef.cor.kin[test.idx,1], breaks = 100, 
-    main = "With Kinship",
-    xlab = "Spearman Rank Correlation")
-abline(v = median(all.do.coef.cor.kin[test.idx,1], na.rm = TRUE), col = "red")
-
-```
-
-
-The following plot shows how the correlation between allele effects
-in the DO and CC depend on LOD score in the DO. We expect a priori
-that transcripts with high LOD scores in the DO will have a higher
-correlation of allele coefficients than transcripts with low LOD
-scores.
-
-```{r lod_cor}
-plot.with.model(cis.lod, all.do.coef.cor[,1], report = "cor.test", 
-    xlab = "DO Local LOD score",
-    ylab = "Correlation between DO coefficients and CC coefficients")
-```
-
-The plot below shows that the correlation between DO and CC-RIX
-coefficients is not related to the number of trans eQTL in the DO.
-
-```{r trans_check}
-
-plot.with.model(all.do.coef.cor[,1], all.do.coef.cor[,2], report = "cor.test", 
-    ylab = "Number of Trans eQTL",
-    xlab = "Correlation between DO coefficients and CC coefficients",
-    main = "without kinship")
-
-plot.with.model(all.do.coef.cor.kin[,1], all.do.coef.cor.kin[,2], report = "cor.test", 
-    ylab = "Number of Trans eQTL",
-    xlab = "Correlation between DO coefficients and CC coefficients",
-    main = "with kinship")
-
-
-#high.cor <- which(all.do.coef.cor[,1] > 0.9)
-#plot_do_cc_coef(names(high.cor)[6], plot.results = TRUE)
-```
-
-```{r compare_do_cc}
-compare_do_cc <- function(transcript.id){
-    
-    transcript.info <- get_transcript_pos(transcript.id)
-    transcript.chr <- transcript.info[1]
-    transcript.pos <- as.numeric(transcript.info[2])
-
-    do.coef <- get_coef(transcript.chr, transcript.pos, mouse.expr = do.expr$data$rz, 
-        mouse.geno = genoprobs, mouse.map = map, mouse.K = K, 
-        mouse.covar = do.expr$covar.matrix, plot.results = FALSE)
-
-    cc.coef <- get_coef(transcript.chr, transcript.pos, 
-        mouse.expr = tissue.expr[[tissue.locale]], 
-        mouse.geno = expanded.geno, mouse.map = cc.map, mouse.K = expanded.K, 
-        mouse.covar = rnaseq.covar, plot.results = FALSE)
-
-
-    do.cis.marker <- find_marker(map, trans.chr, transcript.pos)
-    binned.do.geno <- apply(genoprobs[[trans.chr]][,,do.cis.marker],2, bin.vector)
-    adj.do.expr <- adjust(do.expr$data$norm[,transcript.id,drop=FALSE], do.expr$covar.matrix)
-    common.do.ind <- intersect(rownames(adj.do.expr), rownames(binned.do.geno))
-    common.do.trans.idx <- match(common.do.ind, rownames(adj.do.expr))
-    common.do.geno.idx <- match(common.do.ind, rownames(binned.do.geno))
-
-    cc.cis.marker <- find_marker(cc.map, trans.chr, transcript.pos)
-    binned.cc.geno <- apply(expanded.geno[[trans.chr]][,,cc.cis.marker],2, bin.vector)
-    adj.cc.expr <- adjust(cc.expr[,transcript.id,drop=FALSE], rnaseq.covar)
-    common.cc.ind <- intersect(rownames(adj.cc.expr), rownames(binned.cc.geno))
-    common.cc.trans.idx <- match(common.cc.ind, rownames(adj.cc.expr))
-    common.cc.geno.idx <- match(common.cc.ind, rownames(binned.cc.geno))
-
-    par(mfrow = c(4,4), mar = c(1,1,1,1))    
-    #barplot(unlist(expr.lod$additive[cis.locale,LETTERS[1:8][do.coef.order]]))
-    for(cc in 1:8){
-        boxplot(adj.do.expr[common.do.trans.idx]~binned.do.geno[common.do.geno.idx,cc], 
-        col = CCcolors[cc], xlab = "", ylab = "DO expression", 
-        main = paste("DO", names(CCcolors)[cc]), axes = FALSE)
-        axis(2)
-    
-
-        boxplot(adj.cc.expr[common.cc.trans.idx]~binned.cc.geno[common.cc.geno.idx,cc], 
-        col = CCcolors[cc], xlab = "", ylab = "CC expression", 
-        main = paste("CC", names(CCcolors)[cc]), axes = FALSE)
-        axis(2)
-    }
-}
-
-```
-
-```{r spot_check, eval = FALSE}
-check.idx <- intersect(which(all.do.coef.cor[,1] < -0.5), which(cis.lod > 100))
-
-check.idx <- intersect(which(all.do.coef.cor[,1] > 0.9), which(cis.lod > 100))
-check.idx <- which(cis.lod > 150)
-
-check.id <- names(cis.lod)[check.idx[6]]
-check.id <- names(cis.lod)[2]
-check.id <- "ENSMUSG00000031101" #Sash3
-check.id <- "ENSMUSG00000028619"
-
-
-quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = TRUE, cc.kinship = FALSE)
-quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = TRUE, cc.kinship = TRUE)
-quartz();plot_do_cc_coef(check.id, cor.type = "Spearman", do.kinship = FALSE, cc.kinship = FALSE)
-
-quartz();compare_do_cc(check.id)
-
-
-```
 
 ## Trait Correlation Check
 
@@ -1071,13 +705,15 @@ We are interested in whether imputed transcripts are correlated with
 traits. We also want to see if the correlations are similar in the
 DO and the CC. 
 
+### Trait-imputed transcript correlations in CC-RIX
+
 The following boxplots show the correlation magnitude between imputed 
 CC transcripts and the CC traits. The correlations are on par with 
 what we've seen for measured transcripts. The best correlated trait
 is weight. The second measurement of insulin is the next most highly
 correlated with imputed transcripts.
 
-```{r cc_trait_cor}
+```{r cc_trait_cor, warning = FALSE}
 #adjust body weight and chemistries for Diet, Sex, Treatment
 trait.covar <- dummy_covar(tissue.info[,c("Sex", "Diet", "Treatment")])
 rownames(trait.covar) <- tissue.info[,1]
@@ -1097,13 +733,13 @@ cc.cor.mat <- cbind(weight.cor, chem.cor)
 boxplot(abs(cc.cor.mat), las = 2)
 ```
 
+### Trait-imputed transcript correlations in DO
+
 The following boxplots show the magnitude of correlation between
 the DO imputed transcripts and traits. Surprisingly, these are 
 much lower than the correlations for the CC-RIX. 
 
 ```{r do_trait_cor}
-do.imputed <- do.imputed.local
-do.imputed <- do.imputed.genetic
 
 num.pheno <- apply(do.pheno[,11:30], 2, as.numeric)
 rownames(num.pheno) <- do.pheno[,"mouse.id"]
@@ -1119,45 +755,54 @@ do.genetic.cor.mat <- t(apply(do.imputed.genetic, 2,
     function(y) cor(x,y, use = "pairwise.complete.obs"))))
 
 
-boxplot(abs(do.cor.mat), las = 2)
-
-max.cor <- apply(do.cor.mat, 1, max)
-test <- names(local.genetic.cor)[intersect(which(local.genetic.cor > 0.4), which(max.cor > 0.4))]
-test <- names(local.genetic.cor)[which(max.cor > 0.5)]
-plot(local.genetic.cor, max.cor)
-
-par(mfrow = c(2,2))
-plot.with.model(do.imputed.local[,test[1]], do.imputed.genetic[,test[1]], report = "cor.test",
-    xlab = "Local model", ylab = "Genetic model")
-plot.with.model(do.imputed.local[,test[1]], adj.do.pheno[rownames(do.imputed.local),"weight_6wk"],
-    xlab = "Local Model", ylab = "Weight", report = "cor.test")
-plot.with.model(do.imputed.genetic[,test[1]], adj.do.pheno[rownames(do.imputed.local),"weight_6wk"],
-    xlab = "Genetic Model", ylab = "Weight", report = "cor.test")
-plot.with.model(do.imputed.local[,test[1]], adj.do.pheno[rownames(do.imputed.local),"weight_6wk"],
-    xlab = "Genetic Model", ylab = "Weight", report = "cor.test")
+boxplot(abs(do.genetic.cor.mat), las = 2, main = "Trait Correlations with Full Genetic Imputation")
+boxplot(abs(do.local.cor.mat), las = 2, main = "Trait Correlations with Local Genetic Imputation")
 
 ```
 
-```{r do_cc_comparison}
-do.cor.mat <- do.local.cor.mat
-do.cor.mat <- do.genetic.cor.mat
+## Trait-transcript comparison between DO and CC-RIX
 
-common.transcripts <- intersect(rownames(do.cor.mat), rownames(cc.cor.mat))
-comparison.cor <- matrix(NA, nrow = ncol(do.cor.mat), ncol = ncol(cc.cor.mat))
-rownames(comparison.cor) <- colnames(do.cor.mat)
-colnames(comparison.cor) <- colnames(cc.cor.mat)
-for(i in 1:ncol(do.cor.mat)){
-    for(j in 1:ncol(cc.cor.mat)){
-        comparison.cor[i,j] <- cor(do.cor.mat[common.transcripts,i], 
-            cc.cor.mat[common.transcripts,j], use = "pairwise.complete.obs")
+```{r do_cc_comparison}
+
+compare_do_cc_cor <- function(do.cor.mat){
+    common.transcripts <- intersect(rownames(do.cor.mat), rownames(cc.cor.mat))
+    comparison.cor <- matrix(NA, nrow = ncol(do.cor.mat), ncol = ncol(cc.cor.mat))
+    rownames(comparison.cor) <- colnames(do.cor.mat)
+    colnames(comparison.cor) <- colnames(cc.cor.mat)
+    for(i in 1:ncol(do.cor.mat)){
+        for(j in 1:ncol(cc.cor.mat)){
+            comparison.cor[i,j] <- cor(do.cor.mat[common.transcripts,i], 
+                cc.cor.mat[common.transcripts,j], use = "pairwise.complete.obs")
+        }
     }
+    return(comparison.cor)
 }
 
-pheatmap(comparison.cor, display_numbers = TRUE)
+local.comparison.cor <- compare_do_cc_cor(do.local.cor.mat)
+genetic.comparison.cor <- compare_do_cc_cor(do.genetic.cor.mat)
+```
 
-hist(comparison.cor);abline(v = 0, col = "red", lwd = 3)
+The following figure shows the correlation between transcript-trait 
+correlations between DO and CC for the locally imputed model. 
+They are positive for the most part suggesting that similar transcripts
+are correlated with the traits in both populations.
 
-plot.with.model(do.cor.mat[common.transcripts,"weight_6wk"], 
-    cc.cor.mat[common.transcripts,"weight.cor"], xlab = "DO Weight 6 wk",
-    ylab = "CC Final Weight", report = "cor.test")
+```{r local_comparison}
+pheatmap(local.comparison.cor, display_numbers = TRUE)
+#hist(local.comparison.cor);abline(v = 0, col = "red", lwd = 3)
+```
+
+The following figure shows the correlation between transcript-trait 
+correlations between DO and CC for the full genetic imputed model. 
+They are much more highly correlated that in the local model. Does
+this suggest that local genotype in the CC tells us more about 
+kinship than local genotype in the DO? Does it further suggest that
+the same transcripts are related to traits in both populations,
+but that you can get more information about the haplotypes at 
+those transcripts from local genotype in CC than you can in DO?
+
+
+```{r genetic_comparison}
+pheatmap(genetic.comparison.cor, display_numbers = TRUE)
+#hist(genetic.comparison.cor);abline(v = 0, col = "red", lwd = 3)
 ```
