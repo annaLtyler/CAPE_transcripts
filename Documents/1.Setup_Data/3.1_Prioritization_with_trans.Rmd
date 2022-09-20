@@ -1,0 +1,308 @@
+---
+title: "Prioritize with trans eQTL"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+The purpose of this workflow is to use TRiAGE to prioritize
+plausible causal candidates in QTLs that map to traits and 
+are trans bands, like the Chr 11 QTL.
+
+We are also interested in whether the first PC of the trans
+band is correlated with any of the traits.
+    
+The network used is the same as the specified tissue. 
+
+
+```{r get_args}
+#delete_previous <- TRUE
+delete_previous <- FALSE
+
+tissue.name = "Adipose"; network.name = "adipose tissue"
+
+trait.name = "Ins_tAUC"
+qtl.chr = 11
+
+exp.name = "Chr11_Trans"
+project.name = paste0(tissue.name, "_Chr", qtl.chr, "_Trans")
+
+Mb.buffer = 1
+n.cores = 4
+n.training.genes <- 500
+```
+
+```{r load_code}
+is.interactive = FALSE
+#is.interactive = TRUE
+library("here")
+
+data.dir <- here("Results", "CCA_Clusters", "all_traits")
+results.dir <- here("Results", "Prioritization", exp.name)
+if(!file.exists(results.dir)){dir.create(results.dir)}
+
+all.fun <- list.files(here("Code"), full.names = TRUE, pattern = ".R")
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
+needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
+"e1071", "parallel", "doParallel", "gprofiler2", "clusterProfiler", "DT",
+"plotly", "qtl2") 
+load_libraries(needed.libraries, personal.library = TRUE)
+```
+
+
+```{r load_data}
+tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+data.set.name <- paste0("dataset.DO.Cube.", tissue.name)
+gene.table <- get(data.set.name)$annot.mrna
+eqtl.table <- get(data.set.name)$lod.peaks$additive
+adj.traits <- readRDS(here("Data", "Adjusted_Phenotypes.RDS"))
+adj.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
+gene.info <- as.matrix(read.delim(here("Data", "mouse_gene_info.txt"), stringsAsFactors = FALSE))
+```
+
+Find the region to prioritize genes in based on QTL in the trait
+specified above.
+
+```{r trait_scan}
+trait.scan <- scan1(genoprobs, adj.traits[,trait.name], kinship = K)
+plot(trait.scan, map = map)
+peak.table <- find_peaks(trait.scan, map = map, threshold = 6, drop = 6)
+chr.locale <- which(peak.table[,"chr"] == qtl.chr)
+chr.peak <- peak.table[chr.locale,]
+qtl.start <- (floor(chr.peak[,"ci_lo"])-Mb.buffer)*1e6
+qtl.end <- (ceiling(chr.peak[,"ci_hi"])+Mb.buffer)*1e6
+```
+
+Get transcripts that map to this interval.
+
+```{r interval_transcripts}
+eqtl.markers <- strsplit(eqtl.table[[2]], "_")
+eqtl.chr <- sapply(eqtl.markers, function(x) x[1])
+eqtl.pos <- as.numeric(sapply(eqtl.markers, function(x) x[2]))
+chr.idx <- which(eqtl.chr == chr.peak[,"chr"])
+above.min <- which(eqtl.pos >= qtl.start)
+below.max <- which(eqtl.pos <= qtl.end)
+trans.idx <- Reduce("intersect", list(chr.idx, above.min, below.max))
+
+trans.table <- eqtl.table[trans.idx,]
+```
+
+Look at the allele effects of these markers. There
+does appear to be some clustering in the correlation 
+plot.
+
+```{r allele_effects}
+allele.effects <- as.matrix(trans.table[,LETTERS[1:8]])
+pheatmap(allele.effects)
+allele.cor <- cor(t(allele.effects))
+#pheatmap(allele.cor)
+```
+
+Remove the transcripts that are located in the trait QTL.
+We don't want to spike our gene list with local genes.
+
+```{r remove_cis}
+chr.locale <- which(gene.table[[4]] == chr.peak[,"chr"])
+above.min <- which(gene.table[[5]]*10^6 >= qtl.start)
+below.max <- which(gene.table[[6]]*10^6 <= qtl.end)
+cis.idx <- Reduce("intersect", list(chr.locale, above.min, below.max))
+cis.transcripts <- unique(gene.table[cis.idx,][[1]])
+
+cis.locale <- which(trans.table[[1]] %in% cis.transcripts)
+trans.locale <- setdiff(1:nrow(trans.table), cis.locale)
+trans.table <- trans.table[trans.locale,]
+
+trans.id <- unique(trans.table[[1]])
+trans.info <- gene.table[match(trans.id, gene.table[[1]]),]
+```
+
+The expression of these genes clusters into two distinct groups.
+And the second PC is quite highly negatively correlated with 
+the trait.
+
+```{r trans_expr}
+tissue.locale <- which(names(adj.expr) == tissue.name)
+trans.expr <- adj.expr[[tissue.locale]][,trans.id] 
+matched.mats <- get.xz(trans.expr, adj.traits)
+trans.decomp <- plot.decomp(matched.mats$X, pc = 4)
+
+par(mfrow = c(2,2))
+for(i in 1:4){
+    plot.with.model(trans.decomp$u[,i], matched.mats$Z[,trait.name], 
+    xlab = paste("PC", i), ylab = trait.name)
+}
+```
+
+```{r download_net, eval = TRUE, echo = FALSE}
+#Download the network if it hasn't been previously downloaded. 
+#full list available at:  http://fntm.princeton.edu
+tissue.type = gsub(" ", "_", network.name)
+net.file <- here("Data", paste0(tissue.type, "_top.RData"))
+if(!file.exists(net.file)){
+    download.tissue.net(tissue.type, organism = "mouse", top.edges.only = TRUE, 
+    project.dir = here("Data"))
+    }
+```
+
+```{r read_net, echo = FALSE}
+#Read in the downloaded network.
+all.var <- ls()
+net.loaded <- as.logical(length(which(all.var == "tissue.net")))
+if(!net.loaded){
+    tissue.net <- readRDS(net.file)
+}
+```
+
+Get entrez gene IDs for genes we will train on. This is either 
+all genes in the network, or the 500 with the largest magnitude loadings.
+
+```{r entrez}
+entrezgene <- gconvert(trans.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
+```
+
+## Setup Positive-Labeled Gene Features
+
+Get the connection weights of the positive-labeled genes to each other
+in the tissue network. Not all of the genes in the GSEA list will have
+Entrez IDs, and not all of the genes will have connections to the 
+other genes in the tissue network. We trim off positive-labeled genes 
+that are not connected to any other positive-labeled genes.
+
+
+```{r pick_genes, echo = FALSE}
+tissue.adj <- tissue.adj.mat(tissue.net, entrezgene[,"target"], inc.all.genes = FALSE)
+```
+
+After identifying all Entrezgene IDs and building the positive-labeled network,
+we have `r nrow(tissue.adj)` positive-labeled genes for training.
+
+## Train SVM
+We used this positive-labeled network as features to train 100 SVMs to classify
+TB- and not TB-related genes. In each of the 100 SVMs, we selected a balanced
+set of unlabeled genes for training. We write each of the trained models to a 
+file for further analysis.
+
+```{r train_models, message = FALSE, warning = FALSE, error = FALSE, eval = TRUE}
+generate.triage.models(path = results.dir, project.name = project.name, 
+trait.genes = entrezgene[,"target"], fgn = tissue.net, n.trials = 100, 
+cluster.modules = FALSE, cluster.threshold = 700, max.cluster.size = 600, 
+min.cluster.size = 10, use.SVD = FALSE, verbose = TRUE, n.cores = n.cores)
+```
+
+## ROC Curves
+
+We calculated ROC curves for each SVM, as well as the overal AUC for
+the group. The plot below shows the ROC curves for all 100 models
+along with the average AUC.
+
+```{r roc, fig.height = 5, fig.width = 5}
+all.fptp <- svm.ROC(results.dir, n.cores = n.cores, plot.results = TRUE)
+all.auc <- sapply(all.fptp, function(x) smooth.auc(Reduce("rbind", x), plot = FALSE))
+```
+
+## Score all genes
+
+We then used the trained models to classify every gene in the specified region.
+
+```{r score_genes}
+chr.locale <- which(gene.info[,"chromosome_name"] == qtl.chr)
+mb.locale <- intersect(which(as.numeric(gene.info[,"start_position"]) >= qtl.start), 
+            which(as.numeric(gene.info[,"start_position"]) <= qtl.end))
+candidate.locale <- intersect(chr.locale, mb.locale)
+
+score.candidates(results.dir, 
+    candidate.genes = as.numeric(gene.info[candidate.locale,"entrezgene_id"]),
+    verbose = TRUE, plot.results = FALSE)
+
+merge.svm.gene.info(results.dir, gene.info)
+```
+
+
+```{r get_fp, error = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5}
+fp.mat <- get.all.fp(results.dir)
+cand.pos <- as.numeric(gene.info[match(rownames(fp.mat), gene.info[,"external_gene_name"]), "start_position"])
+
+layout(matrix(c(1,2), ncol = 2), widths = c(1, 0.2))
+par(mar = c(4,4,4,4))
+plot.new()
+plot.window(xlim = c(min(cand.pos/1e6), max(cand.pos/1e6)), 
+    ylim = c(min(-log10(fp.mat), na.rm = TRUE), max(-log10(fp.mat), na.rm = TRUE)))
+for(i in 1:ncol(fp.mat)){
+    points(cand.pos/1e6, -log10(fp.mat[,i]), pch = 16, col = i)
+    text(cand.pos/1e6, -log10(fp.mat[,i]), rownames(fp.mat), pos = 2, col = i)
+}
+axis(1);axis(2)
+mtext(side = 1, paste("Chr", qtl.chr, "position (Mb)"), line = 2)
+mtext(side = 2, "Functional Score", line = 2)
+abline(h = -log10(0.05))
+par(mar = c(0,0,0,0))
+plot.new()
+plot.window(xlim = c(0,1), ylim = c(0,1))
+par(xpd = NA)
+legend(x = -1, y = 1, legend = colnames(fp.mat), col = 1:ncol(fp.mat), lty = 1, lwd = 2)
+par(xpd = TRUE)
+```
+
+Sum of scores across all traits.
+
+```{r plot_sum, error = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5}
+score.sum <- rowSums(-log10(fp.mat), na.rm = TRUE)
+
+plot(cand.pos/1e6, score.sum, pch = 16, xlab = paste("Chr", qtl.chr, "position (Mb)"),
+    ylab = "Functional Score")
+text(cand.pos/1e6, score.sum, rownames(fp.mat), pos = 2, cex = 0.7)
+```
+
+# Check expression correlation with traits?
+
+```{r check_gene, eval = FALSE}
+cube.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+traits <- read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsAsFactors = FALSE)
+
+data.set <- get(paste0("dataset.DO.Cube.", tissue.name))
+covar.mat <- data.set$covar.matrix
+expr.data <- data.set$data$rz
+
+gene.name = "Evi2a"
+gene.id <- gene.info[which(gene.info[,"external_gene_name"] == gene.name),1]
+
+gene.locale <- which(colnames(expr.data) == gene.id)
+
+common.ind <- Reduce("intersect", list(traits[,"mouse.id"], rownames(expr.data), rownames(covar.mat)))
+trait.ind.locale <- match(common.ind, traits[,"mouse.id"])
+expr.ind.locale <- match(common.ind, rownames(expr.data))
+covar.ind.locale <- match(common.ind, rownames(covar.mat))
+
+adj.trait <- adjust(traits[trait.ind.locale,12:(ncol(traits)-1)], covar.mat[covar.ind.locale,])
+rownames(adj.trait) <- traits[trait.ind.locale,"mouse.id"]
+adj.expr <- adjust(expr.data[expr.ind.locale,gene.locale,drop=FALSE], covar.mat[covar.ind.locale,])
+
+par(mar = c(8,4,4,4))
+barplot(sort(apply(adj.trait, 2, function(x) cor(x, adj.expr, use = "pairwise.complete.obs"))), 
+las = 2, main = paste("Correlation with", gene.name))
+
+trait.name <- "weight_10wk"
+plot.with.model(adj.trait[,trait.name], adj.expr, report = "cor.test",
+    ylab  = paste(gene.name, "expression"), xlab = trait.name)
+```
+
+Can the expression mediate the effect of the QTL
+
+```{r mediation}
+orig.scan <- scan1(genoprobs, adj.trait[,trait.name, drop=FALSE], kinship = K)
+plot(orig.scan, map = map)
+
+med.trait <- adjust(adj.trait[,trait.name,drop=FALSE], adj.expr)
+med.scan <- scan1(genoprobs, med.trait, kinship = K)
+
+plot(med.scan, map = map, add = TRUE, col = "red")
+```

@@ -18,6 +18,7 @@ barplot_with_num <- function(values, xlab = "", ylab = "", main = "", col = "gra
     if(!horiz){
         if(is.null(ylim)){
             ylim <- c(min(values)-(plot.range*text.gap), max(values)+(plot.range*text.gap))
+            if(ylim[1] > 0){ylim[1] <- 0}
         }
         xlim <- c(0, (max(coords)+0.5))
 

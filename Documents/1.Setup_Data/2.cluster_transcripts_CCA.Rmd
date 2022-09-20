@@ -63,7 +63,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 all.packages <- c("pheatmap", "qtl2", "gprofiler2", "cape", "PMA", "abind", "cluster",
 "RColorBrewer", "igraph", "corpcor", "easyPubMed", "knitr", "kableExtra",
-"ape", "wordcloud", "wordcloud2")
+"ape", "wordcloud", "wordcloud2", "bmediatR")
 run.simplify.enrichment = FALSE
 #library("simplifyEnrichment");run.simplify.enrichment = TRUE
 load_libraries(all.packages, personal.library = TRUE)
@@ -104,9 +104,42 @@ function(x) paste0("dataset.DO.Cube.", tissue.names[x]))
 gene.table <- as.matrix(unique(Reduce("rbind", lapply(data.set.names, 
     function(x) get(x)$annot.mrna))))
 
-var.decomp <- lapply(tissue.names[1:3], function(x) readRDS(here("Data", "imputed", 
+var.decomp <- lapply(c(tissue.names[1:3], "SkeletalMuscle"), function(x) readRDS(here("Data", "imputed", 
     paste0("DO_", x, "_imputed_variance_decomposition.RDS"))))
-names(var.decomp) <- tissue.names[1:3]
+names(var.decomp) <- c(tissue.names[1:3], "SkeletalMuscle")
+
+plot.grouped.boxes(var.decomp, type = "matrix")
+```
+
+```{r test_gene_table}
+get_diff <- function(x){
+    info.locale <- match(x, gene.table[,1])
+    #gene.table[info.locale,]
+    mouse.locale <- match(x, mouse.info[,1])
+    #mouse.info[mouse.locale,]
+    #info.chr <- gene.table[info.locale,"chr"]
+    #mouse.chr <- mouse.info[mouse.locale,"chromosome_name"]
+    info.start <- as.numeric(gene.table[info.locale,"start"])*1e6
+    mouse.start <- as.numeric(mouse.info[mouse.locale,"start_position"])
+    info.end <- as.numeric(gene.table[info.locale,"end"])*1e6
+    mouse.end <- as.numeric(mouse.info[mouse.locale,"end_position"])
+    start.diff <- mouse.start - info.start
+    end.diff <- mouse.end - info.end
+    return(c(round(start.diff, 2), round(end.diff, 2)))
+}
+
+mouse.info <- read.table(here("Data", "mouse_gene_info.txt"), header = TRUE)
+u_genes <- intersect(unique(gene.table[,1]), mouse.info[,1])
+test <- t(sapply(u_genes, get_diff))
+diff.test <- test[Reduce("union", apply(test, 2, function(x) which(x != 0))),]
+
+diff.table <- gene.table[match(rownames(diff.test), gene.table[,1]),]
+mouse.table <- mouse.info[match(rownames(diff.test), mouse.info[,1]),]
+
+gene.id <- rownames(diff.test)[1]
+gene.id <- as.vector(mouse.info[2,1])
+mouse.info[which(mouse.info[,1] == gene.id),]
+gene.table[which(gene.table[,1] == gene.id),]
 
 ```
 
@@ -276,6 +309,8 @@ matched.mats <- lapply(1:length(tissue.adj.expr),
 file.text <- "trait"
 names(matched.mats) <- tissue.names
 #saveRDS(matched.mats, file.path(results.dir, "Trait.Expression.Matched.RDS"))
+matched.mat.names <- lapply(matched.mats, function(x) lapply(x, dimnames))
+saveRDS(matched.mat.names, file.path(results.dir, "Trait.Expression.Names.RDS")) #used to keep track of individuals and transcripts used, particularly in downstream analyses
 ```
 
 ```{r test_cor, eval = FALSE}
@@ -1557,63 +1592,6 @@ cat("\n\n")
 ```
 
 
-## Composite Transcript LOD Score Heatmaps {.tabset .tabset-fade .tabset-pills}
-
-The following figures show heatmaps comparing the LOD score 
-traces of the composite transcripts and composite traits.
-
-I'm still working on getting something for this...
-
-```{r lodheat, fig.width = 11, fig.height = 6, results = "asis"}
-chr.table <- matrix(NA, ncol = 2, nrow = length(map))
-start.pos = 1
-for(i in 1:length(map)){
-    chr.table[i,1] <- start.pos
-    chr.table[i,2] <- start.pos + length(map[[i]]) - 1
-    start.pos <- start.pos + length(map[[i]])
-}
-
-for(i in 1:length(tissue.names)){
-    cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
-    if(length(qtl.results[[i]][[1]]) > 0){
-        #if(is.interactive){quartz(width = 10, height = 5)}
-        
-        trait.trans.qtl <- lapply(qtl.results[[i]], t)
-        for(j in 1:nrow(trait.trans.qtl[[1]])){
-            cat("#### CT", j, "\n")
-            if(is.interactive){quartz(width = 11, height = 6)}
-            one.comp <- cbind(qtl.results[[i]][[1]][,j], qtl.results[[i]][[2]][,j])
-
-            par(mfrow = c(2,1))
-            par(mar = c(0,2,2,2))
-            ylim <- c(0, max(one.comp))
-            plot(one.comp[,1], type = "h", axes = FALSE, ylim = ylim, xlab = "", 
-            cex = 0.7, main = paste("Composite Trait and Transcript", j))
-            abline(v = chr.table[,2], col = "gray")
-            abline(h = 6, col = "gray", lty = 2)
-            mtext(side = 4, text = paste("Composite Transcript", j), line = -1.5)
-            axis(2)
-            
-            par(mar = c(4,2,0,2))
-            plot(one.comp[,2], type = "h", ylim = ylim, axes = FALSE, xlab = "",
-            cex = 0.7)
-            abline(v = chr.table[,2], col = "gray")
-            abline(h = 6, col = "gray", lty = 2)
-            mtext(side = 4, text = paste("Composite Trait", j), line = -1.5)
-            axis(2)
-
-            par(xpd = TRUE)
-            text(y = rep(-0.5, nrow(chr.table)), x = rowMeans(chr.table), 
-            labels = 1:nrow(chr.table))
-            par(xpd = FALSE)
-            cat("\n\n")
-        }    
-    }
-    cat("\n\n")
-}
-
-```
-
 
 ```{r all_lod}
 
@@ -2614,14 +2592,16 @@ composite transcript pair. Those with higher correlations between
 them tend to have larger heritability drops.    
 
 ```{r imputed_mediation, results = "asis"}
+
+kin.file <- file.path(results.dir, "overall.kinship.RDS")
+if(!file.exists(kin.file)){
+    overall.k <- calc_kinship(genoprobs, type = "overall")
+    saveRDS(overall.k, kin.file)
+}else{
+    overall.k <- readRDS(kin.file)
+}
+
 if(use.imputed){
-    kin.file <- file.path(results.dir, "overall.kinship.RDS")
-    if(!file.exists(kin.file)){
-        overall.k <- calc_kinship(genoprobs, type = "overall")
-        saveRDS(overall.k, kin.file)
-    }else{
-        overall.k <- readRDS(kin.file)
-    }
     all.trait.herit <- vector(mode = "list", length = length(tissue.names))
     names(all.trait.herit) <- tissue.names
     for(tx in 1:length(tissue.names)){
@@ -2834,6 +2814,7 @@ for(tx in 1:length(tissue.names)){
     #pdf(paste0("~/Desktop/PC_", tissue.names[tx], ".pdf"), width = 10, height = 6)
     latent_trait_trans <- get_latent_var(tissue.mats = matched.mats[[tx]], 
         tissue.results = boot.CCA.results[[tx]])
+    #as.vector(est_herit(latent_trait_trans$Composite_Traits[,1], kinship = overall.k))
     ind.id <- rownames(latent_trait_trans[[1]])
     k.decomp <- plot.decomp(overall.k[ind.id, ind.id], pc = length(ind.id), plot.results = FALSE)
     tissue.kin.cor <- vector(mode = "list", length = ncol(latent_trait_trans[[1]]))
@@ -2885,105 +2866,509 @@ for(tx in 1:length(tissue.names)){
 }
 ```
 
-## Combining Results Across Tissues
+## TWAS
 
-If we are interested in a single trait, HOMA_B for example,
-can we tell which transcripts in which traits are most likely
-associated with it?
+If we are using imputed transcripts here, it makes sense to run
+a more standard TWAS. Here we just use correlation between imputed
+transcripts and traits and compare these correlations to permuted 
+values.
 
-```{r combining, eval = FALSE}
+```{r twas}
+if(use.imputed){
+    #transcript correlations with traits
+    trans.cor <- lapply(matched.mats, function(x) apply(x$X, 2, function(y) apply(x$Z, 2, function(z) cor(y,z,use = "pairwise.complete.obs"))))
 
-all.trait.loadings <- all.transcript.loadings <- vector(mode = "list", length = length(tissue.names))
-names(all.trait.loadings) <- names(all.transcript.loadings) <- tissue.names
-for(tx in 1:length(tissue.names)){
-    tissue.results <- boot.CCA.results[[tx]]
-    tissue.mats <- matched.mats[[tx]]
-    trait.loadings <- tissue.results$v
-    trait.description <- get_trait_description(tissue.mats, tissue.results, 
-    short_version = TRUE)
-    rownames(trait.loadings) <- colnames(matched.mats[[tx]]$Z)
-    colnames(trait.loadings) <- trait.description
-    
-    transcript.loadings <- tissue.results$u
-    rownames(transcript.loadings) <- colnames(matched.mats[[tx]]$X)
+    twas.perm.file <- file.path(results.dir, "twas.perm.RDS")
+    if(!file.exists(twas.perm.file)){
+        trans.cor.perm <- vector(mode = "list", length = 100)
+        for(p in 1:100){
+            if(is.interactive){report.progress(p, 100)}
+            perm.mats <- lapply(matched.mats, function(x) x$Z[sample(1:nrow(x$Z)),])
+            trans.cor.perm[[p]] <- lapply(1:length(perm.mats), 
+                function(x) apply(matched.mats[[x]]$X, 2, function(y) apply(perm.mats[[x]], 
+                2, function(z) cor(y,z,use = "pairwise.complete.obs"))))
+        }
+        alpha <- vector(mode = "list", length = length(tissue.names))
+        names(alpha) <- tissue.names
+        for(tx in 1:length(tissue.names)){
+            all.tissue.perm <- Reduce("cbind", lapply(trans.cor.perm, function(x) x[[tx]]))
+            alpha[[tx]] <- sapply(c(90, 95, 99), function(s) apply(all.tissue.perm, 1, function(x) get.percentile(abs(x), s)))
+            colnames(alpha[[tx]]) <- c("90", "95", "99")
+        }
+        saveRDS(alpha, twas.perm.file)
+    }else{
+        alpha <- readRDS(twas.perm.file)
+    }
 
-    all.trait.loadings[[tx]] <- trait.loadings
-    all.transcript.loadings[[tx]] <- transcript.loadings
+    tissue.ordered.cor <- vector(mode = "list", length = length(tissue.names))
+    names(tissue.ordered.cor) <- tissue.names
+    chr11.locus <- vector(mode = "list", length = length(tissue.names))
+    names(chr11.locus) <- tissue.names
+    for(tx in 1:length(trans.cor)){
+        pdf(file.path(results.dir, paste0("TWAS_", tissue.names[tx], ".pdf")), width = 12, height = 4)
+        
+        trans.info  <- gene.table[match(colnames(trans.cor[[tx]]), gene.table[,1]),]
+        trans.info[which(trans.info[,"chr"] == "X"),"chr"] <- 20
+        trans.order <- sort.by.then.by(cbind(trans.info[,1], as.numeric(trans.info[,"chr"]), 
+            as.numeric(trans.info[,"start"])), sort.cols = c(2,3), col.type = c("n", "n"))
+        colnames(trans.order) <- c("ID", "chr", "start")
+        ordered.cor <- trans.cor[[tx]][,trans.order[,1]]
+        tissue.ordered.cor[[tx]] <- ordered.cor
+        
+        ylim <- c(0, max(ordered.cor))
 
+        #pheatmap(ordered.cor, cluster_rows = FALSE, cluster_cols = FALSE, show_colnames = FALSE)
+        for(tr in 1:nrow(ordered.cor)){
+            trait.name <- rownames(ordered.cor)[tr]
+            layout(matrix(1:22, nrow = 1))
+            par(mar = c(2,0,0,2))
+            plot.new()
+            plot.window(xlim = c(0,1), ylim = ylim)
+            axis(2, line = -3.5)        
+            mtext("|Correlation|", side = 2, line = -1.5)
+            par(mar = c(2,0,2,0))
+            for(ch in 1:20){
+                chr.locale <- which(trans.order[,"chr"] == ch)
+                if(ch == 11 && trait.name == "Ins_tAUC"){
+                    sig.trans <- which(abs(ordered.cor[trait.name,chr.locale]) > alpha[[tx]][trait.name,"99"])
+                    chr11.locus[[tx]] <- sig.trans
+                    print(length(sig.trans))
+                }
+                plot(as.numeric(trans.order[chr.locale,"start"]), 
+                    abs(ordered.cor[trait.name,chr.locale]), type = "h", axes = FALSE,
+                    ylim = ylim)
+                mtext(ch, side = 1)
+                abline(h = alpha[[tx]][trait.name,], lty = c(1,2,3))
+            }
+            mtext(trait.name, side = 3, outer = TRUE, line = -2.5) 
+            #boxplot(t(trans.cor[[i]]), las = 2, main = tissue.names[i], ylim = c(-0.6, 0.6))
+            plot.new()
+            plot.window(xlim = c(0,1), ylim = ylim)
+        }
+        dev.off()
+    }
+
+    #plotVenn(lapply(chr11.locus, names))
+    #shared.id <- Reduce("intersect", lapply(chr11.locus, names))
+    #shared.names <- gene.table[match(shared.id, gene.table[,1]), "symbol"]
+    #cat(Reduce("intersect", lapply(chr11.locus, names)), sep = "\n")
+    #length(unique(unlist(chr11.locus)))
+
+    #var explained by locally explained gene expression across tissues.
+    #trait.name = "Ins_tAUC"
+    #common.ind <- Reduce("intersect", lapply(matched.mats, function(x) rownames(x$X)))
+    #all.chr11.expr.list <- lapply(1:length(matched.mats), function(x) matched.mats[[x]]$X[common.ind,names(chr11.locus[[x]])])
+    #sep.models <- lapply(1:length(matched.mats), function(x) lm(matched.mats[[x]]$Z[common.ind,trait.name]~all.chr11.expr.list[[x]]))
+    #sep.r2 <- sapply(sep.models, function(x) summary(x)$adj.r.squared)
+    #all.chr11.expr <- Reduce("cbind", all.chr11.expr.list)
+    #tr.names <- unlist(lapply(1:length(matched.mats), function(x) paste(tissue.names[x], names(chr11.locus[[x]]), sep = "_")))
+    #colnames(all.chr11.expr) <- tr.names
+    #chr11.model <- lm(matched.mats[[1]]$Z[common.ind,trait.name]~all.chr11.expr)
+    #summary(chr11.model)
+    #all.var.exp <- summary(chr11.model)$adj.r.squared
+    #barplot_with_num(round(c(sep.r2, all.var.exp), 2), names = c(tissue.names, "total"), ylab = paste("Variance in", trait.name, "Explained"))
+    #chr11.markers <- find_marker(map, chr = 11, interval = c(83, 85))
+    #chr11.array <- genoprobs[[11]][,,chr11.markers]
+    #chr11.mat <- Reduce("cbind", lapply(1:dim(chr11.array)[3], function(x) chr11.array[common.ind,,x]))
+    #marker.model <- lm(matched.mats[[1]]$Z[common.ind,trait.name]~chr11.mat)
+    #summary(marker.model)
+    #pdf("~/Desktop/cr11_cor.pdf", width = 20, height = 20);pheatmap(cor(all.chr11.expr));dev.off()
+    #pheatmap(t(matched.mats[[1]]$Z), show_colnames = FALSE)
+    #pheatmap(cor(matched.mats[[1]]$Z))
+    #plot.decomp(t(matched.mats[[1]]$Z), label.points = TRUE, xlim = c(-0.6, 0.35))
+}
+stop()
+```
+
+The following diagram shows that among the top hits across
+tissues for Ins_tAUC, there is very little overlap. Only one 
+transcript is shared across all tissues.
+
+```{r overlap}
+if(use.imputed){
+    trait.name = "Ins_tAUC"
+    top.trans <- lapply(tissue.ordered.cor, function(x) head(sort(abs(x[trait.name,]), decreasing = TRUE), 60))
+    plotVenn(lapply(top.trans, names))
+    #cat(Reduce("intersect", lapply(top.trans, names)), sep = "\n")
+}
+```
+
+## Bayesian Mediation {.tabset .tabset-fade .tabset-pills}
+
+Here we use bmediatR to check each transcript in the 
+locus for mediating effects.
+
+```{r ind_mediation}
+trait.name <- "Ins_tAUC"
+
+if(use.imputed){
+    shared.id <- Reduce("union", lapply(chr11.locus, names))
+    model.type = "complete"
+}else{
+    chr.idx <- which(gene.table[,"chr"] == 11)
+    above.min <- which(as.numeric(gene.table[,"start"]) > 60) 
+    below.max <- which(as.numeric(gene.table[,"start"]) < 110) 
+    locus.idx <- Reduce("intersect", list(chr.idx, above.min, below.max))
+    shared.id <- unique(gene.table[locus.idx,1])
+    model.type = "reactive"
+}
+bmed_file <- file.path(results.dir, "BMediation.RDS")
+local_coef_file <- file.path(results.dir, "BMediation_Coef.RDS")
+
+if(!file.exists(bmed_file)){
+    all_bmed <- all_bmed_coef <- vector(mode = "list", length = length(shared.id))
+    names(all_bmed) <- names(all_bmed_coef) <- shared.id
+    for(i in 1:length(shared.id)){
+        if(is.interactive){report.progress(i, length(shared.id))}
+        #trait-transript correlation
+        gene.idx <- which(gene.table[,1] == shared.id[i])[1]
+        gene.name <- gene.table[gene.idx,"symbol"]
+        gene.pos <- as.numeric(gene.table[gene.idx,"start"])
+        nearest.marker <- gene.table[gene.idx,"nearest.marker.id"][1]
+        nearest.geno <- genoprobs[[11]][,,nearest.marker]
+
+        all_bmed_coef[[i]] <- t(sapply(matched.mats, function(x) if(length(which(colnames(x$X) == shared.id[i])) > 0){fit1(nearest.geno, x$X[,shared.id[i]])$coef[1:8]}else{rep(NA, 8)}))
+
+        test_med <- lapply(matched.mats, 
+            function(x) if(length(which(colnames(x$X) == shared.id[i])) > 0){bmediatR(y = x$Z[,trait.name,drop=FALSE], 
+            M = x$X[,shared.id[i],drop=FALSE], 
+            X = cbind(rep(1, nrow(nearest.geno)), nearest.geno),
+            ln_prior_c = model.type,
+            options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))}else{NA})
+        #tx = 1
+        #tx = tx + 1
+        #plot_posterior_bar(test_med[[tx]], mediator_id = shared.id[i], relabel_x = gene.name, main = tissue.names[tx], med_var = "transcript.id")
+
+        med_pos <- lapply(test_med, function(x) if(length(x) > 1){get_posterior(x, med_var = "transcript.id")}else{NA})
+        all_bmed[[i]] <- med_pos
+
+        for(tx in 1:length(test_med)){
+            if(length(which(colnames(matched.mats[[tx]]$X) == shared.id[i])) > 0){
+                #a <- plot_posterior_bar(test_med[[tx]], mediator_id = shared.id[i], 
+                #relabel_x = gene.name, main = tissue.names[tx], med_var = "transcript.id")
+                }
+        }
+
+        #trait.trans.cor <- sapply(matched.mats, function(x) if(length(which(colnames(x$X) == shared.id[i])) > 0){cor(x$Z[,trait.name], x$X[,shared.id[i]])}else{NA})
+        
+        #trait-transcript correlation after removing effect of genotype
+        #adj.expr <- lapply(matched.mats, 
+        #    function(x) if(length(which(colnames(x$X) == shared.id[i])) > 0){adjust(x$X[,shared.id[i],drop=FALSE], nearest.geno)}else{NA})
+        #adj.trait <- lapply(matched.mats, 
+        #    function(x) if(length(which(colnames(x$X) == shared.id[i])) > 0){adjust(x$Z[,trait.name,drop=FALSE], nearest.geno)}else{NA})
+
+        #adj.trait.trans.cor <- sapply(1:length(matched.mats), 
+        #    function(x) if(length(which(colnames(matched.mats[[x]]$X) == shared.id[i])) > 0){plot.with.model(adj.expr[[x]], adj.trait[[x]], report = "cor.test", plot.results = FALSE)}else{c(NA,NA)})
+
+        #sig.cor <- which(adj.trait.trans.cor[2,] <= 0.05)
+
+        #if(length(sig.cor) > 0){
+        #    par(mfrow = c(1,1))
+        #    a <- barplot(abs(rbind(trait.trans.cor, adj.trait.trans.cor[1,])), beside = TRUE, 
+        #        main = gene.name)
+        #    points(a[2,sig.cor], abs(adj.trait.trans.cor[1,sig.cor]), pch = "*", cex = 2)
+        
+        #do the full mediation if we have significant correlation after correcting for genotype
+        #trans.qtl <- lapply(matched.mats, function(x) if(length(which(colnames(x$X) == shared.id[i])) > 0){scan1(genoprobs[,11], x$X[,shared.id[i],drop=FALSE], kinship = K[[11]])}else{NA})
+        #adj.traits <- lapply(1:length(matched.mats), 
+        #        function(x) if(length(which(colnames(matched.mats[[x]]$X) == shared.id[i])) > 0){adjust(matched.mats[[x]]$Z[,trait.name,drop=FALSE], 
+        #       matched.mats[[x]]$X[,shared.id[i],drop=FALSE])}else{NA})
+        #med.trait.scan <- lapply(adj.traits, function(x) if(length(x) > 1){scan1(genoprobs[,11], x, kinship = K[[11]])}else{NA})
+        #adj.expr <- lapply(1:length(matched.mats), 
+        #    function(x) if(length(which(colnames(matched.mats[[x]]$X) == shared.id[i])) > 0){adjust(matched.mats[[x]]$X[,shared.id[i],drop=FALSE], 
+        #    matched.mats[[x]]$Z[,trait.name,drop=FALSE])}else{NA})
+        #med.expr.scan <- lapply(adj.expr, function(x) if(length(x) > 1){scan1(genoprobs[,11], x, kinship = K[[11]])}else{NA})
+
+        # quartz()
+        # par(mfrow = c(2,2))
+        # for(tx in 1:length(tissue.names)){
+        #     plot(trait.qtl[[tx]], map = map, main = tissue.names[tx])
+        #     abline(v = gene.pos, lwd = 2)
+        #     if(length(med.trait.scan[[tx]]) > 1){
+        #         plot(med.trait.scan[[tx]], map = map, col = "red", add = TRUE)
+        #     }
+        # }
+        # mtext(gene.name, side = 3, outer = TRUE, line = -2.5)
+
+        # quartz()
+        # for(tx in 1:length(tissue.names)){
+        #     if(length(med.expr.scan[[tx]]) > 1){
+        #         plot(trans.qtl[[tx]], map = map, main = tissue.names[tx])
+        #         plot(med.expr.scan[[tx]], map = map, col = "red", add = TRUE)
+        #     }else{
+        #     plot.text(paste(gene.name, "not in", tissue.names[tx]))
+        #     }
+        #}
+        #mtext(gene.name, side = 3, outer = TRUE, line = -2.5)
+
+    }
+    saveRDS(all_bmed, bmed_file)
+    saveRDS(all_bmed_coef, local_coef_file)
+}else{
+    all_bmed <- readRDS(bmed_file)
+    all_bmed_coef <- readRDS(local_coef_file)
 }
 
-#get all loadings for particular trait
-#colnames(cca.pheno)
-trait.name <- colnames(cca.pheno)
-#trait.name <- c("HOMA_B_0min", "HOMA_IR_0min")
-ind.trait.loadings <- t(Reduce("cbind", lapply(all.trait.loadings, function(x) x[trait.name,,drop=FALSE])))
-rownames(ind.trait.loadings) <- paste(rep(tissue.names, each = length(trait.name)), gsub("Composite_Trait", "", rownames(ind.trait.loadings)), sep = "_")
+#create a matrix for each tissue combining the posterior probabilities
+#across all tested mediators
+get_best_prob <- function(probV, prob.thresh){
+    if(all(is.na(probV))){return(NA)}
+    best.prob <- which.max(probV)
+    best.prob <- if(probV[best.prob] > prob.thresh){
+        return(best.prob)
+    }else{
+        return(NA)
+    }
+}
 
-pdf("~/Desktop/all_loadings.pdf", width = 12, height = 6)
-pheatmap(abs(t(ind.trait.loadings)), cluster_cols = FALSE)
-dev.off()
+```
 
-
-
-common.transcripts <- Reduce("intersect", lapply(all.transcript.loadings, rownames))
-ind.transcript.loadings <- Reduce("cbind", lapply(all.transcript.loadings, function(x) x[common.transcripts,1,drop=FALSE]))
-#colnames(ind.transcript.loadings) <- tissue.names
-colnames(ind.transcript.loadings) <- paste(rep(tissue.names, each = length(trait.name)), gsub("Composite_Transcript", "", colnames(ind.trait.loadings)), sep = "_")
-row.vals <- which(rowSums(ind.transcript.loadings) != 0)
-col.vals <- which(colSums(ind.transcript.loadings) != 0)
-
-pdf("~/Desktop/all_transcript_loadings2.pdf", width = 4, height = 30)
-pheatmap(abs(ind.transcript.loadings[row.vals,col.vals]), 
-    cluster_cols = FALSE, show_rownames = FALSE)
-dev.off()
-
-ind.list <- apply(ind.transcript.loadings, 2, function(x) which(x != 0))
-plotVenn(ind.list)
-#core transcript network: connect transcripts to tissue node by product of 
-#trait weight and transcript weight
-trait.name <- "HOMA_B_0min"
-trans.by.trait <- lapply(1:length(tissue.names), function(x) all.trait.loadings[[x]] %*% t(all.transcript.loadings[[x]]))
-common.trans <- Reduce("intersect", lapply(trans.by.trait, colnames))
-one.trans.by.trait <- sapply(trans.by.trait, function(x) x[trait.name,common.trans])
-colnames(one.trans.by.trait) <- tissue.names
-#hist(trans.by.trait[trait.name,])
-
-pdf("~/Desktop/homa_b_transcripts.pdf", width = 4, height = 20)
-pheatmap(one.trans.by.trait, show_rownames = FALSE)
-dev.off()
+```{r individua_mediatr_check, eval = FALSE}
+gene.name = "AA465934"
+gene.name = "AI662270"
+gene.name = "Proca1"
+gene.name = "Mpp2"
+gene.name = "Rskr"
+gene.name = "Wfdc21"
+gene.name = "Slfn3"
 
 
-#transcript correlations with traits
-trans.cor <- lapply(matched.mats, function(x) apply(x$X, 2, function(y) apply(x$Z, 2, function(z) cor(y,z,use = "pairwise.complete.obs"))))
+gene.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1]
+gene.idx <- which(gene.table[,1] == gene.id)[1]
+gene.pos <- as.numeric(gene.table[gene.idx,"start"])
+gene.chr <- gene.table[gene.idx,"chr"]
+nearest.marker <- gene.table[gene.idx,"nearest.marker.id"][1]
+chr.idx <- which(names(genoprobs) == gene.chr)
+nearest.geno <- genoprobs[[chr.idx]][,,nearest.marker]
 
-pdf(paste0("~/Desktop/", exp.name, "_cor.pdf"), width = 8, height = 7)
-par(mar = c(8, 4, 4, 4))
-for(i in 1:length(trans.cor)){
-    boxplot(t(trans.cor[[i]]), las = 2, main = tissue.names[i], ylim = c(-0.6, 0.6))
+
+test_med <- lapply(matched.mats, 
+    function(x) if(length(which(colnames(x$X) == gene.id)) > 0){bmediatR(y = x$Z[,trait.name,drop=FALSE], 
+    M = x$X[,gene.id,drop=FALSE], 
+    X = cbind(rep(1, nrow(nearest.geno)), nearest.geno),
+    ln_prior_c = model.type,
+    options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))}else{NA})
+
+pdf("~/Desktop/test_mediation.pdf", width = 5, height = 3)
+tx = 1
+tx = tx + 1
+if(length(test_med[[tx]]) > 1){
+    plot_posterior_bar(test_med[[tx]], mediator_id = gene.id, 
+    relabel_x = gene.name, main = tissue.names[tx], med_var = "transcript.id")
+}else{
+    plot.text(paste(gene.name, "is not in", tissue.names[tx]))
 }
 dev.off()
+
 
 tx = 1
-ordered.cor <- apply(t(trans.cor[[tx]]), 2, function(x) sort(abs(x), decreasing = TRUE))
-head(ordered.cor)
-ordered.names <- apply(t(trans.cor[[tx]]), 2, function(x) gene.info[[tx]][match(colnames(trans.cor[[tx]])[order(abs(x), decreasing = TRUE)], gene.info[[tx]][,1]),"symbol"])
-head(ordered.names)
+gene.name = "Sash3"
+gene.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1]
+gene.idx <- which(gene.table[,1] == gene.id)[1]
+gene.pos <- as.numeric(gene.table[gene.idx,"start"])
+gene.chr <- gene.table[gene.idx,"chr"]
+nearest.marker <- gene.table[gene.idx,"nearest.marker.id"][1]
+chr.idx <- which(names(genoprobs) == gene.chr)
+nearest.geno <- genoprobs[[chr.idx]][,,nearest.marker]
 
-apply(ordered.names, 2, function(x) which(x == "Slfn3"))
+#plot.with.model(matched.mats[[tx]]$X[,gene.id,drop=FALSE], trait.trans$Composite_Traits[,1])
 
-gene.name = "Slfn3";trait.name = "HOMA_B_0min"
-gene.name <- "Gm11427"; trait.name = "Ins_tAUC"
-gene.id <- gene.info[[tx]][which(gene.info[[tx]][,"symbol"] == gene.name),1]
-plot.with.model(matched.mats[[tx]]$X[,gene.id], matched.mats[[tx]]$Z[,trait.name],
-xlab = gene.name, ylab = trait.name)
+trait.trans <- get_latent_var(tissue.mats = matched.mats[[tx]], 
+    tissue.results = boot.CCA.results[[tx]])
+test_one <- bmediatR(y = trait.trans$Composite_Traits[,1], 
+    M = matched.mats[[tx]]$X[,gene.id,drop=FALSE], 
+    X = cbind(rep(1, nrow(nearest.geno)), nearest.geno),
+    ln_prior_c = model.type,
+    options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))
+plot_posterior_bar(test_one, mediator_id = gene.id, 
+relabel_x = gene.name, main = tissue.names[tx], med_var = "transcript.id")
 
-#used transcript var explained
+#look at correlations to confirm mediation
+#adj.trait <- adjust(matched.mats[[tx]]$Z[,trait.name,drop=FALSE], nearest.geno[rownames(matched.mats[[tx]]$X),])
+#adj.expr <- adjust(matched.mats[[tx]]$X[,gene.id,drop=FALSE], nearest.geno[rownames(matched.mats[[tx]]$X),])
+#plot.with.model(matched.mats[[tx]]$X[,gene.id], matched.mats[[tx]]$Z[,trait.name])
+#plot.with.model(adj.trait, adj.expr, xlab = paste(gene.name, "Adjusted"), ylab = paste(trait.name, "Adjusted"))
+```
+
+The following plots show
+
+```{r plot_med, results = "asis", fig.width = 7, fig.height = 5}
+
+post.prob.thresh = 0.8
+all.med.groups <- all.post.prob <- vector(mode = "list", length = length(tissue.names))
+names(all.med.groups) <- names(all.post.prob) <- tissue.names
 for(tx in 1:length(tissue.names)){
-    tissue.transcripts <- boot.CCA.results[[tx]]$u
-    rownames(tissue.transcripts) <- colnames(matched.mats[[tx]]$X)
-    used.var.exp <- apply(tissue.transcripts, 2, function(x) var.decomp[[tx]][rownames(tissue.transcripts)[which(x != 0)],])
-    plot.grouped.boxes(used.var.exp, type = "matrix")
+    cat("###", tissue.names[tx], "\n")
+    has.vals <- which(sapply(all_bmed, length) > 0)
+    tissue_post <- t(sapply(all_bmed[has.vals], function(x) if(length(as.matrix(x[[tx]])) > 1){as.numeric(x[[tx]][,4])}else{rep(NA, 6)}))
+    has.vals <- which(apply(tissue_post, 1, function(x) !all(is.na(x))))
+    colnames(tissue_post) <- all_bmed[[1]][[1]][,"model"]
+    all.post.prob[[tx]] <- tissue_post
+    #pheatmap(t(tissue_post[has.vals,]), show_colnames = FALSE)
+    par(mar = c(4,10, 4, 4));boxplot(tissue_post, las = 2, main = tissue.names[tx], horizontal = TRUE, xlab = "Posterior Probability")
+    best.prob <- apply(tissue_post, 1, function(x) if(!all(is.na(x))){max(x)}else{NA})
+    hist(best.prob, main = "Maximum Probability by Transcript", xlab = "Posterior Probability")
+    best.model <- apply(tissue_post, 1, function(x) get_best_prob(x, post.prob.thresh))
+    grouped.genes <- lapply(1:ncol(tissue_post), function(x) which(best.model == x))
+    names(grouped.genes) <- colnames(tissue_post)
+    par(mar = c(4, 10, 4, 4));barplot_with_num(sapply(grouped.genes, length), las = 2, main = tissue.names[tx], horiz = TRUE)
+    all.med.groups[[tx]] <- grouped.genes
+    cat("\n\n")
 }
+
+#colnames(tissue_post)
+```
+
+## Bayesian Mediation Results
+
+For all tissues there are multiple genes that are estimated to be mediators.
+The following plot shows that they are not shared across tissues for the most 
+part.
+
+```{r mediating_enrichment}
+#pull out complete mediators (group 1)
+med.by.tissue <- lapply(all.med.groups, function(x) x[[1]])
+plotVenn(lapply(med.by.tissue, names))
+```
+
+The functional enrichment of the groups, if there is any, is shown below.
+
+```{r med_enrich}
+gene.names  <- lapply(med.by.tissue, function(x) gene.table[match(names(x), gene.table[,1]), "symbol"])
+med.enrich <- lapply(med.by.tissue, function(x) gost(names(x), organism = "mmusculus"))
+#plot.enrichment.group(med.enrich)
+med.info <- lapply(med.by.tissue, function(x) gene.table[match(names(x), gene.table[,1]),])
+par(mfrow = c(2,2))
+for(i in 1:length(med.info)){
+    plot(as.numeric(med.info[[i]][,"start"]), all.post.prob[[i]][med.info[[i]][,1],1], 
+        type = "h", xlab = "Position (Mb)", ylab = "Complete Mediation Posterior Probability",
+        main = tissue.names[i], ylim = c(0,1))
+    abline(v = 84, col = "red")   
+}
+
+#variance explained by markers associated with bmediator candidates
+#common.ind <- Reduce("intersect", lapply(matched.mats, function(x) rownames(x$X)))
+#all.chr11.expr <- Reduce("cbind", lapply(1:length(matched.mats), function(x) matched.mats[[x]]$X[common.ind,names(med.by.tissue[[x]])]))
+#tr.names <- unlist(lapply(1:length(matched.mats), function(x) paste(tissue.names[x], names(med.by.tissue[[x]]), sep = "_")))
+#colnames(all.chr11.expr) <- tr.names
+#chr11.model <- lm(matched.mats[[1]]$Z[common.ind,trait.name]~all.chr11.expr)
+#summary(chr11.model)
+#pdf("~/Desktop/mediator_measured_expression_cor.pdf", width = 20, height = 20);pheatmap(cor(all.chr11.expr));dev.off()
+#expr.decomp <- plot.decomp(cor(all.chr11.expr))
+#cl1 <- sapply(strsplit(colnames(all.chr11.expr)[which(expr.decomp$u[,1] > 0)], "_"), function(x) x[2])
+#cl2 <- sapply(strsplit(colnames(all.chr11.expr)[which(expr.decomp$u[,1] < 0)], "_"), function(x) x[2])
+#cl1.enrich <- gost(cl1, organism = "mmusculus")
+#cl1.pos <- as.numeric(gene.table[match(cl1,gene.table[,1]), "start"])
+#plot.enrichment(cl1.enrich)
+#cl2.enrich <- gost(cl2, organism = "mmusculus")
+#cl2.pos <- as.numeric(gene.table[match(cl2,gene.table[,1]), "start"])
+#stripchart(list(cl1.pos, cl2.pos), vertical = TRUE, pch = 16, method = "jitter", group.names  = c("group1", "group2"), ylab = "Chr 11 Position Mb")
+#plot.enrichment(cl2.enrich)
+#full.decomp <- plot.decomp(all.chr11.expr, pc = 4)
+#plot.with.model(full.decomp$u[,3], matched.mats[[1]]$Z[common.ind,trait.name])
+#chr11.markers <- find_marker(map, chr = 11, interval = c(83, 85))
+#chr11.array <- genoprobs[[11]][,,chr11.markers]
+#chr11.mat <- Reduce("cbind", lapply(1:dim(chr11.array)[3], function(x) chr11.array[common.ind,,x]))
+#marker.model <- lm(matched.mats[[1]]$Z[common.ind,trait.name]~chr11.mat)
+#summary(marker.model)
+#pdf("~/Desktop/cr11_cor.pdf", width = 20, height = 20);pheatmap(cor(all.chr11.expr));dev.off()
+#pheatmap(t(matched.mats[[1]]$Z), show_colnames = FALSE)
+#pheatmap(cor(matched.mats[[1]]$Z))
+#plot.decomp(t(matched.mats[[1]]$Z), label.points = TRUE, xlim = c(-0.6, 0.35))
+```
+
+Mediator allele effects.
+
+```{r med_allele_effects}
+
+for(tx in 1:length(med.by.tissue)){
+    trait.scan <- scan1coef(genoprobs[,11], matched.mats[[tx]]$Z[,trait.name])
+    #lod.scan <- scan1(genoprobs[,11], matched.mats[[3]]$Z[,trait.name])
+    #plot(lod.scan, map = map)
+    #trait.peak <- find_peaks(lod.scan, map = map)
+    #peak.pos <- trait.peak[,"pos"]
+    med.genes <- med.by.tissue[[tx]]
+    allele.idx <- match(names(med.genes), names(all_bmed_coef))
+    allele.effects <- sapply(allele.idx, function(x) all_bmed_coef[[x]][tx,])
+    colnames(allele.effects) <- names(med.genes)
+    gene.pos <- as.numeric(gene.table[match(names(med.genes), gene.table[,1]),"start"])
+
+    if(is.interactive){quartz(width = 6, height = 6)}
+    par(mfrow = c(2,1), mar = c(4,2,4,2))
+    plot_coefCC(trait.scan, map = map, xlim = c(min(gene.pos), max(gene.pos)), main = trait.name)
+    #abline(v = peak.pos)
+
+    par(mar = c(4,2,2,2))
+    plot.new()
+    plot.window(xlim = c(min(gene.pos), max(gene.pos)), ylim = c(min(allele.effects), max(allele.effects)))
+    for(a in 1:8){
+        points(gene.pos, allele.effects[a,], col = CCcolors[a], pch = 16)
+    }
+    abline(h = 0)
+    axis(1);axis(2)
+    #mtext(tissue.names[tx], side = 3, outer = TRUE, line = -2.5)
+}
+
+```
+
+```{r example_effects, eval = FALSE}
+gene.name = "AA465934"
+gene.name <- "Gm11427"
+gene.name = "Proca1"
+gene.name = "Mpp2"
+gene.name = "Rskr"
+gene.name = "Wfdc21"
+gene.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1]
+
+#gene.id <- names(top.trans[[2]])[1]
+#gene.id <- "ENSMUSG00000083161"
+#gene.id <- "ENSMUSG00000093846"
+#gene.id <- "ENSMUSG00000018986"
+#gene.id <- Reduce("intersect", lapply(top.trans, names))
+#gene.name <- gene.table[which(gene.table[,1] == gene.id),"symbol"][1]
+
+par(mfrow = c(2,2))
+for(tx in 1:length(tissue.names)){    
+    gene.locale <- which(colnames(matched.mats[[tx]]$X) == gene.id)
+    
+    if(length(gene.locale) > 0){
+        #find trait with maximum correlation to transcript
+        #trait.name <- names(which.max(abs(trans.cor[[tx]][,gene.id])))
+        plot.with.model(matched.mats[[tx]]$X[,gene.id], matched.mats[[tx]]$Z[,trait.name],
+        xlab = gene.name, ylab = trait.name, cex = 1, main = tissue.names[tx])
+    }else{
+        plot.text(paste(gene.name, "not present\nin", tissue.names[tx]))
+    }
+}
+
+
+
+
+trait.scan <- lapply(matched.mats, function(x) scan1coef(genoprobs[,11], x$Z[,trait.name], kinship = overall.k))
+gene.scan <- lapply(matched.mats, function(x) scan1coef(genoprobs[,11], x$X[,gene.id], kinship = overall.k))
+quartz();
+par(mfrow = c(2,2))
+for(i in 1:length(gene.scan)){
+    plot_coefCC(gene.scan[[i]], map = map)
+}
+quartz()
+par(mfrow = c(2,2))
+for(i in 1:length(trait.scan)){
+    plot_coefCC(trait.scan[[i]], map = map)
+}
+
+length(Reduce("intersect", shared.names))
+shared.expr <- lapply(matched.mats, function(x) x$X[,shared.id])
+common.ind <- Reduce("intersect", lapply(matched.mats, function(x) rownames(x$X)))
+for(i in 1:length(shared.expr)){
+    colnames(shared.expr[[i]]) <- paste(shared.names, tissue.names[i], sep = "_")
+    shared.expr[[i]] <- shared.expr[[i]][common.ind,]
+}
+pheatmap(t(Reduce("cbind", shared.expr)), show_colnames = FALSE)
+pheatmap(cor(Reduce("cbind", shared.expr)))
+
+
+
 ```
 
 ## Checking

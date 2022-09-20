@@ -1067,3 +1067,61 @@ plot.grouped.boxes(list("Positive Loadings" = all.pos.trans,
 legend.x = 6, legend.y = 5000)
 #dev.off()
 ```
+
+
+## Composite Transcript LOD Score Heatmaps {.tabset .tabset-fade .tabset-pills}
+
+The following figures show heatmaps comparing the LOD score 
+traces of the composite transcripts and composite traits.
+
+I'm still working on getting something for this...
+
+```{r lodheat, fig.width = 11, fig.height = 6, results = "asis"}
+chr.table <- matrix(NA, ncol = 2, nrow = length(map))
+start.pos = 1
+for(i in 1:length(map)){
+    chr.table[i,1] <- start.pos
+    chr.table[i,2] <- start.pos + length(map[[i]]) - 1
+    start.pos <- start.pos + length(map[[i]])
+}
+
+for(i in 1:length(tissue.names)){
+    cat("###", tissue.names[i], "{.tabset .tabset-fade .tabset-pills}\n")
+    if(length(qtl.results[[i]][[1]]) > 0){
+        #if(is.interactive){quartz(width = 10, height = 5)}
+        
+        trait.trans.qtl <- lapply(qtl.results[[i]], t)
+        for(j in 1:nrow(trait.trans.qtl[[1]])){
+            cat("#### CT", j, "\n")
+            if(is.interactive){quartz(width = 11, height = 6)}
+            one.comp <- cbind(qtl.results[[i]][[1]][,j], qtl.results[[i]][[2]][,j])
+
+            par(mfrow = c(2,1))
+            par(mar = c(0,2,2,2))
+            ylim <- c(0, max(one.comp))
+            plot(one.comp[,1], type = "h", axes = FALSE, ylim = ylim, xlab = "", 
+            cex = 0.7, main = paste("Composite Trait and Transcript", j))
+            abline(v = chr.table[,2], col = "gray")
+            abline(h = 6, col = "gray", lty = 2)
+            mtext(side = 4, text = paste("Composite Transcript", j), line = -1.5)
+            axis(2)
+            
+            par(mar = c(4,2,0,2))
+            plot(one.comp[,2], type = "h", ylim = ylim, axes = FALSE, xlab = "",
+            cex = 0.7)
+            abline(v = chr.table[,2], col = "gray")
+            abline(h = 6, col = "gray", lty = 2)
+            mtext(side = 4, text = paste("Composite Trait", j), line = -1.5)
+            axis(2)
+
+            par(xpd = TRUE)
+            text(y = rep(-0.5, nrow(chr.table)), x = rowMeans(chr.table), 
+            labels = 1:nrow(chr.table))
+            par(xpd = FALSE)
+            cat("\n\n")
+        }    
+    }
+    cat("\n\n")
+}
+
+```
