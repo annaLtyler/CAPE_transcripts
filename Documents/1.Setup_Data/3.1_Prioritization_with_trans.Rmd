@@ -67,8 +67,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
-"e1071", "parallel", "doParallel", "gprofiler2", "clusterProfiler", "DT",
-"plotly", "qtl2") 
+"e1071", "parallel", "doParallel", "gprofiler2", "DT", "qtl2") 
 load_libraries(needed.libraries, personal.library = TRUE)
 ```
 
