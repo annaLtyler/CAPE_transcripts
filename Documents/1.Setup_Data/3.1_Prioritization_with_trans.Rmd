@@ -156,7 +156,9 @@ expression.
 ```{r trans_expr}
 trans.expr <- adj.expr[,trans.id] 
 matched.mats <- get.xz(trans.expr, adj.pheno)
-trans.decomp <- plot.decomp(matched.mats$X, cols = (covar.mat[,"SexM"]+1))
+trans.decomp <- plot.decomp(matched.mats$X, plot.results = FALSE)
+
+
 ```
 
 The second PC of expression is correlated with `r trait.name`.
@@ -276,7 +278,7 @@ cand.pos <- as.numeric(gene.info[match(rownames(fp.mat), gene.info[,"external_ge
 layout(matrix(c(1,2), ncol = 2), widths = c(1, 0.2))
 par(mar = c(4,4,4,4))
 plot.new()
-plot.window(xlim = c(min(cand.pos/1e6), max(cand.pos/1e6)), 
+plot.window(xlim = c(min(cand.pos/1e6, na.rm = TRUE), max(cand.pos/1e6, na.rm = TRUE)), 
     ylim = c(min(-log10(fp.mat), na.rm = TRUE), max(-log10(fp.mat), na.rm = TRUE)))
 for(i in 1:ncol(fp.mat)){
     points(cand.pos/1e6, -log10(fp.mat[,i]), pch = 16, col = i)
@@ -292,6 +294,7 @@ plot.window(xlim = c(0,1), ylim = c(0,1))
 par(xpd = NA)
 legend(x = -1, y = 1, legend = colnames(fp.mat), col = 1:ncol(fp.mat), lty = 1, lwd = 2)
 par(xpd = TRUE)
+
 ```
 
 Sum of scores across all traits.
@@ -308,7 +311,7 @@ text(cand.pos/1e6, score.sum, rownames(fp.mat), pos = 2, cex = 0.7)
 
 ```{r check_gene, eval = FALSE}
 
-gene.name = "Evi2a"
+gene.name = "Heatr"
 gene.id <- gene.info[which(gene.info[,"external_gene_name"] == gene.name),1]
 
 gene.locale <- which(colnames(expr.data) == gene.id)
@@ -333,9 +336,8 @@ plot.with.model(adj.trait[,trait.name], adj.expr, report = "cor.test",
 
 Can the expression mediate the effect of the QTL
 
-```{r mediation}
-orig.scan <- scan1(genoprobs, adj.trait[,trait.name, drop=FALSE], kinship = K)
-plot(orig.scan, map = map)
+```{r mediation, eval = FALSE}
+plot(trait.scan, map = map)
 
 med.trait <- adjust(adj.trait[,trait.name,drop=FALSE], adj.expr)
 med.scan <- scan1(genoprobs, med.trait, kinship = K)
