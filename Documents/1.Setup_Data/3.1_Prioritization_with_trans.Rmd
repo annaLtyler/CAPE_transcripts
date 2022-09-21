@@ -94,7 +94,7 @@ Find the region to prioritize genes in based on QTL in the trait
 specified above.
 
 ```{r trait_scan}
-trait.scan <- scan1(genoprobs, adj.traits[,trait.name], kinship = K)
+trait.scan <- scan1(genoprobs, adj.pheno[,trait.name], kinship = K)
 plot(trait.scan, map = map)
 peak.table <- find_peaks(trait.scan, map = map, threshold = 6, drop = 6)
 chr.locale <- which(peak.table[,"chr"] == qtl.chr)
@@ -154,7 +154,7 @@ expression.
 
 ```{r trans_expr}
 trans.expr <- adj.expr[,trans.id] 
-matched.mats <- get.xz(trans.expr, adj.traits)
+matched.mats <- get.xz(trans.expr, adj.pheno)
 trans.decomp <- plot.decomp(matched.mats$X, cols = (covar.mat[,"SexM"]+1))
 ```
 
