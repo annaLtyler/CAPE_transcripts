@@ -61,11 +61,19 @@ load_libraries(needed.libraries, personal.library = TRUE)
 
 ```{r load_data}
 tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
-data.set.name <- paste0("dataset.DO.Cube.", tissue.name)
+traits <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsAsFactors = FALSE))
+num.traits <- apply(traits[,c(12:(ncol(traits)-1))], 2, as.numeric)
+rownames(num.traits) <- traits[,1]
+
+data.set <- get(paste0("dataset.DO.Cube.", tissue.name))
+covar.mat <- data.set$covar.matrix
+expr.data <- data.set$data$norm
+
+adj.expr <- adjust(expr.data, covar.mat)
+adj.pheno <- adjust(num.traits, covar.mat)
+
 gene.table <- get(data.set.name)$annot.mrna
 eqtl.table <- get(data.set.name)$lod.peaks$additive
-adj.traits <- readRDS(here("Data", "Adjusted_Phenotypes.RDS"))
-adj.expr <- readRDS(here("Data", "Adjusted_Expression.RDS"))
 gene.info <- as.matrix(read.delim(here("Data", "mouse_gene_info.txt"), stringsAsFactors = FALSE))
 ```
 
@@ -125,21 +133,41 @@ trans.id <- unique(trans.table[[1]])
 trans.info <- gene.table[match(trans.id, gene.table[[1]]),]
 ```
 
-The expression of these genes clusters into two distinct groups.
-And the second PC is quite highly negatively correlated with 
-the trait.
+The animals cluster into two distinct groups based on their
+expression of these genes. Each dot represents a single 
+individual. They are colored by sex to show that sex 
+is not the major factor determining differences in 
+expression.
 
 ```{r trans_expr}
-tissue.locale <- which(names(adj.expr) == tissue.name)
-trans.expr <- adj.expr[[tissue.locale]][,trans.id] 
+trans.expr <- adj.expr[,trans.id] 
 matched.mats <- get.xz(trans.expr, adj.traits)
-trans.decomp <- plot.decomp(matched.mats$X, pc = 4)
+trans.decomp <- plot.decomp(matched.mats$X, cols = (covar.mat[,"SexM"]+1))
+```
 
-par(mfrow = c(2,2))
-for(i in 1:4){
+The second PC of expression is correlated with `r trait.name`.
+
+```{r pc_trait_cor, fig.width = 8, fig.height = 4}
+if(is.interactive){quartz(width = 8, height = 4)}
+par(mfrow = c(1,2))
+for(i in 1:ncol(trans.decomp$u)){
     plot.with.model(trans.decomp$u[,i], matched.mats$Z[,trait.name], 
     xlab = paste("PC", i), ylab = trait.name)
 }
+```
+
+The transcripts do not have any particular clustering.
+The genes with wild PC1 scores are ribosomal pseudogenes.
+
+```{r expr_decomp}
+plot(trans.decomp$v, xlab = "PC1", ylab = "PC2", pch = 16)
+abline(v = -0.1)
+colnames(matched.mats$X)[which(trans.decomp$v[,1] < -0.1)]
+```
+
+```{r trans_pos}
+trans.pos <- gene.table[[5]][match(colnames(matched.mats$X), gene.table[[1]])]
+plot(trans.pos, trans.decomp$v[,2])
 ```
 
 ```{r download_net, eval = TRUE, echo = FALSE}
@@ -265,12 +293,6 @@ text(cand.pos/1e6, score.sum, rownames(fp.mat), pos = 2, cex = 0.7)
 # Check expression correlation with traits?
 
 ```{r check_gene, eval = FALSE}
-cube.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
-traits <- read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsAsFactors = FALSE)
-
-data.set <- get(paste0("dataset.DO.Cube.", tissue.name))
-covar.mat <- data.set$covar.matrix
-expr.data <- data.set$data$rz
 
 gene.name = "Evi2a"
 gene.id <- gene.info[which(gene.info[,"external_gene_name"] == gene.name),1]
