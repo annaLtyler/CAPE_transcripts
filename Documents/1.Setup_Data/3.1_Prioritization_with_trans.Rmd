@@ -85,8 +85,8 @@ expr.data <- data.set$data$norm
 adj.expr <- adjust(expr.data, covar.mat)
 adj.pheno <- adjust(num.traits, covar.mat)
 
-gene.table <- get(data.set.name)$annot.mrna
-eqtl.table <- get(data.set.name)$lod.peaks$additive
+gene.table <- data.set$annot.mrna
+eqtl.table <- data.set$lod.peaks$additive
 gene.info <- as.matrix(read.delim(here("Data", "mouse_gene_info.txt"), stringsAsFactors = FALSE))
 ```
 
