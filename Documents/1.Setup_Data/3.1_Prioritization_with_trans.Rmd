@@ -22,10 +22,24 @@ The network used is the same as the specified tissue.
 
 
 ```{r get_args}
+args <- commandArgs(trailingOnly=T)
+tissue.name = args[1]
+
+if(is.na(tissue.name)){
+    tissue.name = "Adipose"
+}
+
 #delete_previous <- TRUE
 delete_previous <- FALSE
 
-tissue.name = "Adipose"; network.name = "adipose tissue"
+
+
+network.names <- c("Adipose" = "adipose tissue", 
+                    "Islet" = "islets of langerhans", 
+                    "Liver" = "liver", 
+                    "SkeletalMuscle" = "skeletal muscle")
+
+network.name = network.names[which(names(network.names) == tissue.name)]
 
 trait.name = "Ins_tAUC"
 qtl.chr = 11
