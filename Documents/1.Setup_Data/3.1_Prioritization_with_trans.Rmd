@@ -26,7 +26,7 @@ args <- commandArgs(trailingOnly=T)
 tissue.name = args[1]
 
 if(is.na(tissue.name)){
-    tissue.name = "Islet"
+    tissue.name = "Adipose"
 }
 
 #delete_previous <- TRUE
@@ -135,6 +135,15 @@ below.max <- which(eqtl.pos <= qtl.end)
 trans.idx <- Reduce("intersect", list(chr.idx, above.min, below.max))
 
 trans.table <- eqtl.table[trans.idx,]
+```
+
+The functional enrichment of the trans-regulated genes
+is shown below.
+
+```{r trans_enrich, fig.width = 7, fig.height = 7}
+enrichment <- gost(trans.table$gene.id, organism = "mmusculus")
+plot.enrichment(enrichment, num.terms = 25, plot.label = 
+    "Enrichment of trans band targets")
 ```
 
 The allele effects of all transcripts in this region
@@ -353,12 +362,19 @@ par(xpd = TRUE)
 
 
 
-## Check mediation of the trait and trans band by candidates.
+## Mediation
+
+The following code can be run by hand to check whether 
+a candidate gene is a mediator of either the trans band
+or the trait.
 
 ```{r check_gene, eval = FALSE}
 library(bmediatR)
 
 gene.name = "Heatr6"
+gene.name = "Trim25"
+gene.name = "Rpl19"
+gene.name = "Thra"
 
 gene.idx <- which(gene.table$symbol == gene.name)
 gene.id <- gene.table$gene.id[gene.idx]
@@ -382,6 +398,7 @@ plot_posterior_bar(trait_med, mediator_id = gene.id, relabel_x = gene.name,
 
 trans.pc <- trans.decomp$u
 rownames(trans.pc) <- rownames(matched.mats$X)
+colnames(trans.pc) <- paste0("PC", 1:ncol(trans.pc))
 
 trans_med <- bmediatR(
     y = trans.pc[,1,drop=FALSE], 
@@ -394,4 +411,20 @@ plot_posterior_bar(trans_med, mediator_id = gene.id, relabel_x = gene.name,
     main = paste(gene.name, "Mediating trans band in", tissue.name), 
     med_var = "transcript.id")
 
+#does the trans band mediate the effect of the peak marker on the trait?
+
+nearest.marker <- find_marker(map, chr = peak.table[1,"chr"], pos = peak.table[1,"pos"]) 
+nearest.geno <- genoprobs[[11]][rownames(adj.expr),,nearest.marker]
+
+pc = 1
+trans_trait_med <- bmediatR(
+    y = adj.pheno[rownames(trans.pc),trait.name,drop=FALSE], 
+    M = trans.pc[,pc,drop=FALSE],
+    X = cbind(rep(1, nrow(nearest.geno)), nearest.geno),
+    ln_prior_c = "reactive",
+    options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))
+
+plot_posterior_bar(trans_trait_med, mediator_id = paste0("PC", pc), 
+    relabel_x = paste("Trans band PC", pc), 
+    main = "Trans Band Mediation of Peak Marker on Trait")
 ```
