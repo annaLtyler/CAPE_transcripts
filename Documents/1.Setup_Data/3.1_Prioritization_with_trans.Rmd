@@ -26,7 +26,7 @@ args <- commandArgs(trailingOnly=T)
 tissue.name = args[1]
 
 if(is.na(tissue.name)){
-    tissue.name = "Islet"
+    tissue.name = "Adipose"
 }
 
 #delete_previous <- TRUE
@@ -88,23 +88,44 @@ adj.pheno <- adjust(num.traits, covar.mat)
 
 gene.table <- data.set$annot.mrna
 eqtl.table <- data.set$lod.peaks$additive
-gene.info <- as.matrix(read.delim(here("Data", "mouse_gene_info.txt"), stringsAsFactors = FALSE))
 ```
 
-Find the region to prioritize genes in based on QTL in the trait
-specified above.
+The figure below shows the genetic mapping of `r trait.name`.
+We define the QTL as the area between the red lines. We are
+using a pretty broad definition of the QTL to make sure we 
+capture all relevant trans-regulated transcripts.
 
-```{r trait_scan}
+```{r get_plot_idx}
+#finds the x position of a mapping position on an
+#existing QTL plot or the full genome.
+
+get_plot_idx <- function(map, chr, Mb){
+    full.map <- length(unlist(map))
+    pt.marker <- find_marker(map, chr = chr, pos = Mb)
+    idx <- which(unlist(lapply(map, names)) == pt.marker)
+    plot.dim <- par("usr")
+    x.coord <- (idx/full.map)*plot.dim[2]
+    return(x.coord)
+}
+
+```
+
+```{r trait_scan, fig.width = 8, fig.height = 5}
 trait.scan <- scan1(genoprobs, adj.pheno[,trait.name], kinship = K)
-plot(trait.scan, map = map)
 peak.table <- find_peaks(trait.scan, map = map, threshold = 6, drop = 6)
 chr.locale <- which(peak.table[,"chr"] == qtl.chr)
 chr.peak <- peak.table[chr.locale,]
 qtl.start <- (floor(chr.peak[,"ci_lo"])-Mb.buffer)*1e6
 qtl.end <- (ceiling(chr.peak[,"ci_hi"])+Mb.buffer)*1e6
+
+plot(trait.scan, map = map)
+qtl.start.x <- get_plot_idx(map, chr = 11, Mb = qtl.start/10^6)
+qtl.end.x <- get_plot_idx(map, chr = 11, Mb = qtl.end/10^6)
+abline(v = c(qtl.start.x, qtl.end.x), col = "red", lwd = 2)
 ```
 
-Get transcripts that map to this interval.
+We identified all transcripts that map to this interval using
+the data in the QTLviewer object.
 
 ```{r interval_transcripts}
 eqtl.markers <- strsplit(eqtl.table[[2]], "_")
@@ -118,18 +139,20 @@ trans.idx <- Reduce("intersect", list(chr.idx, above.min, below.max))
 trans.table <- eqtl.table[trans.idx,]
 ```
 
-Look at the allele effects of these markers. There
-does appear to be some clustering in the correlation 
-plot.
+The allele effects of all transcripts in this region
+are shown below. There are small groups of transcripts
+that share allele effects. The F and G alleles have
+the most consistent effects across transcripts.
 
 ```{r allele_effects}
 allele.effects <- as.matrix(trans.table[,LETTERS[1:8]])
-pheatmap(allele.effects)
-allele.cor <- cor(t(allele.effects))
+pheatmap(allele.effects, scale = "row")
+#allele.cor <- cor(t(allele.effects))
 #pheatmap(allele.cor)
+
 ```
 
-Remove the transcripts that are located in the trait QTL.
+We removed the transcripts that are located in the trait QTL.
 We don't want to spike our gene list with local genes.
 
 ```{r remove_cis}
@@ -144,21 +167,28 @@ trans.locale <- setdiff(1:nrow(trans.table), cis.locale)
 trans.table <- trans.table[trans.locale,]
 ```
 
-In the adipose data and in skeletal muscle, we see very strange
-clustering of individuals based on gene expression. It turns out
-that this clustering is based on expression of multiple pseudogenes.
+The figure below shows the first four PCs of the trans-regulated
+gene expression matrix plotted against each other. Each dot represents
+an individual anima. In some cases there are strange clusters of 
+individuals. Further investigation has revealed that these clusters
+tend to be related to pseudogenes that have expression patterns that
+have very divergent from the rest of the transcripts. 
 
-If we restrict the genes to only those with entrez IDs, we eliminate
-this clustering.
-
-```{r trans_expr}
+```{r trans_expr, fig.height = 8, fig.width = 8}
 trans.id <- unique(trans.table[[1]])
 trans.info <- gene.table[match(trans.id, gene.table[[1]]),]
 trans.expr <- adj.expr[,trans.id] 
 matched.mats <- get.xz(trans.expr, adj.pheno)
 trans.decomp <- plot.decomp(matched.mats$X, pc = 6)
 #pheatmap(matched.mats$X)
+```
 
+In TRiAGE we only use protein coding genes with entrez IDs.
+If we filter to only those genes here, most of the strainge
+clustering patterns disappear. 
+
+
+```{r filter_entrez, fig.height = 8, fig.width = 8}
 entrezgene <- gconvert(trans.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
 triage.id <- entrezgene[,"input"]
 
@@ -167,12 +197,14 @@ matched.mats <- get.xz(trans.expr, adj.pheno)
 trans.decomp <- plot.decomp(matched.mats$X, pc = 6)
 ```
 
+We asked whether the PCs of the trans-regulated 
+transcripts were correlated with `r trait.name`.
+This varied by tissue. Adipose expression was
+the most highly correlated with `r trait.name`.
 
-The first PC of expression is correlated with `r trait.name`.
-The second is too, to a much lesser extent.
 
-```{r pc_trait_cor, fig.width = 8, fig.height = 4}
-if(is.interactive){quartz(width = 8, height = 8)}
+```{r pc_trait_cor, fig.width = 8, fig.height = 6}
+if(is.interactive){quartz(width = 8, height = 6)}
 par(mfrow = c(2,3))
 for(i in 1:ncol(trans.decomp$u)){
     plot.with.model(trans.decomp$u[,i], matched.mats$Z[,trait.name], 
@@ -180,16 +212,19 @@ for(i in 1:ncol(trans.decomp$u)){
 }
 ```
 
-The transcripts do not have any particular clustering.
-There are still some outliers, but these are all real 
-genes now.
+The transcripts have somewhat correlated expression, which
+we would expect if they are all regulated by a single locus
+in trans. Sub clusters may represent multiple QTL in the region
+or shared haplotype effects, like the CAST and PWK allele effects 
+we saw above.
 
-```{r expr_decomp}
-plot(trans.decomp$v, xlab = "PC1", ylab = "PC2", pch = 16)
-#colnames(matched.mats$X)[which(trans.decomp$v[,2] < -0.6)]
-#cat(colnames(matched.mats$X)[which(trans.decomp$v[,1] > 0.1)], sep = "\n")
-#cat(colnames(matched.mats$X)[which(trans.decomp$v[,1] < -0.1)], sep = "\n")
+```{r expr_decomp, fig.height = 7, fig.width = 7}
+pheatmap(cor(matched.mats$X), show_rownames = FALSE, show_colnames = FALSE)
 ```
+
+We used these transcripts to train SVMs to classify genes 
+related to these transcripts. The following text explains 
+this process.
 
 ```{r download_net, eval = TRUE, echo = FALSE}
 #Download the network if it hasn't been previously downloaded. 
@@ -214,10 +249,8 @@ if(!net.loaded){
 ## Setup Positive-Labeled Gene Features
 
 Get the connection weights of the positive-labeled genes to each other
-in the tissue network. Not all of the genes in the GSEA list will have
-Entrez IDs, and not all of the genes will have connections to the 
-other genes in the tissue network. We trim off positive-labeled genes 
-that are not connected to any other positive-labeled genes.
+in the tissue network. Positive-labeled genes that are not connected 
+to any other positive-labeled genes are removed from the analysis.
 
 
 ```{r pick_genes, echo = FALSE}
@@ -256,25 +289,32 @@ all.auc <- sapply(all.fptp, function(x) smooth.auc(Reduce("rbind", x), plot = FA
 We then used the trained models to classify every gene in the specified region.
 
 ```{r score_genes}
-chr.locale <- which(gene.info[,"chromosome_name"] == qtl.chr)
-mb.locale <- intersect(which(as.numeric(gene.info[,"start_position"]) >= qtl.start), 
-            which(as.numeric(gene.info[,"start_position"]) <= qtl.end))
+chr.locale <- which(gene.table$chr == qtl.chr)
+mb.locale <- intersect(which(as.numeric(gene.table$start)*10^6 >= qtl.start), 
+            which(as.numeric(gene.table$end)*10^6 <= qtl.end))
 candidate.locale <- intersect(chr.locale, mb.locale)
+candidate.id <- gene.table$gene.id[candidate.locale]
+candidate.entrez <- gconvert(candidate.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
 
 score.candidates(results.dir, 
-    candidate.genes = as.numeric(gene.info[candidate.locale,"entrezgene_id"]),
+    candidate.genes = as.numeric(candidate.entrez[,"target"]),
     verbose = TRUE, plot.results = FALSE)
 
 merge.svm.gene.info(results.dir, gene.info)
 ```
 
 
-```{r get_fp, error = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5}
+```{r get_fp, error = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.height = 5}
+test <- read.csv("/Users/atyler/Documents/Projects/Islets/CAPE_transcripts/Results/Prioritization/Chr11_Trans/Adipose_Chr11_Trans/Module1/Candidate.Gene.Results.csv")
+top.scores <- which(test[,"Mean.SVM.Score"] > 1.25)
+plot(test[top.scores,c("Mean.SVM.Score", "Mean.FP.Rate")])
+text(test[top.scores,"Mean.SVM.Score"], test[top.scores,"Mean.FP.Rate"], labels = test[top.scores,2], pos = 3)
+
 fp.mat <- get.all.fp(results.dir)
-cand.pos <- as.numeric(gene.info[match(rownames(fp.mat), gene.info[,"external_gene_name"]), "start_position"])
+cand.pos <- gene.table$start[match(rownames(fp.mat), gene.table$symbol)]
 
 layout(matrix(c(1,2), ncol = 2), widths = c(1, 0.2))
-par(mar = c(4,4,4,4))
+par(mar = c(4,4,4,0))
 plot.new()
 plot.window(xlim = c(min(cand.pos/1e6, na.rm = TRUE), max(cand.pos/1e6, na.rm = TRUE)), 
     ylim = c(min(-log10(fp.mat), na.rm = TRUE), max(-log10(fp.mat), na.rm = TRUE)))
@@ -292,44 +332,51 @@ plot.window(xlim = c(0,1), ylim = c(0,1))
 par(xpd = NA)
 legend(x = -1, y = 1, legend = colnames(fp.mat), col = 1:ncol(fp.mat), lty = 1, lwd = 2)
 par(xpd = TRUE)
-
 ```
 
-Sum of scores across all tissues.
 
-```{r plot_sum, error = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5}
-score.sum <- rowSums(-log10(fp.mat), na.rm = TRUE)
-
-plot(cand.pos/1e6, score.sum, pch = 16, xlab = paste("Chr", qtl.chr, "position (Mb)"),
-    ylab = "Functional Score")
-text(cand.pos/1e6, score.sum, rownames(fp.mat), pos = 2, cex = 0.7)
-```
 
 # Check expression correlation with traits?
 
 ```{r check_gene, eval = FALSE}
+library(bmediatR)
 
-gene.name = "Heatr"
-gene.id <- gene.info[which(gene.info[,"external_gene_name"] == gene.name),1]
+gene.name = "Heatr6"
 
-gene.locale <- which(colnames(expr.data) == gene.id)
+gene.idx <- which(gene.table$symbol == gene.name)
+gene.id <- gene.table$gene.id[gene.idx]
 
-common.ind <- Reduce("intersect", list(traits[,"mouse.id"], rownames(expr.data), rownames(covar.mat)))
-trait.ind.locale <- match(common.ind, traits[,"mouse.id"])
-expr.ind.locale <- match(common.ind, rownames(expr.data))
-covar.ind.locale <- match(common.ind, rownames(covar.mat))
+plot.with.model(adj.pheno[,trait.name], adj.expr[,gene.id], xlab = gene.name,
+    ylab = trait.name)
 
-adj.trait <- adjust(traits[trait.ind.locale,12:(ncol(traits)-1)], covar.mat[covar.ind.locale,])
-rownames(adj.trait) <- traits[trait.ind.locale,"mouse.id"]
-adj.expr <- adjust(expr.data[expr.ind.locale,gene.locale,drop=FALSE], covar.mat[covar.ind.locale,])
+nearest.marker <- gene.table$nearest.marker.id[gene.idx]
+nearest.geno <- genoprobs[[11]][rownames(adj.expr),,nearest.marker]
 
-par(mar = c(8,4,4,4))
-barplot(sort(apply(adj.trait, 2, function(x) cor(x, adj.expr, use = "pairwise.complete.obs"))), 
-las = 2, main = paste("Correlation with", gene.name))
+trait_med <- bmediatR(
+    y = adj.pheno[,trait.name,drop=FALSE], 
+    M = adj.expr[,gene.id,drop=FALSE], 
+    X = cbind(rep(1, nrow(nearest.geno)), nearest.geno),
+    ln_prior_c = "reactive",
+    options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))
 
-trait.name <- "weight_10wk"
-plot.with.model(adj.trait[,trait.name], adj.expr, report = "cor.test",
-    ylab  = paste(gene.name, "expression"), xlab = trait.name)
+plot_posterior_bar(trait_med, mediator_id = gene.id, relabel_x = gene.name, 
+    main = paste(gene.name, "mediating trait in", tissue.name), 
+    med_var = "transcript.id")
+
+trans.pc <- trans.decomp$u
+rownames(trans.pc) <- rownames(matched.mats$X)
+
+trans_med <- bmediatR(
+    y = trans.pc[,1,drop=FALSE], 
+    M = adj.expr[,gene.id,drop=FALSE], 
+    X = cbind(rep(1, nrow(nearest.geno)), nearest.geno),
+    ln_prior_c = "reactive",
+    options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))
+
+plot_posterior_bar(trans_med, mediator_id = gene.id, relabel_x = gene.name, 
+    main = paste(gene.name, "Mediating trans band in", tissue.name), 
+    med_var = "transcript.id")
+
 ```
 
 Can the expression mediate the effect of the QTL
