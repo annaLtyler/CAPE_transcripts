@@ -23,7 +23,4 @@ get.module.dir <- function(top.dir, dir.table = FALSE){
 		final.results <- list("module.dir" = module.dir, "dir.table" = dir.table)
 		return(final.results)
 		}
-
-	
-	
 }

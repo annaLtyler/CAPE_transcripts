@@ -26,13 +26,11 @@ args <- commandArgs(trailingOnly=T)
 tissue.name = args[1]
 
 if(is.na(tissue.name)){
-    tissue.name = "Adipose"
+    tissue.name = "Islet"
 }
 
 #delete_previous <- TRUE
 delete_previous <- FALSE
-
-
 
 network.names <- c("Adipose" = "adipose tissue", 
                     "Islet" = "islets of langerhans", 
@@ -44,8 +42,8 @@ network.name = network.names[which(names(network.names) == tissue.name)]
 trait.name = "Ins_tAUC"
 qtl.chr = 11
 
-exp.name = "Chr11_Trans"
-project.name = paste0(tissue.name, "_Chr", qtl.chr, "_Trans")
+exp.name = paste0(tissue.name, "_Chr", qtl.chr, "_Trans")
+project.name = "Chr11_Trans"
 
 Mb.buffer = 1
 n.cores = 4
@@ -286,7 +284,9 @@ all.auc <- sapply(all.fptp, function(x) smooth.auc(Reduce("rbind", x), plot = FA
 
 ## Score all genes
 
-We then used the trained models to classify every gene in the specified region.
+We then used the trained models to classify genes that are encoded
+in the QTL for `r trait.name` and expressed in `r tissue.name`.
+
 
 ```{r score_genes}
 chr.locale <- which(gene.table$chr == qtl.chr)
@@ -300,17 +300,34 @@ score.candidates(results.dir,
     candidate.genes = as.numeric(candidate.entrez[,"target"]),
     verbose = TRUE, plot.results = FALSE)
 
-merge.svm.gene.info(results.dir, gene.info)
+entrez.idx <- match(candidate.entrez[,"input"], gene.table$gene.id)
+gene.info.mat <- as.matrix(gene.table[entrez.idx,])
+#head(cbind(gene.info.mat[,1], candidate.entrez[c("input", "name")]))
+candidate.entrez.id <- candidate.entrez[,"target",drop=FALSE]
+colnames(candidate.entrez.id) <- "entrezgene_id"
+gene.info.mat <- cbind(gene.info.mat, candidate.entrez.id)
+
+merge.svm.gene.info(results.dir, gene.info.table = gene.info.mat,
+    entrezgene.column = "entrezgene_id", gene.start.column = "start",
+	gene.end.column = "end", gene.name.column = "symbol")
 ```
 
+The following plot shows the mean SVM score for expressed genes
+across the trait QTL.
+
+```{r svm_fig, results = "asis"}
+svm.image.path <- file.path(results.dir, project.name, "Module1", "Candidate.Gene.SVM.Results.jpg")
+image.line <- paste0("![Mean SVM Scores](", svm.image.path, ")")
+cat(image.line, "\n")
+```
+
+The following image shows the mean false positive rate across 
+all expressed genes in the trait QTL. This may differ from the
+mean SVM score shown above because both are means taken independently
+and vary across SVM runs.
 
 ```{r get_fp, error = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.height = 5}
-test <- read.csv("/Users/atyler/Documents/Projects/Islets/CAPE_transcripts/Results/Prioritization/Chr11_Trans/Adipose_Chr11_Trans/Module1/Candidate.Gene.Results.csv")
-top.scores <- which(test[,"Mean.SVM.Score"] > 1.25)
-plot(test[top.scores,c("Mean.SVM.Score", "Mean.FP.Rate")])
-text(test[top.scores,"Mean.SVM.Score"], test[top.scores,"Mean.FP.Rate"], labels = test[top.scores,2], pos = 3)
-
-fp.mat <- get.all.fp(results.dir)
+fp.mat <- get.all.fp(results.dir, gene.name.column = "symbol")
 cand.pos <- gene.table$start[match(rownames(fp.mat), gene.table$symbol)]
 
 layout(matrix(c(1,2), ncol = 2), widths = c(1, 0.2))
@@ -336,7 +353,7 @@ par(xpd = TRUE)
 
 
 
-# Check expression correlation with traits?
+## Check mediation of the trait and trans band by candidates.
 
 ```{r check_gene, eval = FALSE}
 library(bmediatR)
@@ -377,15 +394,4 @@ plot_posterior_bar(trans_med, mediator_id = gene.id, relabel_x = gene.name,
     main = paste(gene.name, "Mediating trans band in", tissue.name), 
     med_var = "transcript.id")
 
-```
-
-Can the expression mediate the effect of the QTL
-
-```{r mediation, eval = FALSE}
-plot(trait.scan, map = map)
-
-med.trait <- adjust(adj.trait[,trait.name,drop=FALSE], adj.expr)
-med.scan <- scan1(genoprobs, med.trait, kinship = K)
-
-plot(med.scan, map = map, add = TRUE, col = "red")
 ```

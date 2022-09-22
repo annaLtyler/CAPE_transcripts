@@ -1,4 +1,4 @@
-get.all.fp <- function(results.dir){
+get.all.fp <- function(results.dir, gene.name.column = "external_gene_name"){
 	
 	module.dir.info <- get.module.dir(results.dir, dir.table = TRUE)
 	module.dir <- module.dir.info$module.dir
@@ -10,7 +10,7 @@ get.all.fp <- function(results.dir){
 		results.file <- paste0(module.dir[i], "/Candidate.Gene.Results.csv")
 		results <- read.csv(results.file, stringsAsFactors = FALSE)
 	
-		fp <- results[,c("external_gene_name","Mean.FP.Rate")]
+		fp <- results[,c(gene.name.column,"Mean.FP.Rate")]
 		colnames(fp)[2] <- paste(dir.table[i,], collapse = "_")
 		fp[,1] <- rename.dups(fp[,1], "character")
 		
