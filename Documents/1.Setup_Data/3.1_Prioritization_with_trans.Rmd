@@ -24,9 +24,11 @@ The network used is the same as the specified tissue.
 ```{r get_args}
 args <- commandArgs(trailingOnly=T)
 tissue.name = args[1]
+n.cores <- as.numeric(args[2])
 
 if(is.na(tissue.name)){
     tissue.name = "Adipose"
+    n.cores = 4
 }
 
 #delete_previous <- TRUE
@@ -46,7 +48,6 @@ exp.name = paste0(tissue.name, "_Chr", qtl.chr, "_Trans")
 project.name = "Chr11_Trans"
 
 Mb.buffer = 1
-n.cores = 4
 n.training.genes <- 500
 ```
 
@@ -143,7 +144,7 @@ is shown below.
 ```{r trans_enrich, fig.width = 7, fig.height = 7}
 enrichment <- gost(trans.table$gene.id, organism = "mmusculus")
 plot.enrichment(enrichment, num.terms = 25, plot.label = 
-    "Enrichment of trans band targets")
+    "Enrichment of trans band targets", max.term.size = 5000)
 ```
 
 The allele effects of all transcripts in this region
