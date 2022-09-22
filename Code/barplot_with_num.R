@@ -4,7 +4,7 @@
 
 barplot_with_num <- function(values, xlab = "", ylab = "", main = "", col = "gray",
     cex = 1, text.gap = 0.1, text.shift = 0.05, text.srt = 0, horiz = FALSE, 
-    names = NULL, las = 1, ylim = NULL){
+    names = NULL, las = 1, ylim = NULL, at = NULL){
 
     plot.range <- max(values, na.rm = TRUE) - min(values, na.rm = TRUE)
     coords <- barplot(values, plot = FALSE)
@@ -35,7 +35,7 @@ barplot_with_num <- function(values, xlab = "", ylab = "", main = "", col = "gra
 
         a <- barplot(values, xlab = xlab, ylab = ylab, main = main, col = col, 
         ylim = ylim, xlim = xlim, horiz = horiz, names = names, las = las)
-        text(x = text.pos, y = a[,1], labels = values, cex = cex)
+        text(x = text.pos, y = a[,1], labels = values, cex = cex, at = at)
     }
 
 }

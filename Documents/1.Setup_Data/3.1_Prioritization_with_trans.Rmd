@@ -152,6 +152,24 @@ trans.table <- trans.table[trans.locale,]
 ```
 
 There are `r nrow(trans.table)` trans targets in this locus.
+
+The positions of eQTL markers for these genes is shown below.
+
+```{r eqtl, width = 10, height = 5}
+split.marker <- strsplit(trans.table$marker.id, "_")
+marker.pos <- as.numeric(sapply(split.marker, function(x) x[2]))
+a <- hist(marker.pos/1e6, breaks = 50, plot = FALSE)
+plot.new()
+plot.window(xlim = c(min(a$mids), max(a$mids)), ylim = c(0, max(a$counts)))
+points(a$mids, a$counts, type = "h", lwd = 20, col = "lightgray")
+text(a$mids, a$counts, labels = a$counts)
+axis(1);axis(2)
+mtext("Position (Mb)", side = 1, line = 2.5)
+mtext("Number of Trans Targets", side = 2, line = 2.5)
+abline(v = peak.table[1,"pos"])
+text(x = peak.table[1,"pos"], y = max(a$counts), labels = "Peak Trait QTL", adj = 0)
+```
+
 The functional enrichment of the trans-regulated genes
 is shown below.
 
@@ -370,10 +388,8 @@ or the trait.
 ```{r check_gene, eval = FALSE}
 
 gene.name = "Heatr6"
-gene.name = "Trim25"
-gene.name = "Rpl19"
-gene.name = "Thra"
-gene.name = "Tlcd1"
+gene.name = "Ccdc92b"
+
 
 gene.idx <- which(gene.table$symbol == gene.name)
 gene.id <- gene.table$gene.id[gene.idx]
@@ -436,9 +452,100 @@ plot_posterior_bar(trans_trait_med, mediator_id = paste0("PC", pc),
     relabel_x = paste("Trans band PC", pc), 
     main = "Trans Band Mediation of Peak Marker on Trait")
 
-post <- get_posterior(trans_trait_med, mediator_id = paste0("PC", pc), 
-    relabel_x = paste("Trans band PC", pc), 
-    main = "Trans Band Mediation of Peak Marker on Trait")
-par(mar = c(10, 4, 4, 4))
-barplot(post[,"post_p"], names = post[,"model"], las = 2)
+#post <- get_posterior(trans_trait_med, mediator_id = paste0("PC", pc), 
+#    relabel_x = paste("Trans band PC", pc), 
+#    main = "Trans Band Mediation of Peak Marker on Trait")
+#par(mar = c(10, 4, 4, 4))
+#barplot(post[,"post_p"], names = post[,"model"], las = 2)
+```
+
+```{r bulk_med}
+
+med <- function(y, M, X, model.type = "reactive"){
+
+    test_med <- bmediatR(y = y, M = M, X = X, ln_prior_c = model.type,
+        options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))
+
+    post <- get_posterior(test_med)
+    post.prob <- post[,"post_p"]
+    names(post.prob) <- post[,"model"]
+    return(post.prob)
+}
+
+#mediate the trans band with each of the cis transcripts using bmediatR
+cis.names <- gene.table$symbol[match(cis.transcripts, gene.table$gene.id)]
+all.cis.trans.med <- matrix(NA, ncol = 6, nrow = length(cis.transcripts))
+rownames(all.cis.trans.med) <- cis.names
+for(i in 1:length(cis.transcripts)){
+    cis.idx <- which(gene.table$gene.id == cis.transcripts[i])
+    cis.expr <- adj.expr[,cis.transcripts[i],drop=FALSE]
+    nearest.marker <- gene.table$nearest.marker.id[cis.idx]
+    nearest.geno <- genoprobs[[11]][,,nearest.marker]
+    med.post <- med(trans.pc[common.ind,1], cis.expr[common.ind,1],
+        nearest.geno[common.ind,], "reactive")
+    all.cis.trans.med[i,] <- med.post
+}
+colnames(all.cis.trans.med) <- names(med.post)
+pheatmap(all.cis.trans.med, cluster_cols = FALSE, show_rownames = FALSE)
+
+#comp.trans.med <- which(all.cis.trans.med[,1] >= 0.8)
+#cat(names(comp.med), sep = "\n")
+#comp.trans.react <- which(all.cis.trans.med[,4] >= 0.8)
+#cat(names(comp.react), sep = "\n")
+
+#mediate the trait with each of the cis transcripts using bmediatR
+all.cis.trait.med <- matrix(NA, ncol = 6, nrow = length(cis.transcripts))
+rownames(all.cis.trait.med) <- cis.names
+for(i in 1:length(cis.transcripts)){
+    cis.idx <- which(gene.table$gene.id == cis.transcripts[i])
+    cis.expr <- adj.expr[,cis.transcripts[i],drop=FALSE]
+    nearest.marker <- gene.table$nearest.marker.id[cis.idx]
+    nearest.geno <- genoprobs[[11]][,,nearest.marker]
+    med.post <- med(adj.pheno[common.ind,trait.name], cis.expr[common.ind,1],
+        nearest.geno[common.ind,], "reactive")
+    all.cis.trait.med[i,] <- med.post
+}
+colnames(all.cis.trait.med) <- names(med.post)
+pheatmap(all.cis.trait.med, cluster_cols = FALSE)
+
+#comp.trait.med <- which(all.cis.trait.med[,1] >= 0.8)
+#cat(names(comp.med), sep = "\n")
+#comp.trait.react <- which(all.cis.trait.med[,4] >= 0.8)
+#cat(names(comp.react), sep = "\n")
+
+med.ranks <- rank.2D(cbind(all.cis.trans.med[,1,drop=FALSE], all.cis.trait.med[,1,drop=FALSE]))
+ordered.med <- med.ranks[order(med.ranks[,1]),1,drop=FALSE]
+```
+
+The following plot shows the posterior probabilites of each local 
+gene mediating the trait plotted against the posterior probability 
+of each local gene mediating the transcript. The top ranked genes
+are labeled.
+
+
+```{r med_against}
+top.genes <- rownames(ordered.med)[1:25]
+plot(all.cis.trans.med[,1], all.cis.trait.med[,1], xlim = c(0, 1), ylim = c(0, 1.05),
+    xlab = "Post. Prob. of Mediating Trans Band", ylab = "Post. Prob. of mediating Trait")
+text(all.cis.trans.med[top.genes,1], all.cis.trait.med[top.genes,1], labels = top.genes, pos = 3)
+```
+
+The following plots shows the posterior probabilities of mediating either
+the trait or the trans bands as a function of the position in the locus. 
+The peak trait locus is marked with a vertical line. A posterior probability
+of 0.8 is marked with a horizontal line.
+
+```{r trait_by_pos, fig.width = 10, fig.height = 6}
+gene.pos <- gene.table$start[match(cis.names, gene.table$symbol)]
+
+plot(gene.pos, all.cis.trans.med[,1], main = "Tran-band mediators", 
+    ylab = "Post. Prob. of Complete Mediation")
+text(gene.pos, all.cis.trans.med[,1], cis.names, cex = 0.5, pos = 4)
+abline(v = peak.table[1,"pos"], h = 0.8)
+
+plot(gene.pos, all.cis.trait.med[,1], main = "Trait mediators",
+    ylab = "Post. Prob. of Complete Mediation")
+text(gene.pos, all.cis.trait.med[,1], cis.names, cex = 0.5, pos = 4)
+abline(v = peak.table[1,"pos"], h = 0.8)
+
 ```
