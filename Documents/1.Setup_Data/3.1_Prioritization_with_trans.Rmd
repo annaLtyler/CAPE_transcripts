@@ -27,7 +27,7 @@ tissue.name = args[1]
 n.cores <- as.numeric(args[2])
 
 if(is.na(tissue.name)){
-    tissue.name = "Liver"
+    tissue.name = "Adipose"
     n.cores = 4
 }
 
@@ -109,7 +109,7 @@ get_plot_idx <- function(map, chr, Mb){
 
 ```{r trait_scan, fig.width = 8, fig.height = 5}
 trait.scan <- scan1(genoprobs, adj.pheno[,trait.name], kinship = K)
-peak.table <- find_peaks(trait.scan, map = map, threshold = 6, drop = 3)
+peak.table <- find_peaks(trait.scan, map = map, threshold = 6, drop = 6)
 chr.locale <- which(peak.table[,"chr"] == qtl.chr)
 chr.peak <- peak.table[chr.locale,]
 qtl.start <- (floor(chr.peak[,"ci_lo"])-Mb.buffer)*1e6
@@ -417,12 +417,18 @@ plot_posterior_bar(trans_med, mediator_id = gene.id, relabel_x = gene.name,
 nearest.marker <- find_marker(map, chr = peak.table[1,"chr"], pos = peak.table[1,"pos"]) 
 nearest.geno <- genoprobs[[11]][rownames(adj.expr),,nearest.marker]
 
-pc = 2
+pc = 1
 common.ind <- Reduce("intersect", list(rownames(adj.pheno), rownames(trans.pc), rownames(genoprobs[[1]])))
+
+plot.with.model(trans.pc[common.ind,pc], adj.pheno[common.ind, trait.name])
+adj.pc <- adjust(trans.pc[,1,drop=FALSE], nearest.geno)
+adj.trait <- adjust(adj.pheno[,trait.name,drop=FALSE], nearest.geno)
+plot.with.model(adj.pc[common.ind,], adj.trait[common.ind,])
+
 trans_trait_med <- bmediatR(
     y = adj.pheno[common.ind,trait.name,drop=FALSE], 
     M = trans.pc[common.ind,1,drop=FALSE],
-    X = cbind(rep(1, length(common.ind)), nearest.geno[common.ind,]),
+    X = nearest.geno[common.ind,],
     ln_prior_c = "reactive",
     options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))
 
