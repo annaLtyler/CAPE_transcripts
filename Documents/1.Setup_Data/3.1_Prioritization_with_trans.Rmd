@@ -27,7 +27,7 @@ tissue.name = args[1]
 n.cores <- as.numeric(args[2])
 
 if(is.na(tissue.name)){
-    tissue.name = "Adipose"
+    tissue.name = "Liver"
     n.cores = 4
 }
 
@@ -46,9 +46,7 @@ qtl.chr = 11
 
 exp.name = paste0(tissue.name, "_Chr", qtl.chr, "_Trans")
 project.name = "Chr11_Trans"
-
 Mb.buffer = 1
-n.training.genes <- 500
 ```
 
 ```{r load_code}
@@ -111,7 +109,7 @@ get_plot_idx <- function(map, chr, Mb){
 
 ```{r trait_scan, fig.width = 8, fig.height = 5}
 trait.scan <- scan1(genoprobs, adj.pheno[,trait.name], kinship = K)
-peak.table <- find_peaks(trait.scan, map = map, threshold = 6, drop = 6)
+peak.table <- find_peaks(trait.scan, map = map, threshold = 6, drop = 3)
 chr.locale <- which(peak.table[,"chr"] == qtl.chr)
 chr.peak <- peak.table[chr.locale,]
 qtl.start <- (floor(chr.peak[,"ci_lo"])-Mb.buffer)*1e6
@@ -138,6 +136,22 @@ trans.idx <- Reduce("intersect", list(chr.idx, above.min, below.max))
 trans.table <- eqtl.table[trans.idx,]
 ```
 
+We removed the transcripts that are located in the trait QTL.
+We don't want to spike our gene list with local genes.
+
+```{r remove_cis}
+chr.locale <- which(gene.table[[4]] == chr.peak[,"chr"])
+above.min <- which(gene.table[[5]]*10^6 >= qtl.start)
+below.max <- which(gene.table[[6]]*10^6 <= qtl.end)
+cis.idx <- Reduce("intersect", list(chr.locale, above.min, below.max))
+cis.transcripts <- unique(gene.table[cis.idx,][[1]])
+
+cis.locale <- which(trans.table[[1]] %in% cis.transcripts)
+trans.locale <- setdiff(1:nrow(trans.table), cis.locale)
+trans.table <- trans.table[trans.locale,]
+```
+
+There are `r nrow(trans.table)` trans targets in this locus.
 The functional enrichment of the trans-regulated genes
 is shown below.
 
@@ -157,22 +171,6 @@ allele.effects <- as.matrix(trans.table[,LETTERS[1:8]])
 pheatmap(allele.effects, scale = "row")
 #allele.cor <- cor(t(allele.effects))
 #pheatmap(allele.cor)
-
-```
-
-We removed the transcripts that are located in the trait QTL.
-We don't want to spike our gene list with local genes.
-
-```{r remove_cis}
-chr.locale <- which(gene.table[[4]] == chr.peak[,"chr"])
-above.min <- which(gene.table[[5]]*10^6 >= qtl.start)
-below.max <- which(gene.table[[6]]*10^6 <= qtl.end)
-cis.idx <- Reduce("intersect", list(chr.locale, above.min, below.max))
-cis.transcripts <- unique(gene.table[cis.idx,][[1]])
-
-cis.locale <- which(trans.table[[1]] %in% cis.transcripts)
-trans.locale <- setdiff(1:nrow(trans.table), cis.locale)
-trans.table <- trans.table[trans.locale,]
 ```
 
 The figure below shows the first four PCs of the trans-regulated
@@ -370,12 +368,12 @@ a candidate gene is a mediator of either the trans band
 or the trait.
 
 ```{r check_gene, eval = FALSE}
-library(bmediatR)
 
 gene.name = "Heatr6"
 gene.name = "Trim25"
 gene.name = "Rpl19"
 gene.name = "Thra"
+gene.name = "Tlcd1"
 
 gene.idx <- which(gene.table$symbol == gene.name)
 gene.id <- gene.table$gene.id[gene.idx]
@@ -385,6 +383,8 @@ plot.with.model(adj.pheno[,trait.name], adj.expr[,gene.id], xlab = gene.name,
 
 nearest.marker <- gene.table$nearest.marker.id[gene.idx]
 nearest.geno <- genoprobs[[11]][rownames(adj.expr),,nearest.marker]
+
+library(bmediatR)
 
 trait_med <- bmediatR(
     y = adj.pheno[,trait.name,drop=FALSE], 
@@ -417,15 +417,22 @@ plot_posterior_bar(trans_med, mediator_id = gene.id, relabel_x = gene.name,
 nearest.marker <- find_marker(map, chr = peak.table[1,"chr"], pos = peak.table[1,"pos"]) 
 nearest.geno <- genoprobs[[11]][rownames(adj.expr),,nearest.marker]
 
-pc = 1
+pc = 2
+common.ind <- Reduce("intersect", list(rownames(adj.pheno), rownames(trans.pc), rownames(genoprobs[[1]])))
 trans_trait_med <- bmediatR(
-    y = adj.pheno[rownames(trans.pc),trait.name,drop=FALSE], 
-    M = trans.pc[,pc,drop=FALSE],
-    X = cbind(rep(1, nrow(nearest.geno)), nearest.geno),
+    y = adj.pheno[common.ind,trait.name,drop=FALSE], 
+    M = trans.pc[common.ind,1,drop=FALSE],
+    X = cbind(rep(1, length(common.ind)), nearest.geno[common.ind,]),
     ln_prior_c = "reactive",
     options_X = list(sum_to_zero = TRUE, center = FALSE, scale = FALSE))
 
 plot_posterior_bar(trans_trait_med, mediator_id = paste0("PC", pc), 
     relabel_x = paste("Trans band PC", pc), 
     main = "Trans Band Mediation of Peak Marker on Trait")
+
+post <- get_posterior(trans_trait_med, mediator_id = paste0("PC", pc), 
+    relabel_x = paste("Trans band PC", pc), 
+    main = "Trans Band Mediation of Peak Marker on Trait")
+par(mar = c(10, 4, 4, 4))
+barplot(post[,"post_p"], names = post[,"model"], las = 2)
 ```
