@@ -26,7 +26,7 @@ args <- commandArgs(trailingOnly=T)
 tissue.name = args[1]
 
 if(is.na(tissue.name)){
-    tissue.name = "Adipose"
+    tissue.name = "Islet"
 }
 
 #delete_previous <- TRUE
@@ -142,48 +142,53 @@ cis.transcripts <- unique(gene.table[cis.idx,][[1]])
 cis.locale <- which(trans.table[[1]] %in% cis.transcripts)
 trans.locale <- setdiff(1:nrow(trans.table), cis.locale)
 trans.table <- trans.table[trans.locale,]
-
-trans.id <- unique(trans.table[[1]])
-trans.info <- gene.table[match(trans.id, gene.table[[1]]),]
 ```
 
-The animals cluster into two distinct groups based on their
-expression of these genes. Each dot represents a single 
-individual. They are colored by sex to show that sex 
-is not the major factor determining differences in 
-expression.
+In the adipose data and in skeletal muscle, we see very strange
+clustering of individuals based on gene expression. It turns out
+that this clustering is based on expression of multiple pseudogenes.
+
+If we restrict the genes to only those with entrez IDs, we eliminate
+this clustering.
 
 ```{r trans_expr}
+trans.id <- unique(trans.table[[1]])
+trans.info <- gene.table[match(trans.id, gene.table[[1]]),]
 trans.expr <- adj.expr[,trans.id] 
 matched.mats <- get.xz(trans.expr, adj.pheno)
-trans.decomp <- plot.decomp(matched.mats$X, plot.results = FALSE)
+trans.decomp <- plot.decomp(matched.mats$X, pc = 6)
+#pheatmap(matched.mats$X)
 
+entrezgene <- gconvert(trans.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
+triage.id <- entrezgene[,"input"]
 
+trans.expr <- adj.expr[,triage.id] 
+matched.mats <- get.xz(trans.expr, adj.pheno)
+trans.decomp <- plot.decomp(matched.mats$X, pc = 6)
 ```
 
-The second PC of expression is correlated with `r trait.name`.
+
+The first PC of expression is correlated with `r trait.name`.
+The second is too, to a much lesser extent.
 
 ```{r pc_trait_cor, fig.width = 8, fig.height = 4}
-if(is.interactive){quartz(width = 8, height = 4)}
-par(mfrow = c(1,2))
+if(is.interactive){quartz(width = 8, height = 8)}
+par(mfrow = c(2,3))
 for(i in 1:ncol(trans.decomp$u)){
     plot.with.model(trans.decomp$u[,i], matched.mats$Z[,trait.name], 
-    xlab = paste("PC", i), ylab = trait.name)
+    xlab = paste("PC", i), ylab = trait.name, main = paste("PC", i))
 }
 ```
 
 The transcripts do not have any particular clustering.
-The genes with wild PC1 scores are ribosomal pseudogenes.
+There are still some outliers, but these are all real 
+genes now.
 
 ```{r expr_decomp}
 plot(trans.decomp$v, xlab = "PC1", ylab = "PC2", pch = 16)
-abline(v = -0.1)
-colnames(matched.mats$X)[which(trans.decomp$v[,1] < -0.1)]
-```
-
-```{r trans_pos}
-trans.pos <- gene.table[[5]][match(colnames(matched.mats$X), gene.table[[1]])]
-plot(trans.pos, trans.decomp$v[,2])
+#colnames(matched.mats$X)[which(trans.decomp$v[,2] < -0.6)]
+#cat(colnames(matched.mats$X)[which(trans.decomp$v[,1] > 0.1)], sep = "\n")
+#cat(colnames(matched.mats$X)[which(trans.decomp$v[,1] < -0.1)], sep = "\n")
 ```
 
 ```{r download_net, eval = TRUE, echo = FALSE}
@@ -204,13 +209,6 @@ net.loaded <- as.logical(length(which(all.var == "tissue.net")))
 if(!net.loaded){
     tissue.net <- readRDS(net.file)
 }
-```
-
-Get entrez gene IDs for genes we will train on. This is either 
-all genes in the network, or the 500 with the largest magnitude loadings.
-
-```{r entrez}
-entrezgene <- gconvert(trans.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
 ```
 
 ## Setup Positive-Labeled Gene Features
@@ -297,7 +295,7 @@ par(xpd = TRUE)
 
 ```
 
-Sum of scores across all traits.
+Sum of scores across all tissues.
 
 ```{r plot_sum, error = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5}
 score.sum <- rowSums(-log10(fp.mat), na.rm = TRUE)
