@@ -27,7 +27,7 @@ tissue.name = args[1]
 n.cores <- as.numeric(args[2])
 
 if(is.na(tissue.name)){
-    tissue.name = "Adipose"
+    tissue.name = "Islet"
     n.cores = 4
 }
 
@@ -468,7 +468,7 @@ plot_posterior_bar(trans_trait_med, mediator_id = paste0("PC", pc),
 #barplot(post[,"post_p"], names = post[,"model"], las = 2)
 ```
 
-```{r bulk_med}
+```{r bulk_med, echo = FALSE, message = FALSE, results = "hide"}
 
 med <- function(y, M, X, model.type = "reactive"){
 
@@ -480,8 +480,6 @@ med <- function(y, M, X, model.type = "reactive"){
     names(post.prob) <- post[,"model"]
     return(post.prob)
 }
-
-sink(file.path(results.dir, "mediator_log.txt"))
 
 trans.pc <- trans.decomp$u
 rownames(trans.pc) <- rownames(matched.mats$X)
@@ -527,8 +525,6 @@ for(i in 1:length(cis.transcripts)){
 }
 colnames(all.cis.trait.med) <- names(med.post)
 #pheatmap(all.cis.trait.med, cluster_cols = FALSE)
-sink()
-
 
 #comp.trait.med <- which(all.cis.trait.med[,1] >= 0.8)
 #cat(names(comp.med), sep = "\n")
@@ -543,7 +539,6 @@ The following plot shows the posterior probabilites of each local
 gene mediating the trait plotted against the posterior probability 
 of each local gene mediating the transcript. The top ranked genes
 are labeled.
-
 
 ```{r med_against}
 top.genes <- Reduce("union", list(rownames(ordered.med)[1:10], names(which(all.cis.trans.med[,1] > 0.8)), names(which(all.cis.trait.med[,1] > 0.8))))
@@ -571,4 +566,23 @@ plot(gene.pos, all.cis.trait.med[,1], main = "Trait mediators",
 text(gene.pos, all.cis.trait.med[,1], cis.names, cex = 0.5, pos = 4)
 abline(v = peak.table[1,"pos"], h = 0.8)
 
+```
+
+## Mediation vs. TRiAGE
+
+Finally, we compare the TRiAGE prioritization with the mediation results.
+
+```{r compare}
+
+common.genes <- intersect(rownames(fp.mat), rownames(all.cis.trans.med))
+
+plot(-log10(fp.mat[common.genes,1]), all.cis.trans.med[common.genes,1],
+    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trans band")
+abline(v = 1, h = 0.8)
+top.genes <- intersect(which(-log10(fp.mat[common.genes,1]) > 1), which(all.cis.trans.med[common.genes,1] > 0.8))
+text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trans.med[common.genes[top.genes],1],
+    labels = common.genes[top.genes])
+
+all.cis.trans.med[,1]
+all.cis.trait.med[,1]
 ```

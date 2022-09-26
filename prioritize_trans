@@ -14,6 +14,6 @@ cd $SLURM_SUBMIT_DIR
 
 module load singularity
 
-singularity exec ../../../Containers/CCA_transcripts.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "3.1_Prioritization_with_trans.Rmd"))' --args "$tissue_name" "$n_cores"
+singularity exec ../../../Containers/islet_cape.sif R -e 'rmarkdown::render(here::here("Documents", "1.Setup_Data", "3.1_Prioritization_with_trans.Rmd"))' --args "$tissue_name" "$n_cores"
 wait
 mv 3.1_Prioritization_with_trans.html 3.1_Prioritization_with_trans_$tissue_name.html
