@@ -71,6 +71,7 @@ needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatma
 load_libraries(needed.libraries, personal.library = TRUE)
 
 devtools::install_github("wesleycrouse/bmediatR", build_vignettes = TRUE)
+library(bmediatR)
 ```
 
 
