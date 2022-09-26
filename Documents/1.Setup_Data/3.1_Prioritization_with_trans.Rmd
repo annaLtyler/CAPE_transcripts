@@ -63,13 +63,14 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 ```
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
-devtools::install_github("wesleycrouse/bmediatR", build_vignettes = TRUE)
 
 needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
 "e1071", "parallel", "doParallel", "gprofiler2", "DT", "qtl2", "XML", "RCurl", 
-"R.utils", "bmediatR") 
+"R.utils", "devtools") 
 
 load_libraries(needed.libraries, personal.library = TRUE)
+
+devtools::install_github("wesleycrouse/bmediatR", build_vignettes = TRUE)
 ```
 
 
