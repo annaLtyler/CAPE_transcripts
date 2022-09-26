@@ -64,7 +64,8 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
-"e1071", "parallel", "doParallel", "gprofiler2", "DT", "qtl2", "XML", "RCurl", "R.utils") 
+"e1071", "parallel", "doParallel", "gprofiler2", "DT", "qtl2", "XML", "RCurl", 
+"R.utils", "bmediatR") 
 
 load_libraries(needed.libraries, personal.library = TRUE)
 ```
@@ -400,7 +401,6 @@ plot.with.model(adj.pheno[,trait.name], adj.expr[,gene.id], xlab = gene.name,
 nearest.marker <- gene.table$nearest.marker.id[gene.idx]
 nearest.geno <- genoprobs[[11]][rownames(adj.expr),,nearest.marker]
 
-library(bmediatR)
 
 trait_med <- bmediatR(
     y = adj.pheno[,trait.name,drop=FALSE], 
@@ -472,6 +472,15 @@ med <- function(y, M, X, model.type = "reactive"){
     return(post.prob)
 }
 
+sink(file.path(results.dir, "mediator_log.txt"))
+
+trans.pc <- trans.decomp$u
+rownames(trans.pc) <- rownames(matched.mats$X)
+colnames(trans.pc) <- paste0("PC", 1:ncol(trans.pc))
+
+common.ind <- Reduce("intersect", list(rownames(trans.pc), 
+    rownames(genoprobs[[1]]), rownames(adj.expr)))
+
 #mediate the trans band with each of the cis transcripts using bmediatR
 cis.names <- gene.table$symbol[match(cis.transcripts, gene.table$gene.id)]
 all.cis.trans.med <- matrix(NA, ncol = 6, nrow = length(cis.transcripts))
@@ -486,7 +495,7 @@ for(i in 1:length(cis.transcripts)){
     all.cis.trans.med[i,] <- med.post
 }
 colnames(all.cis.trans.med) <- names(med.post)
-pheatmap(all.cis.trans.med, cluster_cols = FALSE, show_rownames = FALSE)
+#pheatmap(all.cis.trans.med, cluster_cols = FALSE, show_rownames = FALSE)
 
 #comp.trans.med <- which(all.cis.trans.med[,1] >= 0.8)
 #cat(names(comp.med), sep = "\n")
@@ -506,7 +515,9 @@ for(i in 1:length(cis.transcripts)){
     all.cis.trait.med[i,] <- med.post
 }
 colnames(all.cis.trait.med) <- names(med.post)
-pheatmap(all.cis.trait.med, cluster_cols = FALSE)
+#pheatmap(all.cis.trait.med, cluster_cols = FALSE)
+sink()
+
 
 #comp.trait.med <- which(all.cis.trait.med[,1] >= 0.8)
 #cat(names(comp.med), sep = "\n")
