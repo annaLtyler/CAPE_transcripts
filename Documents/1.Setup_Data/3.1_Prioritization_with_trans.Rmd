@@ -66,9 +66,17 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
 "e1071", "parallel", "doParallel", "gprofiler2", "DT", "qtl2", "XML", "RCurl", 
-"R.utils", "bmediatR") 
+"R.utils") 
 
 load_libraries(needed.libraries, personal.library = TRUE)
+
+check_bmediatR <- require("bmediatR")
+
+if(!check_bmediatR){
+    devtools::install_github("wesleycrouse/bmediatR", build_vignettes = TRUE)
+    library(bmediatR)
+}
+
 ```
 
 
