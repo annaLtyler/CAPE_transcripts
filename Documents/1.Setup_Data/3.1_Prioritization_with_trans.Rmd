@@ -64,7 +64,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 
-needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
+needed.libraries <- c("httr", "Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
 "e1071", "parallel", "doParallel", "gprofiler2", "DT", "qtl2", "XML", "RCurl", 
 "R.utils") 
 
@@ -577,12 +577,24 @@ Finally, we compare the TRiAGE prioritization with the mediation results.
 common.genes <- intersect(rownames(fp.mat), rownames(all.cis.trans.med))
 
 plot(-log10(fp.mat[common.genes,1]), all.cis.trans.med[common.genes,1],
-    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trans band")
+    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trans band",
+    ylim = c(0,1), main = "Functional Score v. Trans Band Mediation")
 abline(v = 1, h = 0.8)
 top.genes <- intersect(which(-log10(fp.mat[common.genes,1]) > 1), which(all.cis.trans.med[common.genes,1] > 0.8))
-text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trans.med[common.genes[top.genes],1],
-    labels = common.genes[top.genes])
+if(length(top.genes) > 0){
+    text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trans.med[common.genes[top.genes],1],
+        labels = common.genes[top.genes], pos = 4)
+}
 
-all.cis.trans.med[,1]
-all.cis.trait.med[,1]
+
+plot(-log10(fp.mat[common.genes,1]), all.cis.trait.med[common.genes,1],
+    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trait",
+    ylim = c(0,1), main = "Functional Score v. Trait Mediation")
+abline(v = 1, h = 0.8)
+top.genes <- intersect(which(-log10(fp.mat[common.genes,1]) > 1), which(all.cis.trait.med[common.genes,1] > 0.8))
+if(length(top.genes) > 0){
+    text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trans.med[common.genes[top.genes],1],
+        labels = common.genes[top.genes], pos = 4)
+}
+
 ```
