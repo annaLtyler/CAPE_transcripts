@@ -34,5 +34,5 @@ R --slave -e 'install.packages("R.utils",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("RCurl",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("remotes",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("XML",repos="https://cran.rstudio.com/")'
-["installGithub.r", "wesleycrouse/bmediatR@28a47c71a0c2b9d0f1b76ca2e5d9911808ab25fe"]
+R --slave -e 'devtools::install_github("wesleycrouse/bmediatR", build_vignettes = TRUE)'
 exec /bin/bash R "$@"
