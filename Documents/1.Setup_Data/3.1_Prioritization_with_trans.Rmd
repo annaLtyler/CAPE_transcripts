@@ -27,7 +27,7 @@ tissue.name = args[1]
 n.cores <- as.numeric(args[2])
 
 if(is.na(tissue.name)){
-    tissue.name = "Islet"
+    tissue.name = "Liver"
     n.cores = 4
 }
 
@@ -73,7 +73,8 @@ load_libraries(needed.libraries, personal.library = TRUE)
 check_bmediatR <- require("bmediatR")
 
 if(!check_bmediatR){
-    devtools::install_github("wesleycrouse/bmediatR", build_vignettes = TRUE)
+    lib.loc <- Sys.getenv("R_LIBS_USER")
+    devtools::install_github("wesleycrouse/bmediatR", lib = lib.loc, build_vignettes = TRUE)
     library(bmediatR)
 }
 
