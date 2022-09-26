@@ -74,7 +74,7 @@ check_bmediatR <- require("bmediatR")
 
 if(!check_bmediatR){
     lib.loc <- Sys.getenv("R_LIBS_USER")
-    devtools::install_github("wesleycrouse/bmediatR", lib = lib.loc, build_vignettes = TRUE)
+    devtools::install_github("wesleycrouse/bmediatR", lib = lib.loc, build_vignettes = FALSE)
     library(bmediatR)
 }
 
@@ -557,7 +557,7 @@ of 0.8 is marked with a horizontal line.
 ```{r trait_by_pos, fig.width = 10, fig.height = 6}
 gene.pos <- gene.table$start[match(cis.names, gene.table$symbol)]
 
-plot(gene.pos, all.cis.trans.med[,1], main = "Tran-band mediators", 
+plot(gene.pos, all.cis.trans.med[,1], main = "Trans-band mediators", 
     ylab = "Post. Prob. of Complete Mediation")
 text(gene.pos, all.cis.trans.med[,1], cis.names, cex = 0.5, pos = 4)
 abline(v = peak.table[1,"pos"], h = 0.8)
@@ -581,7 +581,7 @@ plot(-log10(fp.mat[common.genes,1]), all.cis.trans.med[common.genes,1],
     xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trans band",
     ylim = c(0,1), main = "Functional Score v. Trans Band Mediation")
 abline(v = 1, h = 0.8)
-top.genes <- intersect(which(-log10(fp.mat[common.genes,1]) > 1), which(all.cis.trans.med[common.genes,1] > 0.8))
+top.genes <- which(all.cis.trans.med[common.genes,1] > 0.8)
 if(length(top.genes) > 0){
     text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trans.med[common.genes[top.genes],1],
         labels = common.genes[top.genes], pos = 4)
@@ -592,9 +592,9 @@ plot(-log10(fp.mat[common.genes,1]), all.cis.trait.med[common.genes,1],
     xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trait",
     ylim = c(0,1), main = "Functional Score v. Trait Mediation")
 abline(v = 1, h = 0.8)
-top.genes <- intersect(which(-log10(fp.mat[common.genes,1]) > 1), which(all.cis.trait.med[common.genes,1] > 0.8))
+top.genes <- which(all.cis.trait.med[common.genes,1] > 0.8)
 if(length(top.genes) > 0){
-    text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trans.med[common.genes[top.genes],1],
+    text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trait.med[common.genes[top.genes],1],
         labels = common.genes[top.genes], pos = 4)
 }
 
