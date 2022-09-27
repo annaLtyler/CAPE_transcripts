@@ -588,7 +588,9 @@ pheatmap(all.cis.trait.med, cluster_cols = FALSE)
 ```
 
 ```{r rank_genes_for_both}
-med.ranks <- rank.2D(cbind(all.cis.trans.med[,1,drop=FALSE], all.cis.trait.med[,1,drop=FALSE]))
+expr.med.prob <- rowSums(all.cis.expr.med[,c("complete med", "partial med")])
+trait.med.prob <- rowSums(all.cis.trait.med[,c("complete med", "partial med")])
+med.ranks <- rank.2D(cbind(expr.med.prob, trait.med.prob))
 ordered.med <- med.ranks[order(med.ranks[,1]),1,drop=FALSE]
 ```
 
@@ -598,11 +600,11 @@ of each local gene mediating the transcript. The top ranked genes
 are labeled.
 
 ```{r med_against}
-top.genes <- Reduce("union", list(rownames(ordered.med)[1:10], names(which(all.cis.trans.med[,1] > 0.8)), names(which(all.cis.trait.med[,1] > 0.8))))
+top.genes <- Reduce("union", list(rownames(ordered.med)[1:10], names(which(expr.med.prob > 0.8)), names(which(trait.med.prob > 0.8))))
 
-plot(all.cis.trans.med[,1], all.cis.trait.med[,1], xlim = c(0, 1), ylim = c(0, 1.05),
-    xlab = "Post. Prob. of Mediating Trans Band", ylab = "Post. Prob. of mediating Trait")
-text(all.cis.trans.med[top.genes,1], all.cis.trait.med[top.genes,1], labels = top.genes, pos = 3)
+plot(expr.med.prob, trait.med.prob, xlim = c(0, 1), ylim = c(0, 1.05),
+    xlab = "Post. Prob. of Mediating Expression", ylab = "Post. Prob. of mediating Trait")
+text(expr.med.prob, trait.med.prob, labels = top.genes, pos = 3)
 ```
 
 The following plots shows the posterior probabilities of mediating either
@@ -613,14 +615,14 @@ of 0.8 is marked with a horizontal line.
 ```{r trait_by_pos, fig.width = 10, fig.height = 6}
 gene.pos <- gene.table$start[match(cis.names, gene.table$symbol)]
 
-plot(gene.pos, all.cis.trans.med[,1], main = "Trans-band mediators", 
+plot(gene.pos, expr.med.prob, main = "Expression mediators", 
     ylab = "Post. Prob. of Complete Mediation")
-text(gene.pos, all.cis.trans.med[,1], cis.names, cex = 0.5, pos = 4)
+text(gene.pos, expr.med.prob, cis.names, cex = 0.5, pos = 4)
 abline(v = peak.table[1,"pos"], h = 0.8)
 
-plot(gene.pos, all.cis.trait.med[,1], main = "Trait mediators",
+plot(gene.pos, trait.med.prob, main = "Trait mediators",
     ylab = "Post. Prob. of Complete Mediation")
-text(gene.pos, all.cis.trait.med[,1], cis.names, cex = 0.5, pos = 4)
+text(gene.pos, trait.med.prob, cis.names, cex = 0.5, pos = 4)
 abline(v = peak.table[1,"pos"], h = 0.8)
 
 ```
@@ -633,24 +635,24 @@ Finally, we compare the TRiAGE prioritization with the mediation results.
 
 common.genes <- intersect(rownames(fp.mat), rownames(all.cis.trans.med))
 
-plot(-log10(fp.mat[common.genes,1]), all.cis.trans.med[common.genes,1],
-    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trans band",
-    ylim = c(0,1), main = "Functional Score v. Trans Band Mediation")
+plot(-log10(fp.mat[common.genes,1]), expr.med.prob[common.genes],
+    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Expression",
+    ylim = c(0,1), main = "Functional Score v. Expression Mediation")
 abline(v = 1, h = 0.8)
-top.genes <- which(all.cis.trans.med[common.genes,1] > 0.8)
+top.genes <- which(expr.med.prob[common.genes] > 0.8)
 if(length(top.genes) > 0){
-    text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trans.med[common.genes[top.genes],1],
+    text(x = -log10(fp.mat[common.genes[top.genes],1]), expr.med.prob[common.genes[top.genes]],
         labels = common.genes[top.genes], pos = 4)
 }
 
 
-plot(-log10(fp.mat[common.genes,1]), all.cis.trait.med[common.genes,1],
+plot(-log10(fp.mat[common.genes,1]), trait.med.prob[common.genes],
     xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trait",
     ylim = c(0,1), main = "Functional Score v. Trait Mediation")
 abline(v = 1, h = 0.8)
-top.genes <- which(all.cis.trait.med[common.genes,1] > 0.8)
+top.genes <- which(trait.med.prob[common.genes] > 0.8)
 if(length(top.genes) > 0){
-    text(x = -log10(fp.mat[common.genes[top.genes],1]), all.cis.trait.med[common.genes[top.genes],1],
+    text(x = -log10(fp.mat[common.genes[top.genes],1]), trait.med.prob[common.genes[top.genes]],
         labels = common.genes[top.genes], pos = 4)
 }
 
