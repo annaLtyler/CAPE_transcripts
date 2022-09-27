@@ -27,11 +27,11 @@ tissue.name = args[1]
 n.cores <- as.numeric(args[2])
 training.set <- args[3]
 
-if(is.na(tissue.name)){
+if(length(tissue.name) == 0){
     tissue.name = "Adipose"
     n.cores = 4
-    training.set = "Trans-band"
-    #training.set = "SOM"
+    #training.set = "Trans-band"
+    training.set = "SOM"
 }
 
 trait.name = "Ins_tAUC"
@@ -84,7 +84,12 @@ if(!check_bmediatR){
 
 
 ```{r load_data}
-tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+all.var <- ls()
+data.loaded <- as.logical(length(which(all.var == "dataset.DO.Cube.Adipose")))
+
+if(!data.loaded){
+    tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+}
 traits <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsAsFactors = FALSE))
 num.traits <- apply(traits[,c(12:(ncol(traits)-1))], 2, as.numeric)
 rownames(num.traits) <- traits[,1]
@@ -137,10 +142,16 @@ abline(v = c(qtl.start.x, qtl.end.x), col = "red", lwd = 2)
 The figure below shows a count of transcripts affected 
 by loci across the genome.
 
-```{r cis_trans}
+```{r cis_trans, eval = FALSE}
+split.markers <- strsplit(eqtl.table[[2]], "_")
+eqtl.chr <- sapply(split.markers, function(x) x[1])
+eqtl.pos <- as.numeric(sapply(split.markers, function(x) x[2]))
+eqtl.info <- cbind(eqtl.table$gene.id, eqtl.chr, eqtl.pos, eqtl.table$lod)
+transcript.info <- cbind(gene.table$gene.id, gene.table$chr, gene.table$start)
 
-plot.cistrans.table(eqtl.table = as.matrix(eqtl.table), 
-    transcript.pos.table = as.matrix(gene.table), map = map)
+pdf("/Desktop/test.pdf")
+plot.cistrans.table(eqtl.info, transcript.info, map = map)
+dev.off()
 ```
 
 For the trans band prioritization, we identified all transcripts 
@@ -164,13 +175,15 @@ if(training.set == "Trans-band"){
     query.table <- eqtl.table[trans.idx,]
 }
 if(training.set == "SOM"){
-    fdr.thresh = 0.1
+    #fdr.thresh = 0.1
+    pval.thresh = 0.01
     diff.genes <- read.csv(here("Results", "SOM", paste0("DO_", tissue.name, " - Results"), 
         "Summary Sheets - Differences", "CSV Sheets", "Gene Lists - Global", "down.vs.up.csv"), 
         skip = 17)
     pval <- as.numeric(sapply(strsplit(diff.genes[,"p.value"], " "), function(x) x[1]))
     fdr <- p.adjust(pval, "fdr")
-    gene.id <- diff.genes[which(fdr <= fdr.thresh),"ID"]
+    #gene.id <- diff.genes[which(fdr <= fdr.thresh),"ID"]
+    gene.id <- diff.genes[which(pval <= pval.thresh),"ID"]
     trans.idx <- match(gene.id, eqtl.table[[1]])
     trans.idx <- trans.idx[which(!is.na(trans.idx))]
     query.table <- eqtl.table[trans.idx,]
@@ -196,6 +209,7 @@ There are `r nrow(query.table)` training genes.
 The positions of eQTL markers for these genes is shown below.
 
 ```{r eqtl, width = 10, height = 5}
+
 split.marker <- strsplit(query.table$marker.id, "_")
 if(training.set == "Trans-band"){
     marker.pos <- as.numeric(sapply(split.marker, function(x) x[2]))
