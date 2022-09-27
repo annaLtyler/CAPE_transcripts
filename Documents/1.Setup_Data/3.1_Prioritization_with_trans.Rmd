@@ -25,7 +25,7 @@ The network used is the same as the specified tissue.
 args <- commandArgs(trailingOnly=T)
 tissue.name = args[1]
 n.cores <- as.numeric(args[2])
-traning.set <- args[3]
+training.set <- args[3]
 
 if(is.na(tissue.name)){
     tissue.name = "Adipose"
