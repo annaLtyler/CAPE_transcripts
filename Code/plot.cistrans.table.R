@@ -29,15 +29,15 @@ plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NUL
 	chr.max <- sapply(map, function(x) max(x))
 	chr.sum <- sum(chr.max)
 	
+	chr.max.coord <- cumsum(chr.max)
+	chr.min.coord <- chr.max.coord - chr.max
+
 	if(!add){
 		plot.max <- sum(chr.max)
 		label.pos <- plot.max*-0.02
 
 		plot.new()
 		plot.window(xlim = c(0, plot.max), ylim = c(0, plot.max))
-
-        chr.max.coord <- cumsum(chr.max)
-        chr.min.coord <- chr.max.coord - chr.max
 
 		#add chromosome boundaries and labels
 		par(xpd = TRUE)
@@ -82,11 +82,14 @@ plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NUL
         return(rel.x)
     }
 
+	#find the relative position of each eQTL
     eqtl.x <- apply(eqtl.table, 1, function(x) rel.pos(x[2], as.numeric(x[3])))
     
-    #build a transcript position table for the eQTL
+    #build a table to hold the transcription 
+	#position for each transcript in the eQTL table
     eqtl.transcripts <- t(apply(eqtl.table, 1, function(x) transcript.pos.table[which(transcript.pos.table[,1] == x[1]),]))
-    
+	
+	#get relative positions for these too.
 	transcript.y <- apply(eqtl.transcripts, 1, function(x) rel.pos(x[2], as.numeric(x[3])))
     
     #we won't get positions for anything on chromosomes Y or MT
@@ -95,6 +98,7 @@ plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NUL
     transcript.y <- unlist(transcript.y[has.position])
     all.col <- col[has.position]
 
+    #plot(eqtl.x, transcript.y, col = all.col, pch = 16, cex = cex)
     points(eqtl.x, transcript.y, col = all.col, pch = 16, cex = cex)
 
 	coord.table <- cbind(eqtl.x, transcript.y, all.col)

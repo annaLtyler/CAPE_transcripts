@@ -27,7 +27,7 @@ tissue.name = args[1]
 n.cores <- as.numeric(args[2])
 training.set <- args[3]
 
-if(length(tissue.name) == 0){
+if(is.na(tissue.name) || length(tissue.name) == 0){
     tissue.name = "Adipose"
     n.cores = 4
     #training.set = "Trans-band"
@@ -139,20 +139,60 @@ qtl.end.x <- get_plot_idx(map, chr = 11, Mb = qtl.end/10^6)
 abline(v = c(qtl.start.x, qtl.end.x), col = "red", lwd = 2)
 ```
 
-The figure below shows a count of transcripts affected 
-by loci across the genome.
+## cis-trans eQTL
 
-```{r cis_trans, eval = FALSE}
+The figure below shows the structure of the cis and
+trans eQTL by loci across the genome.
+
+```{r cis_trans, fig.width = 10, fig.height = 7}
 split.markers <- strsplit(eqtl.table[[2]], "_")
 eqtl.chr <- sapply(split.markers, function(x) x[1])
-eqtl.pos <- as.numeric(sapply(split.markers, function(x) x[2]))
+eqtl.pos <- as.numeric(sapply(split.markers, function(x) x[2]))/1e6
 eqtl.info <- cbind(eqtl.table$gene.id, eqtl.chr, eqtl.pos, eqtl.table$lod)
-transcript.info <- cbind(gene.table$gene.id, gene.table$chr, gene.table$start)
 
-pdf("/Desktop/test.pdf")
+transcript.info <- cbind(gene.table$gene.id, gene.table$chr, gene.table$start)
+#pdf("~/Desktop/test.pdf")
 plot.cistrans.table(eqtl.info, transcript.info, map = map)
-dev.off()
+#dev.off()
 ```
+
+## eQTL counts {.tabset .tabset-fade .tabset-pills}
+
+The following plot shows counts of eQTL across the genome. 
+
+```{r eqtl_count, results = "asis"}
+eqtl.chr <- eqtl.info[,2]
+eqtl.chr[which(eqtl.chr == "X")] <- 20
+mb.window = 4
+mb.gap = 2
+u_chr <- sort(unique(as.numeric(eqtl.chr)))
+eqtl.counts <- vector(mode = "list", length = length(u_chr))
+eqtl.position <- vector(mode = "list", length = length(u_chr))
+for(ch in 1:length(u_chr)){
+    chr.idx <- which(eqtl.chr == u_chr[ch])
+    chr.table <- eqtl.info[chr.idx,]
+    sorted.table <- chr.table[order(as.numeric(chr.table[,3]), decreasing = FALSE),]
+    num.pos <- as.numeric(sorted.table[,3])
+    pos.bins <- sliding.window.el(num.pos, window.size = mb.window, gap.size = 2)
+    eqtl.count <- sapply(pos.bins, function(x) length(intersect(which(num.pos >= min(x)), which(num.pos < max(x)))))
+    pos.mid <- sapply(pos.bins, mean)
+    eqtl.counts[[ch]] <- eqtl.count
+    eqtl.position[[ch]] <- pos.mid
+}
+max.count <- max(unlist(eqtl.counts))
+
+for(ch in 1:length(eqtl.counts)){
+    cat("### Chr", ch, "\n")
+    if(is.interactive){quartz(width = 10, height = 6)}
+    plot(eqtl.position[[ch]], eqtl.counts[[ch]], ylim = c(0, max.count),
+    main = paste("Chromosome", ch), type = "h", lwd = 3, 
+    xlab = paste("Chr", ch, "Position (Mb)"), ylab = "eQTL count")
+    cat("\n\n")
+}
+
+```
+
+## Transcript Training Set Identificaction
 
 For the trans band prioritization, we identified all transcripts 
 that mapped to this interval using the data in the QTLviewer object.
