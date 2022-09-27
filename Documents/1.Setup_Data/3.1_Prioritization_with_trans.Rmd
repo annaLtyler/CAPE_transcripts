@@ -68,7 +68,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 needed.libraries <- c("httr", "Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
 "e1071", "parallel", "doParallel", "gprofiler2", "DT", "qtl2", "XML", "RCurl", 
-"R.utils") 
+"R.utils", "plotly") 
 
 load_libraries(needed.libraries, personal.library = TRUE)
 
@@ -694,29 +694,45 @@ abline(v = peak.table[1,"pos"], h = 0.8)
 
 Finally, we compare the TRiAGE prioritization with the mediation results.
 
-```{r compare}
+```{r fp_v_expr}
 
 common.genes <- intersect(rownames(fp.mat), rownames(all.cis.expr.med))
+col <- colors.from.values(ordered.med[common.genes,1], grad.dir = "low")
 
-plot(-log10(fp.mat[common.genes,1]), expr.med.prob[common.genes],
-    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Expression",
-    ylim = c(0,1), main = "Functional Score v. Expression Mediation")
-abline(v = 1, h = 0.8)
-top.genes <- which(expr.med.prob[common.genes] > 0.8)
-if(length(top.genes) > 0){
-    text(x = -log10(fp.mat[common.genes[top.genes],1]), expr.med.prob[common.genes[top.genes]],
-        labels = common.genes[top.genes], pos = 4)
-}
+df <- data.frame("Functional_Score" = -log10(fp.mat[common.genes,1]), 
+    "Post_Prob" = expr.med.prob[common.genes], "name" = common.genes, "color" = col)
+pl <- plot_ly(df, x = ~Functional_Score, y = ~Post_Prob, colors = col)
+#pl <- add_markers(pl, text = ~name)
+pl <- add_text(pl, x = ~Functional_Score, y = ~Post_Prob, text = ~name)
+pl
 
+#plot(-log10(fp.mat[common.genes,1]), expr.med.prob[common.genes], col = col,
+#    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Expression",
+#    ylim = c(0,1), main = "Functional Score v. Expression Mediation", pch = 16)
+#abline(v = 1, h = 0.8)
+#top.genes <- which(expr.med.prob[common.genes] > 0.8)
+#if(length(top.genes) > 0){
+#    text(x = -log10(fp.mat[common.genes[top.genes],1]), expr.med.prob[common.genes[top.genes]],
+#        labels = common.genes[top.genes], pos = 4)
+#}
+```
 
-plot(-log10(fp.mat[common.genes,1]), trait.med.prob[common.genes],
-    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trait",
-    ylim = c(0,1), main = "Functional Score v. Trait Mediation")
-abline(v = 1, h = 0.8)
-top.genes <- which(trait.med.prob[common.genes] > 0.8)
-if(length(top.genes) > 0){
-    text(x = -log10(fp.mat[common.genes[top.genes],1]), trait.med.prob[common.genes[top.genes]],
-        labels = common.genes[top.genes], pos = 4)
-}
+```{r fp_v_trait}
+df <- data.frame("Functional_Score" = -log10(fp.mat[common.genes,1]), 
+    "Post_Prob" = trait.med.prob[common.genes], "name" = common.genes, "color" = col)
+pl <- plot_ly(df, x = ~Functional_Score, y = ~Post_Prob, colors = col)
+#pl <- add_markers(pl, text = ~name)
+pl <- add_text(pl, x = ~Functional_Score, y = ~Post_Prob, text = ~name)
+pl
+
+#plot(-log10(fp.mat[common.genes,1]), trait.med.prob[common.genes],
+#    xlab = "Functional Score", ylab = "Post. Prob. of Mediating Trait",
+#    ylim = c(0,1), main = "Functional Score v. Trait Mediation")
+#abline(v = 1, h = 0.8)
+#top.genes <- which(trait.med.prob[common.genes] > 0.8)
+#if(length(top.genes) > 0){
+#    text(x = -log10(fp.mat[common.genes[top.genes],1]), trait.med.prob[common.genes[top.genes]],
+#        labels = common.genes[top.genes], pos = 4)
+#}
 
 ```
