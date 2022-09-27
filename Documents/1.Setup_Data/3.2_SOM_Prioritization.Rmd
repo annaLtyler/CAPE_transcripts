@@ -27,20 +27,30 @@ split the DO into groups in the first step.
 
 ```{r get_args}
 
+args <- commandArgs(trailingOnly=T)
+tissue.name = args[1]
+n.cores <- as.numeric(args[2])
+
+if(is.na(tissue.name)){
+    tissue.name = "Adipose"
+    n.cores = 4
+}
+
 #delete_previous <- TRUE
 delete_previous <- FALSE
 
-tissue.name = "Islet"; network.name = "islets of langerhans"; 
-#tissue.name = "Adipose"; network.name = "adipose tissue"
-#tissue.name = "SkeletalMuscle"; network.name = "skeletal muscle"
-#tissue.name = "Liver"; network.name = "liver"
+network.names <- c("Adipose" = "adipose tissue", 
+                    "Islet" = "islets of langerhans", 
+                    "Liver" = "liver", 
+                    "SkeletalMuscle" = "skeletal muscle")
+
+network.name = network.names[which(names(network.names) == tissue.name)]
 
 trait.name = "Ins_tAUC"
 qtl.chr = 11
 exp.name = "Chr11_SOM"
 project.name = paste0(tissue.name, "_Chr", qtl.chr, "_SOM")
 Mb.buffer = 1
-n.cores = 4
 n.training.genes <- 500
 ```
 
@@ -61,57 +71,72 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
 "e1071", "parallel", "doParallel", "gprofiler2", "clusterProfiler", "DT",
 "plotly", "qtl2") 
+
 load_libraries(needed.libraries, personal.library = TRUE)
+
+check_bmediatR <- require("bmediatR")
+
+if(!check_bmediatR){
+    lib.loc <- Sys.getenv("R_LIBS_USER")
+    devtools::install_github("wesleycrouse/bmediatR", lib = lib.loc, build_vignettes = FALSE)
+    library(bmediatR)
+}
+
 ```
 
 Get the expression for `r tissue.name`.
 
-```{r read_data}
-vars <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
-expr.name <- paste0("dataset.DO.Cube.", tissue.name)
-expr.data <- get(expr.name)
+```{r load_data}
+tissue.data <- load(here("Data", "dataset.DO.CUBE.multissue.RData"))
+traits <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"), stringsAsFactors = FALSE))
+num.traits <- apply(traits[,c(12:(ncol(traits)-1))], 2, as.numeric)
+rownames(num.traits) <- traits[,1]
 
-#filter expression to transcripts that have at least a mean
-#transcription level of 10
-mean.lim <- 10
-expr.count <- expr.data$data$raw
-mean.expr <- colMeans(expr.count)
-#hist(log10(mean.expr), breaks = 100)
-high.trans <- which(mean.expr > 10)
+data.set <- get(paste0("dataset.DO.Cube.", tissue.name))
+covar.mat <- data.set$covar.matrix
+expr.data <- data.set$data$norm
 
-expr <- expr.data$data$rz[,high.trans]
-covar <- expr.data$covar.matrix
+adj.expr <- adjust(expr.data, covar.mat)
+adj.pheno <- adjust(num.traits, covar.mat)
 
-pheno <- as.matrix(read.csv(here("Data", "DO_clinical_phenotypes.csv"),
-  stringsAsFactors = FALSE))
-num.pheno <- apply(pheno[,11:(ncol(pheno)-1)], 2, as.numeric)
-rownames(num.pheno) <- pheno[,1]
-
-gene.info <- read.delim(here("Data", "mouse_gene_info.txt"))
+gene.table <- data.set$annot.mrna
+eqtl.table <- data.set$lod.peaks$additive
 ```
 
-Adjust phenotypes and expression for covariates.
-
-```{r adjust}
-#adjust for diet days, as well as the other covariates
-matched.mats <- get.xz(num.pheno, covar)
-full.covar <- cbind(matched.mats[[1]][,1], matched.mats[[2]])
-adj.pheno <- adjust(matched.mats[[1]][,-1], full.covar)
-adj.expr <- adjust(expr, full.covar)
-```
 
 Find the region to prioritize genes in. In the following code, this is based
 on the QTL in the trait specified above. We use default parameters in qtl2
 for finding peaks, and use a 95\% confidence interval to define the QTL boundaries.
 
+
+```{r get_plot_idx}
+#finds the x position of a mapping position on an
+#existing QTL plot or the full genome.
+
+get_plot_idx <- function(map, chr, Mb){
+    full.map <- length(unlist(map))
+    pt.marker <- find_marker(map, chr = chr, pos = Mb)
+    idx <- which(unlist(lapply(map, names)) == pt.marker)
+    plot.dim <- par("usr")
+    x.coord <- (idx/full.map)*plot.dim[2]
+    return(x.coord)
+}
+
+```
+
 ```{r find_prioritization_region}
-qtl.scan <- scan1(genoprobs[,qtl.chr], rankZ(adj.pheno[,trait.name]))
-#plot(qtl.scan, map = map)
-peak.table <- find_peaks(qtl.scan,map = map, prob = 0.95)
+trait.scan <- scan1(genoprobs, adj.pheno[,trait.name], kinship = K)
+peak.table <- find_peaks(trait.scan, map = map, threshold = 6, drop = 6)
 chr.locale <- which(peak.table[,"chr"] == qtl.chr)
 chr.peak <- peak.table[chr.locale,]
 qtl.start <- (floor(chr.peak[,"ci_lo"])-Mb.buffer)*1e6
 qtl.end <- (ceiling(chr.peak[,"ci_hi"])+Mb.buffer)*1e6
+
+plot(trait.scan, map = map)
+qtl.start.x <- get_plot_idx(map, chr = 11, Mb = qtl.start/10^6)
+qtl.end.x <- get_plot_idx(map, chr = 11, Mb = qtl.end/10^6)
+abline(v = c(qtl.start.x, qtl.end.x), col = "red", lwd = 2)
+
 ```
 
 ```{r download_net, eval = TRUE, echo = FALSE}
@@ -136,11 +161,11 @@ if(!net.loaded){
 
 Read in the SOM results
 
-
 ```{r som}
 diff.genes <- read.csv(here("Results", "SOM", paste0("DO_", tissue.name, " - Results"), 
     "Summary Sheets - Differences", "CSV Sheets", "Gene Lists - Global", "down.vs.up.csv"), 
     skip = 17)
+pval <- as.numeric(sapply(strsplit(diff.genes[,"p.value"], " "), function(x) x[1]))
 gene.id <- diff.genes[1:n.training.genes,"ID"]
 ```
 

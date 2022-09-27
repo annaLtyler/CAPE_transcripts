@@ -25,11 +25,19 @@ The network used is the same as the specified tissue.
 args <- commandArgs(trailingOnly=T)
 tissue.name = args[1]
 n.cores <- as.numeric(args[2])
+traning.set <- args[3]
 
 if(is.na(tissue.name)){
-    tissue.name = "Liver"
+    tissue.name = "Adipose"
     n.cores = 4
+    training.set = "Trans-band"
+    #training.set = "SOM"
 }
+
+trait.name = "Ins_tAUC"
+qtl.chr = 11
+exp.name = paste0(tissue.name, "_Chr", qtl.chr, "_", training.set)
+project.name = paste0("Chr", qtl.chr, "_QTL")
 
 #delete_previous <- TRUE
 delete_previous <- FALSE
@@ -40,12 +48,6 @@ network.names <- c("Adipose" = "adipose tissue",
                     "SkeletalMuscle" = "skeletal muscle")
 
 network.name = network.names[which(names(network.names) == tissue.name)]
-
-trait.name = "Ins_tAUC"
-qtl.chr = 11
-
-exp.name = paste0(tissue.name, "_Chr", qtl.chr, "_Trans")
-project.name = "Chr11_Trans"
 Mb.buffer = 1
 ```
 
@@ -132,19 +134,38 @@ qtl.end.x <- get_plot_idx(map, chr = 11, Mb = qtl.end/10^6)
 abline(v = c(qtl.start.x, qtl.end.x), col = "red", lwd = 2)
 ```
 
-We identified all transcripts that map to this interval using
-the data in the QTLviewer object.
+For the trans band prioritization, we identified all transcripts 
+that mapped to this interval using the data in the QTLviewer object.
+
+For the SOM prioritization, we identified all transcripts that
+were differentially expressed based on their genotype at the
+Chr 11 locus. We compared those with up alleles at this locus 
+to those with down alleles at this locus. See SOM_DO.Rmd for 
+more details.
 
 ```{r interval_transcripts}
-eqtl.markers <- strsplit(eqtl.table[[2]], "_")
-eqtl.chr <- sapply(eqtl.markers, function(x) x[1])
-eqtl.pos <- as.numeric(sapply(eqtl.markers, function(x) x[2]))
-chr.idx <- which(eqtl.chr == chr.peak[,"chr"])
-above.min <- which(eqtl.pos >= qtl.start)
-below.max <- which(eqtl.pos <= qtl.end)
-trans.idx <- Reduce("intersect", list(chr.idx, above.min, below.max))
-
-trans.table <- eqtl.table[trans.idx,]
+if(training.set == "Trans-band"){
+    eqtl.markers <- strsplit(eqtl.table[[2]], "_")
+    eqtl.chr <- sapply(eqtl.markers, function(x) x[1])
+    eqtl.pos <- as.numeric(sapply(eqtl.markers, function(x) x[2]))
+    chr.idx <- which(eqtl.chr == chr.peak[,"chr"])
+    above.min <- which(eqtl.pos >= qtl.start)
+    below.max <- which(eqtl.pos <= qtl.end)
+    trans.idx <- Reduce("intersect", list(chr.idx, above.min, below.max))
+    query.table <- eqtl.table[trans.idx,]
+}
+if(training.set == "SOM"){
+    fdr.thresh = 0.1
+    diff.genes <- read.csv(here("Results", "SOM", paste0("DO_", tissue.name, " - Results"), 
+        "Summary Sheets - Differences", "CSV Sheets", "Gene Lists - Global", "down.vs.up.csv"), 
+        skip = 17)
+    pval <- as.numeric(sapply(strsplit(diff.genes[,"p.value"], " "), function(x) x[1]))
+    fdr <- p.adjust(pval, "fdr")
+    gene.id <- diff.genes[which(fdr <= fdr.thresh),"ID"]
+    trans.idx <- match(gene.id, eqtl.table[[1]])
+    trans.idx <- trans.idx[which(!is.na(trans.idx))]
+    query.table <- eqtl.table[trans.idx,]
+}
 ```
 
 We removed the transcripts that are located in the trait QTL.
@@ -157,35 +178,41 @@ below.max <- which(gene.table[[6]]*10^6 <= qtl.end)
 cis.idx <- Reduce("intersect", list(chr.locale, above.min, below.max))
 cis.transcripts <- unique(gene.table[cis.idx,][[1]])
 
-cis.locale <- which(trans.table[[1]] %in% cis.transcripts)
-trans.locale <- setdiff(1:nrow(trans.table), cis.locale)
-trans.table <- trans.table[trans.locale,]
+cis.locale <- which(query.table[[1]] %in% cis.transcripts)
+trans.locale <- setdiff(1:nrow(query.table), cis.locale)
+query.table <- query.table[trans.locale,]
 ```
 
-There are `r nrow(trans.table)` trans targets in this locus.
-
+There are `r nrow(query.table)` training genes.
 The positions of eQTL markers for these genes is shown below.
 
 ```{r eqtl, width = 10, height = 5}
-split.marker <- strsplit(trans.table$marker.id, "_")
-marker.pos <- as.numeric(sapply(split.marker, function(x) x[2]))
-a <- hist(marker.pos/1e6, breaks = 50, plot = FALSE)
-plot.new()
-plot.window(xlim = c(min(a$mids), max(a$mids)), ylim = c(0, max(a$counts)))
-points(a$mids, a$counts, type = "h", lwd = 20, col = "lightgray")
-text(a$mids, a$counts, labels = a$counts)
-axis(1);axis(2)
-mtext("Position (Mb)", side = 1, line = 2.5)
-mtext("Number of Trans Targets", side = 2, line = 2.5)
-abline(v = peak.table[1,"pos"])
-text(x = peak.table[1,"pos"], y = max(a$counts), labels = "Peak Trait QTL", adj = 0)
+split.marker <- strsplit(query.table$marker.id, "_")
+if(training.set == "Trans-band"){
+    marker.pos <- as.numeric(sapply(split.marker, function(x) x[2]))
+    a <- hist(marker.pos/1e6, breaks = 50, plot = FALSE)
+    plot.new()
+    plot.window(xlim = c(min(a$mids), max(a$mids)), ylim = c(0, max(a$counts)))
+    points(a$mids, a$counts, type = "h", lwd = 20, col = "lightgray")
+    text(a$mids, a$counts, labels = a$counts)
+    axis(1);axis(2)
+    mtext("Position (Mb)", side = 1, line = 2.5)
+    mtext("Number of Trans Targets", side = 2, line = 2.5)
+    abline(v = peak.table[1,"pos"])
+    text(x = peak.table[1,"pos"], y = max(a$counts), labels = "Peak Trait QTL", adj = 0)
+}
+if(training.set == "SOM"){
+    marker.chr <- sapply(split.marker, function(x) x[1])
+    barplot_with_num(sort(table(marker.chr)), main = "Transcripts per Chromosome",
+    xlab = "Chromosome", ylab = "Count")
+}
 ```
 
 The functional enrichment of the trans-regulated genes
 is shown below.
 
 ```{r trans_enrich, fig.width = 7, fig.height = 7}
-enrichment <- gost(trans.table$gene.id, organism = "mmusculus")
+enrichment <- gost(query.table$gene.id, organism = "mmusculus")
 plot.enrichment(enrichment, num.terms = 25, plot.label = 
     "Enrichment of trans band targets", max.term.size = 5000)
 ```
@@ -196,7 +223,7 @@ that share allele effects. The F and G alleles have
 the most consistent effects across transcripts.
 
 ```{r allele_effects}
-allele.effects <- as.matrix(trans.table[,LETTERS[1:8]])
+allele.effects <- as.matrix(query.table[,LETTERS[1:8]])
 pheatmap(allele.effects, scale = "row")
 #allele.cor <- cor(t(allele.effects))
 #pheatmap(allele.cor)
@@ -204,16 +231,16 @@ pheatmap(allele.effects, scale = "row")
 
 The figure below shows the first four PCs of the trans-regulated
 gene expression matrix plotted against each other. Each dot represents
-an individual anima. In some cases there are strange clusters of 
+an individual animal. In some cases there are strange clusters of 
 individuals. Further investigation has revealed that these clusters
 tend to be related to pseudogenes that have expression patterns that
 have very divergent from the rest of the transcripts. 
 
 ```{r trans_expr, fig.height = 8, fig.width = 8}
-trans.id <- unique(trans.table[[1]])
-trans.info <- gene.table[match(trans.id, gene.table[[1]]),]
-trans.expr <- adj.expr[,trans.id] 
-matched.mats <- get.xz(trans.expr, adj.pheno)
+query.id <- unique(query.table[[1]])
+query.info <- gene.table[match(query.id, gene.table[[1]]),]
+query.expr <- adj.expr[,query.id] 
+matched.mats <- get.xz(query.expr, adj.pheno)
 trans.decomp <- plot.decomp(matched.mats$X, pc = 6)
 #pheatmap(matched.mats$X)
 ```
@@ -224,12 +251,12 @@ clustering patterns disappear.
 
 
 ```{r filter_entrez, fig.height = 8, fig.width = 8}
-entrezgene <- gconvert(trans.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
+entrezgene <- gconvert(query.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
 triage.id <- entrezgene[,"input"]
 
-trans.expr <- adj.expr[,triage.id] 
-matched.mats <- get.xz(trans.expr, adj.pheno)
-trans.decomp <- plot.decomp(matched.mats$X, pc = 6)
+query.expr <- adj.expr[,triage.id] 
+matched.mats <- get.xz(query.expr, adj.pheno)
+query.decomp <- plot.decomp(matched.mats$X, pc = 6)
 ```
 
 We asked whether the PCs of the trans-regulated 
@@ -237,21 +264,17 @@ transcripts were correlated with `r trait.name`.
 This varied by tissue. Adipose expression was
 the most highly correlated with `r trait.name`.
 
-
 ```{r pc_trait_cor, fig.width = 8, fig.height = 6}
 if(is.interactive){quartz(width = 8, height = 6)}
 par(mfrow = c(2,3))
-for(i in 1:ncol(trans.decomp$u)){
-    plot.with.model(trans.decomp$u[,i], matched.mats$Z[,trait.name], 
+for(i in 1:ncol(query.decomp$u)){
+    plot.with.model(query.decomp$u[,i], matched.mats$Z[,trait.name], 
     xlab = paste("PC", i), ylab = trait.name, main = paste("PC", i))
 }
 ```
 
-The transcripts have somewhat correlated expression, which
-we would expect if they are all regulated by a single locus
-in trans. Sub clusters may represent multiple QTL in the region
-or shared haplotype effects, like the CAST and PWK allele effects 
-we saw above.
+The heatmap below shows the correlation structure of the transcripts
+in our query.
 
 ```{r expr_decomp, fig.height = 7, fig.width = 7}
 pheatmap(cor(matched.mats$X), show_rownames = FALSE, show_colnames = FALSE)
@@ -469,7 +492,7 @@ plot_posterior_bar(trans_trait_med, mediator_id = paste0("PC", pc),
 #barplot(post[,"post_p"], names = post[,"model"], las = 2)
 ```
 
-```{r bulk_med, echo = FALSE, message = FALSE, results = "hide"}
+```{r med_fun}
 
 med <- function(y, M, X, model.type = "reactive"){
 
@@ -481,57 +504,90 @@ med <- function(y, M, X, model.type = "reactive"){
     names(post.prob) <- post[,"model"]
     return(post.prob)
 }
+```
 
-trans.pc <- trans.decomp$u
-rownames(trans.pc) <- rownames(matched.mats$X)
-colnames(trans.pc) <- paste0("PC", 1:ncol(trans.pc))
+The following plot shows the posterior probabilities for each
+model using expression of a locally encoded gene to mediate
+the effect of the peak marker genotype on the **query expression**.
+This is either the first PC of the trans band expression, or the
+first PC of the expression of the differentially expressed genes.
 
-common.ind <- Reduce("intersect", list(rownames(trans.pc), 
+```{r mediate_training_set, echo = FALSE, message = FALSE, results = "hide"}
+query.pc <- query.decomp$u
+rownames(query.pc) <- rownames(matched.mats$X)
+colnames(query.pc) <- paste0("PC", 1:ncol(query.pc))
+
+common.ind <- Reduce("intersect", list(rownames(query.pc), 
     rownames(genoprobs[[1]]), rownames(adj.expr)))
 
 #mediate everything in terms of the peak marker for the trait.
 peak.marker <- find_marker(map, chr = 11, peak.table[1,"pos"])
 peak.geno <- genoprobs[[11]][,,peak.marker]
 
-#mediate the trans band with each of the cis transcripts using bmediatR
-cis.names <- gene.table$symbol[match(cis.transcripts, gene.table$gene.id)]
-all.cis.trans.med <- matrix(NA, ncol = 6, nrow = length(cis.transcripts))
-rownames(all.cis.trans.med) <- cis.names
-for(i in 1:length(cis.transcripts)){
-    cis.idx <- which(gene.table$gene.id == cis.transcripts[i])
-    cis.expr <- adj.expr[,cis.transcripts[i],drop=FALSE]
-    med.post <- med(trans.pc[common.ind,1], cis.expr[common.ind,1],
-        peak.geno[common.ind,], "reactive")
-    #barplot(med.post)
-    all.cis.trans.med[i,] <- med.post
+
+expr_mediate_file <- file.path(results.dir, "Mediation_of_expr.RDS")
+if(!file.exists(expr_mediate_file)){
+    #mediate the trans band or differentially expressed genes with 
+    #each of the cis transcripts using bmediatR
+    cis.names <- gene.table$symbol[match(cis.transcripts, gene.table$gene.id)]
+    all.cis.expr.med <- matrix(NA, ncol = 6, nrow = length(cis.transcripts))
+    rownames(all.cis.expr.med) <- cis.names
+    for(i in 1:length(cis.transcripts)){
+        cis.idx <- which(gene.table$gene.id == cis.transcripts[i])
+        cis.expr <- adj.expr[,cis.transcripts[i],drop=FALSE]
+        med.post <- med(query.pc[common.ind,1], cis.expr[common.ind,1],
+            peak.geno[common.ind,], "reactive")
+        #barplot(med.post)
+        all.cis.expr.med[i,] <- med.post
+    }
+    colnames(all.cis.expr.med) <- names(med.post)
+    saveRDS(all.cis.expr.med, expr_mediate_file)
+}else{
+    all.cis.expr.med <- readRDS(expr_mediate_file)
 }
-colnames(all.cis.trans.med) <- names(med.post)
-#pheatmap(all.cis.trans.med, cluster_cols = FALSE, show_rownames = FALSE)
 
-#comp.trans.med <- which(all.cis.trans.med[,1] >= 0.8)
-#cat(names(comp.med), sep = "\n")
-#comp.trans.react <- which(all.cis.trans.med[,4] >= 0.8)
-#cat(names(comp.react), sep = "\n")
+pheatmap(all.cis.expr.med, cluster_cols = FALSE, show_rownames = FALSE)
+#comp.expr.med <- which(all.cis.expr.med[,1] >= 0.8)
+#cat(names(comp.expr.med), sep = "\n")
+#comp.expr.react <- which(all.cis.exprtrans.med[,4] >= 0.8)
+#cat(names(comp.expr.react), sep = "\n")
+```
 
+The following plot shows the posterior probabilities for each
+model using expression of a locally encoded gene to mediate
+the effect of the peak marker genotype on the **trait**.
+
+
+```{r mediate_trait, echo = FALSE, message = FALSE, results = "hide"}
 #mediate the trait with each of the local transcripts using bmediatR
 #mediate everything in terms of the peak trait marker.
-all.cis.trait.med <- matrix(NA, ncol = 6, nrow = length(cis.transcripts))
-rownames(all.cis.trait.med) <- cis.names
-for(i in 1:length(cis.transcripts)){
-    cis.idx <- which(gene.table$gene.id == cis.transcripts[i])
-    cis.expr <- adj.expr[,cis.transcripts[i],drop=FALSE]
-    med.post <- med(adj.pheno[common.ind,trait.name], cis.expr[common.ind,1],
-        peak.geno[common.ind,], "reactive")
-    all.cis.trait.med[i,] <- med.post
+trait_mediate_file <- file.path(results.dir, "Mediation_of_trait.RDS")
+
+if(!file.exists(trait_mediate_file)){
+    all.cis.trait.med <- matrix(NA, ncol = 6, nrow = length(cis.transcripts))
+    rownames(all.cis.trait.med) <- cis.names
+    for(i in 1:length(cis.transcripts)){
+        cis.idx <- which(gene.table$gene.id == cis.transcripts[i])
+        cis.expr <- adj.expr[,cis.transcripts[i],drop=FALSE]
+        med.post <- med(adj.pheno[common.ind,trait.name], cis.expr[common.ind,1],
+            peak.geno[common.ind,], "reactive")
+        all.cis.trait.med[i,] <- med.post
+    }
+    colnames(all.cis.trait.med) <- names(med.post)
+    saveRDS(all.cis.trait.med, trait_mediate_file)
+}else{
+    all.cis.trait.med <- readRDS(trait_mediate_file)
 }
-colnames(all.cis.trait.med) <- names(med.post)
-#pheatmap(all.cis.trait.med, cluster_cols = FALSE)
+
+pheatmap(all.cis.trait.med, cluster_cols = FALSE)
 
 #comp.trait.med <- which(all.cis.trait.med[,1] >= 0.8)
-#cat(names(comp.med), sep = "\n")
+#cat(names(comp.trait.med), sep = "\n")
 #comp.trait.react <- which(all.cis.trait.med[,4] >= 0.8)
-#cat(names(comp.react), sep = "\n")
+#cat(names(comp.trait.react), sep = "\n")
+```
 
+```{r rank_genes_for_both}
 med.ranks <- rank.2D(cbind(all.cis.trans.med[,1,drop=FALSE], all.cis.trait.med[,1,drop=FALSE]))
 ordered.med <- med.ranks[order(med.ranks[,1]),1,drop=FALSE]
 ```
