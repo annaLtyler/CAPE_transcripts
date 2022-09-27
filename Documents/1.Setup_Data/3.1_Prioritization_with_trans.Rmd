@@ -665,9 +665,14 @@ are labeled.
 ```{r med_against}
 top.genes <- Reduce("union", list(rownames(ordered.med)[1:10], names(which(expr.med.prob > 0.8)), names(which(trait.med.prob > 0.8))))
 
-plot(expr.med.prob, trait.med.prob, xlim = c(0, 1), ylim = c(0, 1.05),
-    xlab = "Post. Prob. of Mediating Expression", ylab = "Post. Prob. of mediating Trait")
-text(expr.med.prob, trait.med.prob, labels = top.genes, pos = 3)
+df <- data.frame("Expression_Mediation_Prob" = expr.med.prob, "Trait_Mediation_Prob" = trait.med.prob)
+pl <- plot_ly(df, x = ~Expression_Mediation_Prob, y = ~Trait_Mediation_Prob)
+pl <- add_text(pl, x = ~Expression_Mediation_Prob, y = ~Trait_Mediation_Prob, text = names(expr.med.prob))
+pl
+
+#plot(expr.med.prob, trait.med.prob, xlim = c(0, 1), ylim = c(0, 1.05),
+#    xlab = "Post. Prob. of Mediating Expression", ylab = "Post. Prob. of mediating Trait")
+#text(expr.med.prob, trait.med.prob, labels = top.genes, pos = 3)
 ```
 
 The following plots shows the posterior probabilities of mediating either
@@ -694,6 +699,9 @@ abline(v = peak.table[1,"pos"], h = 0.8)
 
 Finally, we compare the TRiAGE prioritization with the mediation results.
 
+The following plot compares genes based on their functional score
+and mediation of first PC of the expression of the selected genes.
+
 ```{r fp_v_expr}
 
 common.genes <- intersect(rownames(fp.mat), rownames(all.cis.expr.med))
@@ -716,6 +724,9 @@ pl
 #        labels = common.genes[top.genes], pos = 4)
 #}
 ```
+
+The following plot compares genes based on their functional score
+and mediation of the trait.
 
 ```{r fp_v_trait}
 df <- data.frame("Functional_Score" = -log10(fp.mat[common.genes,1]), 
