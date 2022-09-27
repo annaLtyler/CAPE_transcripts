@@ -138,6 +138,9 @@ The figure below shows a count of transcripts affected
 by loci across the genome.
 
 ```{r cis_trans}
+
+plot.cistrans.table(eqtl.table = as.matrix(eqtl.table), 
+    transcript.pos.table = as.matrix(gene.table), map = map)
 ```
 
 For the trans band prioritization, we identified all transcripts 
@@ -530,12 +533,12 @@ common.ind <- Reduce("intersect", list(rownames(query.pc),
 peak.marker <- find_marker(map, chr = 11, peak.table[1,"pos"])
 peak.geno <- genoprobs[[11]][,,peak.marker]
 
+cis.names <- gene.table$symbol[match(cis.transcripts, gene.table$gene.id)]
 
 expr_mediate_file <- file.path(results.dir, "Mediation_of_expr.RDS")
 if(!file.exists(expr_mediate_file)){
     #mediate the trans band or differentially expressed genes with 
     #each of the cis transcripts using bmediatR
-    cis.names <- gene.table$symbol[match(cis.transcripts, gene.table$gene.id)]
     all.cis.expr.med <- matrix(NA, ncol = 6, nrow = length(cis.transcripts))
     rownames(all.cis.expr.med) <- cis.names
     for(i in 1:length(cis.transcripts)){
