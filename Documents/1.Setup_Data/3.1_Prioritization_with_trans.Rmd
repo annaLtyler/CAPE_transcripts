@@ -134,6 +134,12 @@ qtl.end.x <- get_plot_idx(map, chr = 11, Mb = qtl.end/10^6)
 abline(v = c(qtl.start.x, qtl.end.x), col = "red", lwd = 2)
 ```
 
+The figure below shows a count of transcripts affected 
+by loci across the genome.
+
+```{r cis_trans}
+```
+
 For the trans band prioritization, we identified all transcripts 
 that mapped to this interval using the data in the QTLviewer object.
 
@@ -633,7 +639,7 @@ Finally, we compare the TRiAGE prioritization with the mediation results.
 
 ```{r compare}
 
-common.genes <- intersect(rownames(fp.mat), rownames(all.cis.trans.med))
+common.genes <- intersect(rownames(fp.mat), rownames(all.cis.expr.med))
 
 plot(-log10(fp.mat[common.genes,1]), expr.med.prob[common.genes],
     xlab = "Functional Score", ylab = "Post. Prob. of Mediating Expression",
