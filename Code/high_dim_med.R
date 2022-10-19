@@ -2,6 +2,7 @@
 #with either kernelized matrices, or data matrices.
 #all matrices must have rownames that can be aligned
 #by the function
+#min.weight.diff is the 
 #kernel.c, kernel.m, and kernel.o indicate whether the causal,
 #mediating, and outcome matrices are kernelized
 #mediation.type determines whether we are looking for 
@@ -11,8 +12,8 @@
 
 
 high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix, 
-    num.iterations = 5, verbose = FALSE, kernel.c = TRUE, kernel.m = TRUE, 
-    kernel.o = TRUE){
+    min.weight.diff = 1e-3, max.iter = 15, verbose = FALSE, kernel.c = TRUE, 
+    kernel.m = TRUE, kernel.o = TRUE){
 
     common.ind <- Reduce("intersect", list(rownames(causal.matrix), 
         rownames(mediating.matrix), rownames(outcome.matrix)))
@@ -35,15 +36,65 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
         p <- outcome.matrix[common.ind,,drop=FALSE]
     }
 
+    check_stop <- function(initial_weights, curr_weights, last_diff){
+       
+        weight.diff <- abs(initial_weights - curr_weights)
+
+        #check to see if we are converging. 
+        #The new weight diffs should be 
+        #smaller than the last ones.
+        converging <- all(weight.diff < last_diff)
+
+        #check to see if we have reached our minimum 
+        #change in weight to meet our stopping criterion.
+        reached.min <- all(weight.diff <= min.weight.diff)
+
+        result <- list("reached.min" = reached.min, 
+                    "converging" = converging,
+                    "weight_diff" = weight.diff)
+        return(result)
+    }
+
+    decide_stop <- function(stopping_criteria, n.iter){
+        do.we.stop = FALSE
+
+        #if we have met the minimum weight change criterion, then stop
+        if(stopping_criteria[[1]]){
+            do.we.stop = TRUE
+            if(verbose){cat("Reached minimum weight change.\n")}
+        }
+
+        #if we are not converging, then stop
+        if(!stopping_criteria[[2]]){
+            do.we.stop = TRUE
+            if(verbose){cat("Not converging.\n")}
+        }
+
+        if(n.iter >= max.iter){
+            do.we.stop = TRUE
+            if(verbose){cat("Reached maximum number of iterations.\n")}
+        }
+
+    return(do.we.stop)
+    }
+
     A = list(g = g, t = t, p = p)
 
     weight.mat = 0.5 * matrix(c(0,0,0,1,0,0,0,1,0), 3, 3)    
     weight.mat = weight.mat + t(weight.mat)
 
+    
+    #set initial conditions for stopping criteria checks
+    stop.now <- FALSE
+    W1 <- W2 <- 0.5
+    last_diff <- c(Inf, Inf)
+    iter = 1
+
     # Loop over "EM" iterations
-    #five iteractions seem to be sufficient to converge in all cases
-    #might want to make a more sophisticated check later.
-    for(i in 1:num.iterations){
+    while(!stop.now){
+
+        initial_weights <- c(W1, W2)
+
         curr_model = rgcca(A, weight.mat, tau = "optimal", verbose = FALSE)
         
         curr_g_score = as.matrix(A[[1]] %*% curr_model$a[[1]])
@@ -60,8 +111,14 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
         
         W1 = w1 / (w1 + w2)
         W2 = w2 / (w1 + w2)
-        
-        if(verbose){print(c(W1, W2))}
+
+        curr_weights <- c(W1, W2)
+        if(verbose){print(c(W1, W2))}        
+
+        stopping.criteria <- check_stop(initial_weights, curr_weights, last_diff)
+        last_diff <- stopping.criteria[[3]]
+        stop.now <- decide_stop(stopping.criteria, iter)
+        iter = iter + 1
         
         weight.mat = 0.5 * matrix(c(0,0,0,W1,0,0,0,W2,0), 3, 3)
         weight.mat = weight.mat + t(weight.mat)

@@ -209,7 +209,7 @@ if(!file.exists(transcript_loading_file) || delete_previous){
     transcript_loadings <- trait_loadings <- model_scores <- vector(mode = "list", length = length(tissue.names))
     names(transcript_loadings) <- names(trait_loadings) <- names(model_scores) <- tissue.names
 
-    for(tx in 1:length(scaled.expr)){
+    for(tx in 1:length(tissue.names)){
         if(is.interactive){cat("\n", tissue.names[tx], "\n")}
         
         #assign matrices to proper positions
@@ -227,8 +227,8 @@ if(!file.exists(transcript_loading_file) || delete_previous){
         
         model_scores[[tx]] <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
             mediating.matrix = mediator.kernel, outcome.matrix = outcome.kernel, 
-            num.iterations = 5, verbose = is.interactive, kernel.c = TRUE, 
-            kernel.m = TRUE, kernel.o = TRUE)
+            min.weight.diff = 1e-5, max.iter = 15, verbose = is.interactive, 
+            kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE)
 
         #calculate transcript loadings
         #This is the correlation between the scaled expression
@@ -301,8 +301,8 @@ if(!file.exists(perm.file)){
 
             perm_cor <- cor(high_dim_med(causal.matrix = Kg_cent[[tx]], 
                 mediating.matrix = perm_mediator, outcome.matrix = outcome.kernel, 
-                num.iterations = 3, verbose = TRUE, kernel.c = TRUE, kernel.m = TRUE, 
-                kernel.o = TRUE))
+                min.weight.diff = 1e-5, max.iter = 15, verbose = is.interactive, 
+                kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE))
             #diff_from_ideal(perm_cor)
 
             perm_path[p] <- abs(perm_cor[1,3])
