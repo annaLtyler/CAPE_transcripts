@@ -403,6 +403,8 @@ for analysis in CMAP.
 
 ```{r enrichment}
 enrich.file <- file.path(results.dir, "Top_Bottom_Enrichment.RDS")
+hum.mus.ortho <- as.matrix(read.delim(here("Data", "human.mouse.orthologs.txt"), 
+    stringsAsFactors = FALSE))
 
 if(!file.exists(enrich.file) || delete_previous){
     all.enrich <- vector(mode = "list", length = length(tissue.names))
@@ -414,12 +416,12 @@ if(!file.exists(enrich.file) || delete_previous){
         top.enrich <- gost(names(top.genes), organism = "mmusculus")
         
         top.id <- gene.table[match(names(top.genes), gene.table[,"symbol"]),1]
-        top.hum.id <- mouse_to_human_entrez(top.id)
+        top.hum.id <- mouse_to_human_entrez(top.id, hum.mus.ortho)
 
         bottom.genes <- sort(transcript_loadings[[tx]][,1], decreasing = FALSE)[1:top.n]
         bottom.enrich <- gost(names(bottom.genes), organism = "mmusculus")
         bottom.id <- gene.table[match(names(bottom.genes), gene.table[,"symbol"]),1]
-        bottom.hum.id <- mouse_to_human_entrez(bottom.id)
+        bottom.hum.id <- mouse_to_human_entrez(bottom.id, hum.mus.ortho)
         
         cmap.table <- cbind(top.hum.id[,"Human.Entrez"], bottom.hum.id[,"Human.Entrez"])
         colnames(cmap.table) <- c("Positive", "Negative")
