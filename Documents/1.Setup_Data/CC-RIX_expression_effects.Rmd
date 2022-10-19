@@ -137,6 +137,59 @@ saveRDS(adj.bw, here("Results", "SOM", "Adjusted.BW.RDS"))
 ```
 
 
+## Metformin and Traits
+
+Does metformin affect the traits overall?
+Nope.
+
+```{r met_traits}
+log.chem <- log10(round(adj.chem+1))
+zero.idx <- which(log.chem == 0, arr.ind = TRUE)
+adj.chem[zero.idx]
+log.chem[which(log.chem == 0)] <- NA
+
+scaled.chem <- apply(log.chem, 2, scale)
+boxplot(scaled.chem)
+chem.cov <- cov(scaled.chem, use = "pairwise.complete.obs")
+pheatmap(chem.cov)
+plot.decomp(chem.cov, label.points = TRUE)
+ind.cov <- cov(t(scaled.chem), use = "pairwise.complete.obs")
+plot.decomp(ind.cov)
+
+chem.idx <- match(rownames(adj.chem), tissue.info[,1])
+chem.info <- tissue.info[chem.idx,]
+
+chem.df <- data.frame("Sex" = as.factor(chem.info[,"Sex"]), 
+        "Diet" = as.factor(chem.info[,"Diet"]),
+        "Treatment" = as.factor(chem.info[,"Treatment"]),
+        "Strain" = as.numeric(as.factor(chem.info[,"User.Defined.Strain"])))
+
+outliers1 <- which(chem.decomp$u[,1] > 0.2)
+outliers2 <- which(chem.decomp$u[,2] > 0.2)
+
+chem.info[outliers1,]
+adj.chem[outliers1,]
+
+chem.info[outliers2,]
+adj.chem[outliers2,]
+
+outlier.idx <- rep(0, nrow(chem.info))
+outlier.idx[outliers1] <- 1
+outlier.idx[outliers2] <- 2
+outlier.df <- data.frame("outliers" = as.factor(outlier.idx))
+rownames(outlier.df) <- rownames(log.chem)
+chem.cor <- cor(t(scaled.chem), use = "pairwise.complete.obs")
+rownames(chem.cor) <- colnames(chem.cor) <- rownames(log.chem)
+pheatmap(chem.cor, annotation_row = outlier.df, show_rownames = FALSE, show_colnames = FALSE)
+
+test <- cov(t(scaled.chem), use = "pairwise.complete.obs")
+plot.decomp(test)
+
+plot.decomp(chem.cor, cols = chem.df[,3])
+```
+
+## Group Expression
+
 Group the measured expression based on the CC-RIX crosses.
 
 ```{r group_expr}

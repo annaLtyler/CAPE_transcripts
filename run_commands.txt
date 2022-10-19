@@ -50,3 +50,45 @@ R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'SOM.Rmd'))" --a
 mv Documents/1.Setup_Data/SOM.html Documents/1.Setup_Data/SOM-$tissue.html
 
 
+##=====================================================================================##
+## High-Dimensional Mediation
+##=====================================================================================##
+tissue_options=(tissues_sep tissues_merged)
+imputation_options=(full_imp local_imp)
+weight_options=(_ "weight_adjusted")
+mediation_options=("reactive" "complete_mediation")
+
+merge_tissues=0
+merge_tissues=1
+
+local_imputation=0
+local_imputation=1
+
+weight_adjusted=0
+weight_adjusted=1
+
+complete_mediation=0
+complete_mediation=1
+
+delete_previous=0
+delete_previous=1
+
+
+
+#separate tissues, with full imputation, no weight adjustment, and complete mediation
+	merge_tissues=FALSE;local_imputation=FALSE;weight_adjusted=FALSE;complete_mediation=TRUE;delete_previous=FALSE
+
+#separate tissues, with full imputation, no weight adjustment, and reactive model
+	merge_tissues='0';local_imputation='0';weight_adjusted='0';complete_mediation='0';delete_previous='0'
+
+echo $merge_tissues $local_imputation $weight_adjusted $complete_mediation $delete_previous
+echo ${tissue_options[$((merge_tissues))]} ${imputation_options[$((local_imputation))]} ${weight_options[$((weight_adjusted))]} ${mediation_options[$((complete_mediation))]}
+
+
+R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'High_Dimensional_Mediation.Rmd'))" --args $merge_tissues $local_imputation $weight_adjusted $complete_mediation $delete_previous
+
+mv Documents/1.Setup_Data/High_Dimensional_Mediation.html Documents/1.Setup_Data/High_Dimensional_Mediation-${tissue_treatment[$merge_tissues]}-${imputation[$local_imputation]}-${weight_adj[$weight_adjusted]}-${mediation[$complete_mediation]}.html
+
+
+
+

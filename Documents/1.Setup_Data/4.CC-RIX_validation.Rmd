@@ -12,8 +12,9 @@ output:
 
 ## Introduction
 The purpose of this workflow is to use data from the CC-RIX for 
-validation of the Sash3 hypothesis developed in the DO CCA analysis. 
-The previous analysis found that a composite trait 
+validation of hypothesese developed in the DO. 
+
+The CCA analysis in the DO found that a composite trait 
 and composite transcript co-mapped to a locus on chromosome X. The 
 composite transcript mediated the effect of the locus on the composite 
 trait. Through multiple independent methods we prioritized Sash3 as the 
@@ -22,19 +23,23 @@ with the composite trait and mediated the effect of the locus on the
 composite trait. All effects through this chain were weak, but 
 consistently pointed to Sash3. 
 
-Here we use the CC-RIX data to test whether we can find independent 
-evidence for an influence of Sash3 on metabolic phenotypes.
+Here we use the CC-RIX data to test whether composite transcripts
+or individual genes have similar effects in the DO and in the 
+CC-RIX.
 
 The data from the CC-RIX are unfortuantely very different from the DO
-data, so we will need to think about this carefully.
+data, so instead of comparing things directly, we just look for 
+correlations with transcripts and composite transcripts to all 
+individual traits for a general sense of how the transcripts relate
+to traits in this different population.
 
-The allele frequencies are a mess, so we probably won't be able to 
-do any mapping. Also, the traits measured are different. Hopefully
-there is enough overlap that we can still see an effect of Sash3.
+The allele frequencies are a mess, so we won't be able to do any 
+mapping in the CC-RIX directly. 
 
 We may have to shift the focus of the validation to something that
 takes advantage of the data in the CC-RIX, namely different diets
-and treatment with metformin.
+and treatment with metformin. Perhaps high-dimensional mediation
+in the CC-RIX.
 
 This workflow also saves several processed files for use in other
 workflows. All are saved in Data/CC-RIX. The files are as follows:
@@ -69,13 +74,17 @@ is.interactive = FALSE
 #is.interactive = TRUE
 library("here")
 
-exp.name = "imputed_local"
 
-#set whether to set genes by hand or to use a CT from the DO study
-#manual.or.CT <- "manual"; gene.name = "Aldh2"
-#manual.or.CT <- "manual"; gene.name <- c("Ifi44","Trim30a","Usp18","Ifit1","Ifit3","Oasl2","Rtp4","Irf7","Cxcl10","Ube2l6","Rnf213","Bst2","Stat1","Isg15","Lgals3bp","Rnf213","Parp12","Samd9l","Apol9a","Gbp2","Irgm2","Xaf1","Ifi205","Ifi203","Stat2","Ifih1","Oas1g","Apol9b","Sp100","Gbp6","Ddx58","Gbp3","Ifi204","Tor3a","Dtx3l","Oas1b","Ccl5","Parp14","Agrn","Tgtp1","Cmpk2","Nell2","Eif2ak2")
+#set whether to set genes by hand, use a CT from the CCA study, or use loadings from the high-dimensional mediation
+#manual.CT.Med <- "manual"; gene.name = "Aldh2"; exp.name = "imputed_local"
 
-manual.or.CT = "CT"; tissue.name <- "Adipose"; CT <- 1
+#manual.CT.Med <- "manual"; gene.name <- c("Ifi44","Trim30a","Usp18","Ifit1","Ifit3","Oasl2","Rtp4","Irf7","Cxcl10","Ube2l6","Rnf213","Bst2","Stat1","Isg15","Lgals3bp","Rnf213","Parp12","Samd9l","Apol9a","Gbp2","Irgm2","Xaf1","Ifi205","Ifi203","Stat2","Ifih1","Oas1g","Apol9b","Sp100","Gbp6","Ddx58","Gbp3","Ifi204","Tor3a","Dtx3l","Oas1b","Ccl5","Parp14","Agrn","Tgtp1","Cmpk2","Nell2","Eif2ak2")
+
+manual.CT.Med <- "manual"; gene.name <- c("Wfdc21"); exp.name = "imputed_local"
+
+#manual.CT.Med = "CT"; tissue.name <- "Adipose"; CT <- 1; exp.name = "imputed_local"
+
+#manual.CT.Med = "Med"; tissue.name <- "Adipose"; exp.name = "tissue_sep_full_imp_weight_adjusted" #exp.name tells which Mediation results folder to look in for the transcript loadings
 
 data.dir <- here("Data", "CC-RIX")
 results.dir <- here("Results", "CCA_Clusters", "Validation")
@@ -86,7 +95,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 gene.info <- read.delim(here("data", "mouse_gene_info.txt"))
 
-use.imputed <- as.logical(length(grep("imputed", exp.name)))
+use.imputed <- as.logical(length(grep("imputed", exp.name))) #only matters for CT method
 ```
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
@@ -103,7 +112,7 @@ the corresponding parameters in the appropriate if chunk.
 
 ```{r set_param}
 
-if(manual.or.CT == "manual"){
+if(manual.CT.Med == "manual"){
     gene.weights <- rep(1, length(gene.name)) #set weights here
 
     #convert to ensembl ID
@@ -119,7 +128,7 @@ if(manual.or.CT == "manual"){
     label.text <- paste(gene.name, "expression")
 }
 
-if(manual.or.CT == "CT"){
+if(manual.CT.Med == "CT"){
     #set tissue, CT, and region from DO study to analyze
     #doing this by hand now, but maybe can automate later.
 
@@ -138,6 +147,14 @@ if(manual.or.CT == "CT"){
     names(expr.vector) <- boot.CCA.names[[tissue.idx]]$X[[2]]
 
     label.text <- paste(tissue.name, "CT", CT)
+}
+
+if(manual.CT.Med == "Med"){
+    tissue.loadings <- readRDS(here("Results", "High_Dim_Med", exp.name, "Loadings_Transcripts.RDS"))
+    tissue.idx <- which(names(tissue.loadings) == tissue.name)
+    expr.vector <- tissue.loadings[[tissue.idx]][,1]
+    names(expr.vector) <- gene.info[match(names(expr.vector), gene.info[,"external_gene_name"]),1]
+    label.text <- "Mediation"
 }
 ```
 
@@ -205,7 +222,9 @@ get_expr <- function(tissue.expr, weighted.gene.vector, adjust.for.covariates = 
     norm.expr <- lapply(adj.expr, function(x) apply(x, 2, rankZ))
     weighted.genes <- lapply(1:length(tissue.expr), function(x) norm.expr[[x]]%*%gene.weights[[x]])
     for(i in 1:length(tissue.expr)){
-        rownames(weighted.genes[[i]]) <- rownames(tissue.expr[[i]])
+        if(length(weighted.genes[[i]]) > 1){
+            rownames(weighted.genes[[i]]) <- rownames(tissue.expr[[i]])
+        }
     }
     names(weighted.genes) <- names(tissue.expr)
     return(weighted.genes)
@@ -250,27 +269,29 @@ all.chem.expr.cor <- vector(mode = "list", length = length(tissue.expr))
 names(all.chem.expr.cor) <- names(tissue.expr)
 
 for(i in 1:length(tissue.expr)){
-    cat("###", names(tissue.expr)[i], "{.tabset .tabset-fade .tabset-pills}\n")
-    group.cor.mat <- matrix(NA, nrow = nrow(groups), ncol = 10)
-    colnames(group.cor.mat) <- colnames(matched.chem[[i]])[5:14]
-    rownames(group.cor.mat) <- apply(groups, 1, function(x) paste(x, collapse = "_"))
-    for(g in 1:nrow(groups)){
-        cat("####", paste(groups[g,], collapse = " "), "\n")
-        if(is.interactive){quartz(width = 10, height = 5)}
-        group.locale <- Reduce("intersect", lapply(group.def, 
-            function(x) which(matched.chem[[i]][,x] == groups[g,x])))
+    if(nrow(matched.chem[[i]]) > 0){
+        cat("###", names(tissue.expr)[i], "{.tabset .tabset-fade .tabset-pills}\n")
+        group.cor.mat <- matrix(NA, nrow = nrow(groups), ncol = 10)
+        colnames(group.cor.mat) <- colnames(matched.chem[[i]])[5:14]
+        rownames(group.cor.mat) <- apply(groups, 1, function(x) paste(x, collapse = "_"))
+        for(g in 1:nrow(groups)){
+            cat("####", paste(groups[g,], collapse = " "), "\n")
+            if(is.interactive){quartz(width = 10, height = 5)}
+            group.locale <- Reduce("intersect", lapply(group.def, 
+                function(x) which(matched.chem[[i]][,x] == groups[g,x])))
 
-        par(mfrow = c(2,5))
-        all.group.cor <- sapply(5:ncol(matched.chem[[i]]), 
-                function(j) plot.with.model(rankZ(chem.matched.expr[[i]][group.locale,1]),
-                rankZ(as.numeric(matched.chem[[i]][group.locale,j])),
-                ylab = colnames(matched.chem[[i]])[j], xlab = "Expression", 
-                main = colnames(matched.chem[[i]])[j], report = "cor.test"))
-        group.cor.mat[g,] <- all.group.cor[1,]
-    cat("\n\n")
+            par(mfrow = c(2,5))
+            all.group.cor <- sapply(5:ncol(matched.chem[[i]]), 
+                    function(j) plot.with.model(rankZ(chem.matched.expr[[i]][group.locale,1]),
+                    rankZ(as.numeric(matched.chem[[i]][group.locale,j])),
+                    ylab = colnames(matched.chem[[i]])[j], xlab = "Expression", 
+                    main = colnames(matched.chem[[i]])[j], report = "cor.test"))
+            group.cor.mat[g,] <- all.group.cor[1,]
+        cat("\n\n")
+        }
+        all.chem.expr.cor[[i]] <- group.cor.mat
+        cat("\n\n")
     }
-    all.chem.expr.cor[[i]] <- group.cor.mat
-    cat("\n\n")
 }
 
 ```
@@ -324,7 +345,7 @@ abline(h = 0)
 ### All Tissues
 
 ```{r cor_by_tissue, fig.width = 4, fig.height = 4}
-boxplot(lapply(all.chem.expr.cor, abs), ylab = "correlation")
+boxplot(lapply(all.chem.expr.cor, function(x) if(length(x) > 0){abs(x)}else{NA}), ylab = "correlation")
 ```
 
 Insulin has the greatest correlation with gene expression
@@ -365,16 +386,18 @@ layout.matrix <- get.layout.mat(nrow(groups))
 for(i in 1:length(tissue.expr)){
     cat("###", names(tissue.expr)[i],"\n")
     bw.cor.mat <- rep(NA, nrow(groups))
-    #quartz(width = 10, height = 5)    
-    layout(layout.matrix)
-    for(g in 1:nrow(groups)){
-        group.locale <- Reduce("intersect", lapply(group.def, 
-            function(x) which(matched.chem[[i]][,x] == groups[g,x])))        
-        bw.cor <- plot.with.model(rankZ(bw.matched.expr[[i]][group.locale]),
-            rankZ(as.numeric(matched.bw[[i]][group.locale,"Body.Weight"])),
-            ylab = "Final BW", xlab = "Expression", main = paste(groups[g,], collapse = " "), 
-            report = "cor.test")
-        bw.cor.mat[g] <- bw.cor[1]
+    if(nrow(matched.bw[[i]]) > 0){
+        #quartz(width = 10, height = 5)    
+        layout(layout.matrix)
+        for(g in 1:nrow(groups)){
+            group.locale <- Reduce("intersect", lapply(group.def, 
+                function(x) which(matched.chem[[i]][,x] == groups[g,x])))        
+            bw.cor <- plot.with.model(rankZ(bw.matched.expr[[i]][group.locale]),
+                rankZ(as.numeric(matched.bw[[i]][group.locale,"Body.Weight"])),
+                ylab = "Final BW", xlab = "Expression", main = paste(groups[g,], collapse = " "), 
+                report = "cor.test")
+            bw.cor.mat[g] <- bw.cor[1]
+        }
     }
     all.bw.cor[[i]] <- bw.cor.mat
     cat("\n\n")
@@ -402,7 +425,7 @@ we collect the transcripts from the composite
 transcript and look for downregulation in PWK-containing
 individuals.
 
-If the manual.or.CT parameter is set to CT, the figure 
+If the manual.CT.Med parameter is set to CT, the figure 
 below shows the allele effects from the DO for 
 comparison with allele effects from the CC-RIX.
 
@@ -413,7 +436,7 @@ effects. So if there are no overlapping QTLs for the
 given CT pair, this part is skipped.
 
 ```{r, plot_orig, fig.width = 9, fig.height = 5, results = "asis"}
-if(manual.or.CT == "CT"){
+if(manual.CT.Med == "CT"){
 
     qtl.file <- list.files(here("Results", "CCA_Clusters", exp.name), 
         pattern = paste0("Individual.QTL.", tissue.name, ".Composite_Trait", CT, ".Chr"), 
@@ -649,11 +672,18 @@ In the DO, the effects on both expression and the trait were the following:
 
 ```{r set_region_and_labels}
 
-if(manual.or.CT == "manual"){
+if(manual.CT.Med == "manual"){
     expr.trait.label <- paste(gene.name, "Expression")
-}else{
+}
+
+if(manual.CT.Med == "CT"){
     expr.trait.label <- paste("Expression of\n", tissue.name, "CT", CT, "Genes")
 }
+
+if(manual.CT.Med == "Med"){
+    expr.trait.label <- paste("Expression of\n", tissue.name, "from Mediation")
+}
+
 
 test.alleles <- c("AJ" = "AA", "B6" = "BB", "129" = "CC", 
     "NOD" = "DD", "NZO" = "EE", "CAST" = "FF", "PWK" = "GG",
@@ -838,31 +868,33 @@ treat_effect <- function(contrast = c("Diet", "Treatment")){
         cat("####", names(chem.matched.expr)[tx], "\n")
         results.table <- matrix(NA, nrow = nrow(no_contrast_groups), ncol = 3)
         colnames(results.table) <- c(sort(unique(groups[,contrast])), "p")
-        if(is.interactive){quartz()}
-        tx.expr <- chem.matched.expr[[tx]]
-        all.group.vals <- vector(mode = "list", length = nrow(no_contrast_groups))
-        all.group.names <- rep(NA, nrow(no_contrast_groups))
-        for(g in 1:nrow(no_contrast_groups)){
-            factor1.idx <- which(matched.chem[[tx]][,test.factors[1]] == no_contrast_groups[g,test.factors[1]])
-            factor2.idx <- which(matched.chem[[tx]][,test.factors[2]] == no_contrast_groups[g,test.factors[2]])
-            group.idx <- intersect(factor1.idx, factor2.idx)
-            model <- lm(tx.expr[group.idx]~matched.chem[[tx]][group.idx,contrast])
-            f <- summary(model)$fstatistic
-            p <- pf(f[1],f[2],f[3],lower.tail=F)
-            g.labels <- matched.chem[[tx]][group.idx,contrast]
-            group.vals <- lapply(unique(g.labels), function(x) tx.expr[group.idx][which(g.labels == x)])
-            names(group.vals) <- unique(g.labels)
-            all.group.vals[[g]] <- group.vals
-            group.means <- sapply(group.vals, mean)
-            all.group.names[g] = paste0(paste(no_contrast_groups[g,], collapse = " "), "\n(p = ", signif(p, 2), ")")
-            results.table[g,] <- c(group.means, p)
+        if(nrow(matched.chem[[tx]]) > 0){
+            if(is.interactive){quartz()}
+            tx.expr <- chem.matched.expr[[tx]]
+            all.group.vals <- vector(mode = "list", length = nrow(no_contrast_groups))
+            all.group.names <- rep(NA, nrow(no_contrast_groups))
+            for(g in 1:nrow(no_contrast_groups)){
+                factor1.idx <- which(matched.chem[[tx]][,test.factors[1]] == no_contrast_groups[g,test.factors[1]])
+                factor2.idx <- which(matched.chem[[tx]][,test.factors[2]] == no_contrast_groups[g,test.factors[2]])
+                group.idx <- intersect(factor1.idx, factor2.idx)
+                model <- lm(tx.expr[group.idx]~matched.chem[[tx]][group.idx,contrast])
+                f <- summary(model)$fstatistic
+                p <- pf(f[1],f[2],f[3],lower.tail=F)
+                g.labels <- matched.chem[[tx]][group.idx,contrast]
+                group.vals <- lapply(unique(g.labels), function(x) tx.expr[group.idx][which(g.labels == x)])
+                names(group.vals) <- unique(g.labels)
+                all.group.vals[[g]] <- group.vals
+                group.means <- sapply(group.vals, mean)
+                all.group.names[g] = paste0(paste(no_contrast_groups[g,], collapse = " "), "\n(p = ", signif(p, 2), ")")
+                results.table[g,] <- c(group.means, p)
+            }
+            names(all.group.vals) <- all.group.names
+            plot.grouped.boxes(all.group.vals, plot.grouping = "inner", print.vals = NA)
+            mtext(names(chem.matched.expr)[tx], side = 3, cex = 2)
+            results.table <- cbind(no_contrast_groups, results.table)
+            rownames(results.table) <- NULL    
+            results[[tx]] <- results.table
         }
-        names(all.group.vals) <- all.group.names
-        plot.grouped.boxes(all.group.vals, plot.grouping = "inner", print.vals = NA)
-        mtext(names(chem.matched.expr)[tx], side = 3, cex = 2)
-        results.table <- cbind(no_contrast_groups, results.table)
-        rownames(results.table) <- NULL    
-        results[[tx]] <- results.table
         cat("\n\n")
     }
     return(results)
@@ -881,43 +913,45 @@ treat_int <- function(int.factors = c("Diet", "Treatment")){
         cat("####", names(chem.matched.expr)[tx], "\n")
         interaction.p <- rep(NA, nrow(no_int_groups))
         names(interaction.p) <- no_int_groups[,1]
-        
-        if(is.interactive){quartz(width = 8, height = 4)}
-        tx.expr <- chem.matched.expr[[tx]]
-        par(mfrow = c(1,2))
-        for(g in 1:nrow(no_int_groups)){
-            group.idx <- which(matched.chem[[tx]][,test.factors] == no_int_groups[g,test.factors])
-            
-            expr <- tx.expr[group.idx]
-            factor1 <- matched.chem[[tx]][group.idx,int.factors[1]]
-            factor2 <- matched.chem[[tx]][group.idx,int.factors[2]]
-            model <- lm(expr~as.factor(factor1)*as.factor(factor2))
-            #summary(model)
 
-            comp.idx <- apply(int_groups, 1, 
-                function(x) intersect(which(matched.chem[[tx]][group.idx,colnames(int_groups)[1]] == x[1]), 
-                which(matched.chem[[tx]][group.idx,colnames(int_groups)[2]] == x[2])))
-            group.names <- apply(int_groups, 1, function(x) paste(x, collapse = "_"))
-            group.vals <- lapply(comp.idx, function(x) expr[x])
-            group.means <- sapply(group.vals, mean)
-            group.se  <- sapply(group.vals, function(x) sd(x))
-            names(group.vals) <- names(group.means) <- names(group.se) <- group.names
+        if(nrow(chem.matched.expr[[tx]]) > 0){        
+            if(is.interactive){quartz(width = 8, height = 4)}
+            tx.expr <- chem.matched.expr[[tx]]
+            par(mfrow = c(1,2))
+            for(g in 1:nrow(no_int_groups)){
+                group.idx <- which(matched.chem[[tx]][,test.factors] == no_int_groups[g,test.factors])
+                
+                expr <- tx.expr[group.idx]
+                factor1 <- matched.chem[[tx]][group.idx,int.factors[1]]
+                factor2 <- matched.chem[[tx]][group.idx,int.factors[2]]
+                model <- lm(expr~as.factor(factor1)*as.factor(factor2))
+                #summary(model)
 
-            ylim <- c(min(group.means-group.se), max(group.means+group.se))
+                comp.idx <- apply(int_groups, 1, 
+                    function(x) intersect(which(matched.chem[[tx]][group.idx,colnames(int_groups)[1]] == x[1]), 
+                    which(matched.chem[[tx]][group.idx,colnames(int_groups)[2]] == x[2])))
+                group.names <- apply(int_groups, 1, function(x) paste(x, collapse = "_"))
+                group.vals <- lapply(comp.idx, function(x) expr[x])
+                group.means <- sapply(group.vals, mean)
+                group.se  <- sapply(group.vals, function(x) sd(x))
+                names(group.vals) <- names(group.means) <- names(group.se) <- group.names
 
-            int.p <- summary(model)$coefficients[4,"Pr(>|t|)"] 
-            interaction.p[g] <- int.p
+                ylim <- c(min(group.means-group.se), max(group.means+group.se))
 
-            interaction.plot(factor1, factor2, expr, 
-                main = paste0(no_int_groups[g,1], " (p = ", signif(int.p, 2), ")"),
-                ylim = ylim)
-            segments(2:1, group.means[1:2]-group.se[1:2], 2:1, group.means[1:2]+group.se[1:2])
-            segments(1:2, group.means[3:4]-group.se[3:4], 1:2, group.means[3:4]+group.se[3:4])
-            
-            #interaction.plot(as.factor(factor2), as.factor(factor1), expr)   
+                int.p <- summary(model)$coefficients[4,"Pr(>|t|)"] 
+                interaction.p[g] <- int.p
+
+                interaction.plot(factor1, factor2, expr, 
+                    main = paste0(no_int_groups[g,1], " (p = ", signif(int.p, 2), ")"),
+                    ylim = ylim)
+                segments(2:1, group.means[1:2]-group.se[1:2], 2:1, group.means[1:2]+group.se[1:2])
+                segments(1:2, group.means[3:4]-group.se[3:4], 1:2, group.means[3:4]+group.se[3:4])
+                
+                #interaction.plot(as.factor(factor2), as.factor(factor1), expr)   
+            }
+            mtext(names(chem.matched.expr)[tx], side = 3, outer = TRUE, line = -1.5)
+            results[[tx]] <- interaction.p
         }
-        mtext(names(chem.matched.expr)[tx], side = 3, outer = TRUE, line = -1.5)
-        results[[tx]] <- interaction.p
         cat("\n\n")
     }
     invisible(results)
