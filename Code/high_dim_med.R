@@ -12,8 +12,11 @@
 
 
 high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix, 
-    min.weight.diff = 1e-3, max.iter = 15, verbose = FALSE, kernel.c = TRUE, 
-    kernel.m = TRUE, kernel.o = TRUE){
+    min.weight.diff = 1e-3, max.iter = 15, 
+    scheme = c("centroid", "horst", "factorial"), verbose = FALSE, 
+    kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE){
+
+    scheme <- scheme[1]
 
     common.ind <- Reduce("intersect", list(rownames(causal.matrix), 
         rownames(mediating.matrix), rownames(outcome.matrix)))
@@ -95,7 +98,8 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
 
         initial_weights <- c(W1, W2)
 
-        curr_model = rgcca(A, weight.mat, tau = "optimal", verbose = FALSE)
+        curr_model = rgcca(A, weight.mat, tau = "optimal", verbose = FALSE,
+            scheme = scheme)
         
         curr_g_score = as.matrix(A[[1]] %*% curr_model$a[[1]])
         curr_t_score = as.matrix(A[[2]] %*% curr_model$a[[2]])

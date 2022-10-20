@@ -199,8 +199,28 @@ Kp = sub.pheno %*% t(sub.pheno) / dim(sub.pheno)[2]
 
 ## Perform high-dimensional mediation
 
+```{r flip_scores}
+#sometimes one set of scores gets flipped giving us
+#negative correlations in the scores. This function 
+#flips everything around to be positively correlated.
+
+flip_scores <- function(med_scores){
+    curr_cor = cor(med_scores)
+    neg_cor <- which(curr_cor < 0, arr.ind = TRUE)
+    #if there are any that are negative, flup them arround
+    if(length(neg_cor) > 1){
+        #which has the most negative correlations
+        max.neg <- as.numeric(names(which.max(table(as.vector(neg_cor)))))
+        #flip the scores
+        med_scores[,max.neg] <- med_scores[,max.neg]*-1
+    }
+    return(med_scores)
+}
+
+```
 
 ```{r mediation}
+
 transcript_loading_file <- file.path(results.dir, "Loadings_Transcripts.RDS")
 trait_loading_file <- file.path(results.dir, "Loadings_Traits.RDS")
 model_file <- file.path(results.dir, "Model_Scores.RDS")
@@ -216,23 +236,27 @@ if(!file.exists(transcript_loading_file) || delete_previous){
         if(complete.mediation){
             #transcripts are the mediator
             mediator.kernel = Kt[[tx]]; transcript.col <- "Mediator"
-
             #phenotypes are the outcome
             outcome.kernel = Kp; trait.col <- "Outcome"
-            
         }else{
             #phenotypes are the mediator
             mediator.kernel = Kp;trait.col <- "Mediator" 
-            
             #transcripts are the outcome
             outcome.kernel = Kt[[tx]]; transcript.col = "Outcome" 
         }
         
         model_scores[[tx]] <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
             mediating.matrix = mediator.kernel, outcome.matrix = outcome.kernel, 
-            min.weight.diff = 1e-5, max.iter = 15, verbose = is.interactive, 
-            kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE)
-        #path_coef(cor(model_scores[[tx]]))
+            min.weight.diff = 1e-5, max.iter = 15, scheme = "horst", 
+            verbose = is.interactive, kernel.c = TRUE, kernel.m = TRUE, 
+            kernel.o = TRUE)
+        
+        #pairs(model_scores[[tx]])
+        if(any(cor(model_scores[[tx]]) < 0)){
+            flipped_result <- flip_scores(model_scores[[tx]])
+            #pairs(flipped_result)
+            model_scores[[tx]] <- flipped_result
+        }
 
         #calculate transcript loadings
         #This is the correlation between the scaled expression
@@ -250,6 +274,8 @@ if(!file.exists(transcript_loading_file) || delete_previous){
             sub.pheno)
         trait_loadings[[tx]] <- trait_cor
     }
+    #med.coef <- t(sapply(1:4, function(tx) path_coef(cor(model_scores[[tx]]))))
+
 
     saveRDS(transcript_loadings, transcript_loading_file)
     saveRDS(trait_loadings, trait_loading_file)
@@ -284,6 +310,7 @@ if(!file.exists(perm.file) || delete_previous){
     all.perms <- vector(mode = "list", length = max.tx)
 
     for(tx in 1:max.tx){
+
         if(complete.mediation){
             #for the mediation model, the transcript kernel is the mediator
             mediator.kernel = Kt[[tx]]
@@ -293,29 +320,42 @@ if(!file.exists(perm.file) || delete_previous){
             mediator.kernel = Kp
             outcome.kernel = Kt[[tx]]
         }
-
+        
         perm_path <- matrix(NA, nrow = num.perm, ncol = 3)
         colnames(perm_path) <- c("path_coef", "obs_cor", "diff")
         for(p in 1:num.perm){
 
             if(is.interactive){report.progress(p, num.perm)}
+            
             #permute the mediator
-  
             perm_names <- sample(rownames(mediator.kernel))
             perm_mediator <- mediator.kernel
             rownames(perm_mediator) <- colnames(perm_mediator) <- perm_names
 
-            perm_cor <- cor(high_dim_med(causal.matrix = Kg_cent[[tx]], 
-                mediating.matrix = perm_mediator, outcome.matrix = outcome.kernel, 
+            #and the outcome? Not sure if this is the right thing to do
+            perm_names <- sample(rownames(outcome.kernel))
+            perm_outcome <- outcome.kernel
+            rownames(perm_outcome) <- colnames(perm_outcome) <- perm_names
+
+            perm_scores <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
+                mediating.matrix = perm_mediator, outcome.matrix = perm_outcome, 
                 min.weight.diff = 1e-5, max.iter = 15, verbose = is.interactive, 
-                kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE))
+                kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE)
+            
+            if(any(cor(model_scores[[tx]]) < 0)){
+                flipped_result <- flip_scores(perm_scores)
+                #pairs(flipped_result)
+                perm_scores <- flipped_result
+            }
+
+            perm_cor <- cor(perm_scores)
             perm_path[p,] <- path_coef(perm_cor)
         }
 
     all.perms[[tx]] <- perm_path
     }
 
-saveRDS(all.perms, perm.file)
+    saveRDS(all.perms, perm.file)
 
 }else{
     all.perms <- readRDS(perm.file)
@@ -372,13 +412,19 @@ for(tx in 1:length(tissue.names)){
     cat("###", tissue.names[tx], "\n")
     #find the correlations between the scores
     curr_scores <- model_scores[[tx]]
-    #change from generic names to specific names
-    colnames(curr_scores) <- c("Genome", "Transcriptome", "Traits")
-    curr_cor = cor(curr_scores)
-    neg_cor <- which(curr_cor < 0, arr.ind = TRUE)
     
+    #change from generic names to specific names
+    if(complete.mediation){
+        colnames(curr_scores) <- c("Genome", "Transcriptome", "Traits")
+    }else{
+        colnames(curr_scores) <- c("Genome", "Traits", "Transcriptome")
+    }
+    curr_cor = cor(curr_scores)
+
     #if there are any that are negative, flup them arround
-    if(length(neg_cor) > 1){
+    if(any(curr_cor < 0)){
+        flipped.results <- flip_scores(curr_scores, )
+    }
         #which has the most negative correlations
         max.neg <- as.numeric(names(which.max(table(as.vector(neg_cor)))))
         #flip the scores
