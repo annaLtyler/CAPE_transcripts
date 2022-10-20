@@ -7,7 +7,10 @@
 #and calculates the difference between the realized
 #correlations and the ideal correlations.
 
-diff_from_ideal <- function(cor_mat){
-    diff_cor <- cor_mat[1, 3] - cor_mat[1,2] * cor_mat[2,3]
-    return(diff_cor)
+path_coef <- function(cor_mat){
+    obs.cor <- cor_mat[1, 3]
+    path.coef <- cor_mat[1,2] * cor_mat[2,3]
+    diff_cor <- obs.cor - path.coef
+    result <- c("path_coef" = path.coef, "obs_cor" = obs.cor, "diff" = diff_cor)
+    return(result)
 }
