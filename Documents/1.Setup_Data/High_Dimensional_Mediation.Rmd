@@ -339,8 +339,9 @@ if(!file.exists(perm.file) || delete_previous){
 
             perm_scores <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
                 mediating.matrix = perm_mediator, outcome.matrix = perm_outcome, 
-                min.weight.diff = 1e-5, max.iter = 15, verbose = is.interactive, 
-                kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE)
+                min.weight.diff = 1e-5, max.iter = 15, scheme = "horst", 
+                verbose = is.interactive, kernel.c = TRUE, kernel.m = TRUE, 
+                kernel.o = TRUE)
             
             if(any(cor(model_scores[[tx]]) < 0)){
                 flipped_result <- flip_scores(perm_scores)
