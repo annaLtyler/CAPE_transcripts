@@ -28,8 +28,10 @@ There are several parameters to set.
 ```{r get_args}
 args <- commandArgs(trailingOnly=T)
 
-args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
+#args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
 #args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
+args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
+#args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
 
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
 use.local.imputation <- as.logical(args[2]) #if TRUE, locally imputed transcripts are used to generate polytranscriptomic risk scores. Otherwise transcripts imputed with the full genetic model are used.
@@ -211,22 +213,26 @@ if(!file.exists(transcript_loading_file) || delete_previous){
         if(is.interactive){cat("\n", tissue.names[tx], "\n")}
         
         #assign matrices to proper positions
-        if(mediation.text == "complete_mediation"){
-            mediator.kernel = Kt[[tx]]
-            outcome.kernel = Kp
-            transcript.col <- "Mediator"
-            trait.col <- "Outcome"
+        if(complete.mediation){
+            #transcripts are the mediator
+            mediator.kernel = Kt[[tx]]; transcript.col <- "Mediator"
+
+            #phenotypes are the outcome
+            outcome.kernel = Kp; trait.col <- "Outcome"
+            
         }else{
-            mediator.kernel = Kp
-            outcome.kernel = Kt[[tx]]
-            transcript.col = "Outcome"
-            trait.col <- "Mediator"
+            #phenotypes are the mediator
+            mediator.kernel = Kp;trait.col <- "Mediator" 
+            
+            #transcripts are the outcome
+            outcome.kernel = Kt[[tx]]; transcript.col = "Outcome" 
         }
         
         model_scores[[tx]] <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
             mediating.matrix = mediator.kernel, outcome.matrix = outcome.kernel, 
             min.weight.diff = 1e-5, max.iter = 15, verbose = is.interactive, 
             kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE)
+        #path_coef(cor(model_scores[[tx]]))
 
         #calculate transcript loadings
         #This is the correlation between the scaled expression
@@ -278,11 +284,12 @@ if(!file.exists(perm.file) || delete_previous){
     all.perms <- vector(mode = "list", length = max.tx)
 
     for(tx in 1:max.tx){
-        #assign the proper mediating and outcome matrices
-        if(mediation.text == "complete_mediation"){
+        if(complete.mediation){
+            #for the mediation model, the transcript kernel is the mediator
             mediator.kernel = Kt[[tx]]
             outcome.kernel = Kp
         }else{
+            #for the reactive model, the phenotype is the mediator
             mediator.kernel = Kp
             outcome.kernel = Kt[[tx]]
         }
@@ -327,12 +334,22 @@ for(tx in 1:max.tx){
     xmax <- max(c(all.perms[[tx]][,1], tissue.path.coef[1]))
     xlim <- get_plot_bounds(0, xmax)
 
-    ylim <- c(min(c(unlist(all.perms[[tx]]), tissue.path.coef)), 
-        max(c(unlist(all.perms[[tx]]), tissue.path.coef)))
-    boxplot(all.perms[[tx]], ylim = ylim, col = categorical_pal(3))
+    ylim <- c(0, max(abs(c(unlist(all.perms[[tx]]), tissue.path.coef))))
+    boxplot(abs(all.perms[[tx]]), ylim = ylim, col = categorical_pal(3))
     segments(x0 = segment.region(0.75, 2.75, 3, "ends"), 
             x1 = segment.region(1.25, 3.25, 3, "ends"),
             y0 = tissue.path.coef, col = categorical_pal(3), lwd = 3)
+
+    stripchart(-log10(abs(all.perms[[tx]][,3])), method = "jitter", pch = 16, 
+        col = "gray", vertical = TRUE, 
+        main = "-log10[cor(x,y) - path coef.]")
+    segments(x0 = 0.9, x1 = 1.1, y0 = -log10(abs(tissue.path.coef[3])), col = "red", lwd = 3)
+    text(x = 0.89, y = -log10(abs(tissue.path.coef[3])), labels = "Observed", adj = 1)
+
+    plot(all.perms[[tx]][,1:2], ylim = ylim, xlim = ylim, xlab = "cor(x,m)*cor(m,y)",
+        ylab = "cor(x,y)", col = "gray", pch = 16)
+    points(tissue.path.coef[1], tissue.path.coef[2], col = "red", pch = 16)
+    abline(0,1)
 }
 ```
 

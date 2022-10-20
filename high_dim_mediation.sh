@@ -7,12 +7,13 @@
 
 merge_tissues=TRUE
 local_imputation=TRUE
-weight_adjusted=TRUE
-complete_mediation=TRUE
+weight_adjusted=FALSE
+complete_mediation=FALSE
 delete_previous=FALSE
 
 ##=====================================================================================##
 ## run the markdown with these parameters
+## Make sure any lines that specify args in the Rmd are commented out.
 ##=====================================================================================##
 
 R -e "rmarkdown::render(here::here('Documents', '1.Setup_Data', 'High_Dimensional_Mediation.Rmd'))" --args $merge_tissues $local_imputation $weight_adjusted $complete_mediation $delete_previous
