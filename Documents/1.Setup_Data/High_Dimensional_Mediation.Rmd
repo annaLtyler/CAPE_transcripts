@@ -28,9 +28,8 @@ There are several parameters to set.
 ```{r get_args}
 args <- commandArgs(trailingOnly=T)
 
-#args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
-args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
-
+args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
+#args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
 
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
 use.local.imputation <- as.logical(args[2]) #if TRUE, locally imputed transcripts are used to generate polytranscriptomic risk scores. Otherwise transcripts imputed with the full genetic model are used.
@@ -328,9 +327,12 @@ for(tx in 1:max.tx){
     xmax <- max(c(all.perms[[tx]][,1], tissue.path.coef[1]))
     xlim <- get_plot_bounds(0, xmax)
 
-    hist(all.perms[[tx]][,1], xlim = xlim, breaks = 20, main = "Path Coef Null",
-        xlab = "Path Coef")
-    abline(v = tissue.path.coef, col = "red")
+    ylim <- c(min(c(unlist(all.perms[[tx]]), tissue.path.coef)), 
+        max(c(unlist(all.perms[[tx]]), tissue.path.coef)))
+    boxplot(all.perms[[tx]], ylim = ylim, col = categorical_pal(3))
+    segments(x0 = segment.region(0.75, 2.75, 3, "ends"), 
+            x1 = segment.region(1.25, 3.25, 3, "ends"),
+            y0 = tissue.path.coef, col = categorical_pal(3), lwd = 3)
 }
 ```
 
