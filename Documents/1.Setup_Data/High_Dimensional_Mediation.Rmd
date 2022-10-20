@@ -274,7 +274,7 @@ if(merge.tissues){
 
 perm.file <- file.path(results.dir, "Permutations.RDS")
 
-if(!file.exists(perm.file)){
+if(!file.exists(perm.file) || delete_previous){
     num.perm = 100
     all.perms <- vector(mode = "list", length = max.tx)
 
@@ -303,7 +303,7 @@ if(!file.exists(perm.file)){
                 mediating.matrix = perm_mediator, outcome.matrix = outcome.kernel, 
                 min.weight.diff = 1e-5, max.iter = 15, verbose = is.interactive, 
                 kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE))
-            perm_path[p,] <- diff_from_ideal(perm_cor)
+            perm_path[p,] <- path_coef(perm_cor)
         }
 
     all.perms[[tx]] <- perm_path
@@ -383,7 +383,7 @@ for(tx in 1:length(tissue.names)){
         saveRDS(transcript_loadings, transcript_loading_file)
         saveRDS(model_scores, model_file)
     }
-    cor_diff <- diff_from_ideal(curr_cor)
+    cor_diff <- path_coef(curr_cor)[3]
     #cor_diff <- abs(curr_cor[1, 3] - curr_cor[1,2] * curr_cor[2,3])
     pairs(curr_scores, main = paste(tissue.names[tx], "\nCorrelation Diff:", round(cor_diff, 3)))
     cat("\n\n")
