@@ -199,25 +199,6 @@ Kp = sub.pheno %*% t(sub.pheno) / dim(sub.pheno)[2]
 
 ## Perform high-dimensional mediation
 
-```{r flip_scores}
-#sometimes one set of scores gets flipped giving us
-#negative correlations in the scores. This function 
-#flips everything around to be positively correlated.
-
-flip_scores <- function(med_scores){
-    curr_cor = cor(med_scores)
-    neg_cor <- which(curr_cor < 0, arr.ind = TRUE)
-    #if there are any that are negative, flup them arround
-    if(length(neg_cor) > 1){
-        #which has the most negative correlations
-        max.neg <- as.numeric(names(which.max(table(as.vector(neg_cor)))))
-        #flip the scores
-        med_scores[,max.neg] <- med_scores[,max.neg]*-1
-    }
-    return(med_scores)
-}
-
-```
 
 ```{r mediation}
 
@@ -228,6 +209,7 @@ model_file <- file.path(results.dir, "Model_Scores.RDS")
 if(!file.exists(transcript_loading_file) || delete_previous){
     transcript_loadings <- trait_loadings <- model_scores <- vector(mode = "list", length = length(tissue.names))
     names(transcript_loadings) <- names(trait_loadings) <- names(model_scores) <- tissue.names
+    flags <- rep(NA, length(tissue.names))
 
     for(tx in 1:length(tissue.names)){
         if(is.interactive){cat("\n", tissue.names[tx], "\n")}
@@ -245,18 +227,13 @@ if(!file.exists(transcript_loading_file) || delete_previous){
             outcome.kernel = Kt[[tx]]; transcript.col = "Outcome" 
         }
         
-        model_scores[[tx]] <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
+        fit.result <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
             mediating.matrix = mediator.kernel, outcome.matrix = outcome.kernel, 
-            min.weight.diff = 1e-5, max.iter = 15, scheme = "horst", 
+            min.weight.diff = 1e-5, max.iter = 15, scheme = "centroid", 
             verbose = is.interactive, kernel.c = TRUE, kernel.m = TRUE, 
             kernel.o = TRUE)
-        
-        #pairs(model_scores[[tx]])
-        if(any(cor(model_scores[[tx]]) < 0)){
-            flipped_result <- flip_scores(model_scores[[tx]])
-            #pairs(flipped_result)
-            model_scores[[tx]] <- flipped_result
-        }
+        model_scores[[tx]] <- fit.result[[1]]
+        flags[tx] <- fit.result[[2]]
 
         #calculate transcript loadings
         #This is the correlation between the scaled expression
@@ -276,7 +253,6 @@ if(!file.exists(transcript_loading_file) || delete_previous){
     }
     #med.coef <- t(sapply(1:4, function(tx) path_coef(cor(model_scores[[tx]]))))
 
-
     saveRDS(transcript_loadings, transcript_loading_file)
     saveRDS(trait_loadings, trait_loading_file)
     saveRDS(model_scores, model_file)
@@ -285,14 +261,36 @@ if(!file.exists(transcript_loading_file) || delete_previous){
     trait_loadings <- readRDS(trait_loading_file)
     model_scores <- readRDS(model_file)
 }
+
 ```
 
-## Permutations
+The following plots show the partial correlations between
+the causal factor, the mediator, and the outcome. Line
+width corresponds to partial correlation, and line color
+corresponds with the sign of the partial correlation. Orange
+is negative and green is positive.
+
+```{r eval = FALSE}
+library(corpcor)
+library(igraph)
+for(tx in 1:length(tissue.names)){
+    tx.pcor <- pcor.shrink(model_scores[[tx]])
+    tx.pcor[lower.tri(tx.pcor, diag = TRUE)] <- 0
+    net <- graph_from_adjacency_matrix(tx.pcor, weighted = TRUE, mode = "directed")
+    e.weight <- E(net)$weight
+    plot(net, edge.width = abs(e.weight*10), edge.color = sign(e.weight)+2, 
+        main = tissue.names[tx], layout = layout_on_grid, edge.label = signif(e.weight, 2))
+}
+
+```
+
+## Permutations {.tabset .tabset-fade .tabset-pills}
 
 Run permutations to calulate a null distribution for the path
 coefficient. This is the correlation between the causal matrix
 and the outcome matrix. To do this, we shuffle the names of the
 mediator kernel. This decorrelates the 
+
 
 ```{r perm}
 
@@ -341,14 +339,8 @@ if(!file.exists(perm.file) || delete_previous){
                 min.weight.diff = 1e-5, max.iter = 15, scheme = "horst", 
                 verbose = is.interactive, kernel.c = TRUE, kernel.m = TRUE, 
                 kernel.o = TRUE)
-            
-            if(any(cor(model_scores[[tx]]) < 0)){
-                flipped_result <- flip_scores(perm_scores)
-                #pairs(flipped_result)
-                perm_scores <- flipped_result
-            }
-
-            perm_cor <- cor(perm_scores)
+        
+            perm_cor <- pcor.shrink(perm_scores)
             perm_path[p,] <- path_coef(perm_cor)
         }
 
@@ -366,9 +358,11 @@ The following plots show the null distribution for each
 tissue, unless tissues were merged, and then only one
 null distribution is shown.
 
-```{r plot_perm}
+```{r plot_perm, results = "asis"}
 
 for(tx in 1:max.tx){
+    cat("###", tissue.names[tx], "\n")
+    
     tissue.cor <- cor(model_scores[[tx]])
     tissue.path.coef <- path_coef(tissue.cor)
     xmax <- max(c(all.perms[[tx]][,1], tissue.path.coef[1]))
@@ -390,6 +384,8 @@ for(tx in 1:max.tx){
         ylab = "cor(x,y)", col = "gray", pch = 16)
     points(tissue.path.coef[1], tissue.path.coef[2], col = "red", pch = 16)
     abline(0,1)
+    
+    cat("\n\n")
 }
 ```
 
@@ -419,35 +415,8 @@ for(tx in 1:length(tissue.names)){
     }else{
         colnames(curr_scores) <- c("Genome", "Traits", "Transcriptome")
     }
-    curr_cor = cor(curr_scores)
+    curr_cor = pcor.shrink(curr_scores)
 
-    #if there are any that are negative, flup them arround
-    if(any(curr_cor < 0)){
-        flipped.results <- flip_scores(curr_scores, )
-    }
-        #which has the most negative correlations
-        max.neg <- as.numeric(names(which.max(table(as.vector(neg_cor)))))
-        #flip the scores
-        curr_scores[,max.neg] <- curr_scores[,max.neg]*-1
-        #and replace in the model_scores object
-        model_scores[[tx]] <- curr_scores
-
-        #recalculate correlations
-        curr_cor = cor(curr_scores)
-
-        #also flip the calculated loadings if required
-        if(max.neg == 2){
-            transcript_loadings[[tx]] <- transcript_loadings[[tx]]*-1
-        }
-        if(max.neg == 3){
-            trait_loadings[[tx]] <- trait_loadings[[tx]]*-1
-        }
-        
-        #save corrected loadings in case we want to use them in
-        #a different workflow downstream
-        saveRDS(transcript_loadings, transcript_loading_file)
-        saveRDS(model_scores, model_file)
-    }
     cor_diff <- path_coef(curr_cor)[3]
     #cor_diff <- abs(curr_cor[1, 3] - curr_cor[1,2] * curr_cor[2,3])
     pairs(curr_scores, main = paste(tissue.names[tx], "\nCorrelation Diff:", round(cor_diff, 3)))

@@ -5,10 +5,6 @@
 #min.weight.diff is the 
 #kernel.c, kernel.m, and kernel.o indicate whether the causal,
 #mediating, and outcome matrices are kernelized
-#mediation.type determines whether we are looking for 
-#complete mediation: causal -> mediating -> outcome
-#or a reactive model: causal -> outcome -> mediating
-#The default is complete mediation
 
 
 high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix, 
@@ -81,6 +77,32 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
     return(do.we.stop)
     }
 
+    check_signs <- function(curr_scores){
+        score_cor <- cor(curr_scores)
+        xm <- score_cor[1,2]
+        my <- score_cor[2,3]
+        xy <- score_cor[1,3]
+        flag <- "coherent"
+
+        if(sign(xm) == -1 && sign(my) == 1){
+            curr_scores[,1] <- curr_scores[,1] * -1
+            if(sign(xy) == 1){flag = "frustrated"}
+        }
+
+        if(sign(xm) == -1 && sign(my) == -1){
+            curr_scores[,2] <- curr_scores[,2] * -1
+            if(sign(xy) == -1){flag = "frustrated"}
+        }
+
+        if(sign(xm) == 1 && sign(my) == -1){
+            curr_scores[,3] <- curr_scores[,3] * -1
+            if(sign(xy) == 1){flag == "frustrated"}
+        }
+        
+        result <- list(curr_scores, flag)
+        return(result)
+    }
+
     A = list(g = g, t = t, p = p)
 
     weight.mat = 0.5 * matrix(c(0,0,0,1,0,0,0,1,0), 3, 3)    
@@ -92,7 +114,6 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
     W1 <- W2 <- 0.5
     last_diff <- c(Inf, Inf)
     iter = 1
-
     # Loop over "EM" iterations
     while(!stop.now){
 
@@ -106,10 +127,14 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
         curr_p_score = as.matrix(A[[3]] %*% curr_model$a[[3]])
         
         curr_scores = cbind(curr_g_score, cbind(curr_t_score, curr_p_score))
-        model_scores[[tx]] <- curr_scores        
+        model_scores[[tx]] <- curr_scores
 
-        curr_cor = cor(curr_scores)
+        #check signs before updating weights.
+        curr_scores <- check_signs(curr_scores)
         
+        curr_cor = cor(curr_scores[[1]])
+        flag <- curr_scores[[2]]
+
         w1 = curr_cor[1, 2] / (1 - curr_cor[1, 2]^2)
         w2 = curr_cor[2, 3] / (1 - curr_cor[2, 3]^2)
         
@@ -135,5 +160,6 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
 
     curr_scores = cbind(curr_g_score, cbind(curr_t_score, curr_p_score))
     colnames(curr_scores) <- c("Causal", "Mediator", "Outcome")
-    return(curr_scores)
+    result <- list(curr_scores, flag)
+    return(result)
 }
