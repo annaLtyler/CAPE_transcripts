@@ -29,8 +29,8 @@ There are several parameters to set.
 args <- commandArgs(trailingOnly=T)
 
 #args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
-#args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
-args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
+args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
+#args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
 #args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
 
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
@@ -392,13 +392,8 @@ if(!file.exists(perm.file) || delete_previous){
             perm_mediator <- mediator.kernel
             rownames(perm_mediator) <- colnames(perm_mediator) <- perm_names
 
-            #and the outcome? Not sure if this is the right thing to do
-            perm_names <- sample(rownames(outcome.kernel))
-            perm_outcome <- outcome.kernel
-            rownames(perm_outcome) <- colnames(perm_outcome) <- perm_names
-
             perm_scores <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
-                mediating.matrix = perm_mediator, outcome.matrix = perm_outcome, 
+                mediating.matrix = perm_mediator, outcome.matrix = outcome.kernel, 
                 min.weight.diff = 1e-5, max.iter = 15, scheme = "horst", 
                 verbose = is.interactive, kernel.c = TRUE, kernel.m = TRUE, 
                 kernel.o = TRUE)
@@ -522,20 +517,21 @@ if(!file.exists(enrich.file) || delete_previous){
 
 ```
 
-```{r plot_enrichment, results = "asis", fig.width = 8, fig.height = 6}
- 
+```{r plot_enrichment, results = "asis", fig.width = 10, fig.height = 5}
 for(tx in 1:length(tissue.names)){
     cat("###", tissue.names[tx], "{.tabset .tabset-fade .tabset-pills}\n")
 
-    cat("#### Positive Loadings\n\n")
-    plot.enrichment(all.enrich[[tx]]$top, 
+    cat("#### Positive Loadings\n")
+    par(mfrow = c(1,2))
+    plot.enrichment.wordcloud(all.enrich[[tx]]$top, order.by = "p_value",
         plot.label = paste(tissue.names[tx], "Positive Loadings"), 
-        num.terms = 30)
+        num.terms = 25, max.term.size = 5000)
 
-    cat("#### Negative Loadings\n\n")
-    plot.enrichment(all.enrich[[tx]]$bottom, 
+    cat("#### Negative Loadings\n")
+    par(mfrow = c(1,2))
+    plot.enrichment.wordcloud(all.enrich[[tx]]$bottom, 
         plot.label = paste(tissue.names[tx], "Negative Loadings"), 
-        num.terms = 25)
+        num.terms = 25, max.term.size = 5000)
 
     cat("\n\n")
 }
