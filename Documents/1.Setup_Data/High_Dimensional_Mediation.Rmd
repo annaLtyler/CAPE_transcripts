@@ -29,8 +29,8 @@ There are several parameters to set.
 args <- commandArgs(trailingOnly=T)
 
 #args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
-args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
-#args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
+#args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
+args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
 #args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
 
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
