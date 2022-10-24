@@ -56,29 +56,36 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
 
     decide_stop <- function(stopping_criteria, n.iter){
         do.we.stop = FALSE
+        reason <- "keep going"
 
         #if we have met the minimum weight change criterion, then stop
         if(stopping_criteria[[1]]){
             do.we.stop = TRUE
-            if(verbose){cat("Reached minimum weight change.\n")}
+            reason <- "Reached minimum weight change."
+            if(verbose){cat(reason, "\n")}
+            
         }
 
         #if we are not converging, then stop
         if(!stopping_criteria[[2]]){
             do.we.stop = TRUE
-            if(verbose){cat("Not converging.\n")}
+            reason <- "Not converging"
+            if(verbose){cat(reason, "\n")}
         }
 
         if(n.iter >= max.iter){
             do.we.stop = TRUE
-            if(verbose){cat("Reached maximum number of iterations.\n")}
+            reason <- "Reached maximum number of iterations."
+            if(verbose){cat(reason, "\n")}
         }
 
-    return(do.we.stop)
+    result <- list("do.we.stop" = do.we.stop, "reason" = reason)
+    return(result)
     }
 
     check_signs <- function(curr_scores){
-        score_cor <- cor(curr_scores)
+        score_cor <- pcor.shrink(curr_scores, verbose = FALSE)
+        #cor(curr_scores)
         xm <- score_cor[1,2]
         my <- score_cor[2,3]
         xy <- score_cor[1,3]
@@ -99,7 +106,7 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
             if(sign(xy) == 1){flag == "frustrated"}
         }
         
-        result <- list(curr_scores, flag)
+        result <- list("scores" = curr_scores, "flag" = flag)
         return(result)
     }
 
@@ -132,7 +139,8 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
         #check signs before updating weights.
         curr_scores <- check_signs(curr_scores)
         
-        curr_cor = cor(curr_scores[[1]])
+        #curr_cor = cor(curr_scores[[1]])
+        curr_cor = pcor.shrink(curr_scores[[1]], verbose = FALSE)
         flag <- curr_scores[[2]]
 
         w1 = curr_cor[1, 2] / (1 - curr_cor[1, 2]^2)
@@ -146,20 +154,15 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
 
         stopping.criteria <- check_stop(initial_weights, curr_weights, last_diff)
         last_diff <- stopping.criteria[[3]]
-        stop.now <- decide_stop(stopping.criteria, iter)
+        stop.decision <- decide_stop(stopping.criteria, iter)
+        stop.now <- stop.decision[[1]]
         iter = iter + 1
         
         weight.mat = 0.5 * matrix(c(0,0,0,W1,0,0,0,W2,0), 3, 3)
         weight.mat = weight.mat + t(weight.mat)
     }
 
-    # Parse final model
-    curr_g_score = as.matrix(A[[1]] %*% curr_model$a[[1]])
-    curr_t_score = -as.matrix(A[[2]] %*% curr_model$a[[2]])
-    curr_p_score = as.matrix(A[[3]] %*% curr_model$a[[3]])
-
-    curr_scores = cbind(curr_g_score, cbind(curr_t_score, curr_p_score))
-    colnames(curr_scores) <- c("Causal", "Mediator", "Outcome")
-    result <- list(curr_scores, flag)
-    return(result)
+    colnames(curr_scores[[1]]) <- c("Causal", "Mediator", "Outcome")
+    curr_scores$reason <- stop.decision$reason
+    return(curr_scores)
 }

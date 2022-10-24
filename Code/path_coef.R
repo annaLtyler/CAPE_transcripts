@@ -7,10 +7,8 @@
 #and calculates the difference between the realized
 #correlations and the ideal correlations.
 
-path_coef <- function(cor_mat){
-    obs.cor <- cor_mat[1, 3]
+path_coef <- function(model.scores){
+    cor_mat <- pcor.shrink(model.scores, verbose = FALSE)
     path.coef <- cor_mat[1,2] * cor_mat[2,3]
-    diff_cor <- obs.cor - path.coef
-    result <- c("path_coef" = path.coef, "obs_cor" = obs.cor, "diff" = diff_cor)
-    return(result)
+    return(path.coef)
 }
