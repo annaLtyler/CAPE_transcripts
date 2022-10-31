@@ -8,7 +8,7 @@
 merge_tissues=TRUE
 local_imputation=TRUE
 weight_adjusted=FALSE
-complete_mediation=FALSE
+complete_mediation=TRUE
 delete_previous=FALSE
 
 ##=====================================================================================##

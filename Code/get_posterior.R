@@ -21,6 +21,7 @@ get_posterior <- function(bmediatR_object, med_annot = NULL, mediator_id, med_va
         tibble::rownames_to_column(med_var) %>% dplyr::rename(`partial med` = `1,1,1`, 
         `complete med` = `1,1,0`, `co-local` = `1,0,1`, `partial med (react)` = `1,*,1`, 
         `complete med (react)` = `0,*,1`)
+    return(posterior_dat)
     if (!is.null(med_annot)) {
         posterior_dat <- posterior_dat %>% dplyr::left_join(med_annot %>% 
             dplyr::select(tidyselect::all_of(med_var), symbol))
@@ -28,6 +29,7 @@ get_posterior <- function(bmediatR_object, med_annot = NULL, mediator_id, med_va
     else {
         posterior_dat <- posterior_dat %>% dplyr::mutate(symbol = get(med_var))
     }
+
     posterior_dat <- posterior_dat %>% dplyr::left_join(posterior_dat %>% 
         dplyr::select(tidyselect::all_of(med_var), contains(",")) %>% 
         dplyr::mutate(`other non-med` = rowSums(.[-1]))) %>% 

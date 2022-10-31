@@ -10,7 +10,7 @@
 high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix, 
     min.weight.diff = 1e-3, max.iter = 15, 
     scheme = c("centroid", "horst", "factorial"), verbose = FALSE, 
-    kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE){
+    kernel.c = TRUE, kernel.m = TRUE, kernel.o = TRUE, use.partial.cor = TRUE){
 
     scheme <- scheme[1]
 
@@ -84,7 +84,11 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
     }
 
     check_signs <- function(curr_scores){
-        score_cor <- pcor.shrink(curr_scores, verbose = FALSE)
+        if(use.partial.cor){
+            score_cor <- pcor.shrink(curr_scores, verbose = FALSE)
+        }else{
+            score_cor <- cor(curr_scores)
+        }
         #cor(curr_scores)
         xm <- score_cor[1,2]
         my <- score_cor[2,3]
@@ -126,7 +130,7 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
 
         initial_weights <- c(W1, W2)
 
-        curr_model = rgcca(A, weight.mat, tau = "optimal", verbose = FALSE,
+        curr_model = rgcca(A, weight.mat, tau = "optimal", verbose = TRUE,
             scheme = scheme)
         
         curr_g_score = as.matrix(A[[1]] %*% curr_model$a[[1]])
@@ -140,7 +144,11 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
         curr_scores <- check_signs(curr_scores)
         
         #curr_cor = cor(curr_scores[[1]])
-        curr_cor = pcor.shrink(curr_scores[[1]], verbose = FALSE)
+        if(use.partial.cor){
+            curr_cor = pcor.shrink(curr_scores[[1]], verbose = FALSE)
+        }else{
+            curr_cor <- cor(curr_scores[[1]])
+        }
         flag <- curr_scores[[2]]
 
         w1 = curr_cor[1, 2] / (1 - curr_cor[1, 2]^2)
@@ -150,7 +158,7 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
         W2 = w2 / (w1 + w2)
 
         curr_weights <- c(W1, W2)
-        if(verbose){print(c(W1, W2))}        
+        if(verbose){print(c(W1, W2))}
 
         stopping.criteria <- check_stop(initial_weights, curr_weights, last_diff)
         last_diff <- stopping.criteria[[3]]
