@@ -74,7 +74,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 all.packages <- c("pheatmap", "qtl2", "gprofiler2", "Matrix", "RGCCA", 
-    "bnstruct", "igraph", "corpcor", "GOSemSim", "cluster")
+    "bnstruct", "igraph", "corpcor", "GOSemSim", "cluster", "org.Mm.eg.db")
 load_libraries(all.packages, personal.library = TRUE)
 ```
 
