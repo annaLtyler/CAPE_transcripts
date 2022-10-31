@@ -6,33 +6,8 @@ Stage: spython-base
 maintainer="atyler"
 %post
 export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
-&& apt-get install -y git-core \
-libcurl4-openssl-dev \
-libglpk-dev \
+&& apt-get install -y libglpk-dev \
 libgmp-dev \
-libxml2-dev \
-make \
-pandoc \
-pandoc-citeproc
-R --slave -e 'install.packages("DescTools",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("doParallel",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("rmarkdown",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("DT",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("e1071",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("foreach",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("gprofiler2",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("here",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("igraph",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("iterators",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("knitr",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("Matrix",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("pheatmap",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("qtl2",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("R.methodsS3",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("R.oo",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("R.utils",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("RCurl",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("remotes",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("XML",repos="https://cran.rstudio.com/")'
-R --slave -e 'install.packages("devtools",repos="https://cran.rstudio.com/")'
+libxml2-dev
+cd /payload/
 exec /bin/bash R "$@"
