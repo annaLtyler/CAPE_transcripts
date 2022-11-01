@@ -8,7 +8,8 @@ maintainer="atyler"
 export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
 && apt-get install -y libglpk-dev \
 libgmp-dev \
-libxml2-dev
+libxml2-dev \
+libcurl4-openssl-dev
 install2.r --error \
 bitops \
 bnstruct \
@@ -22,10 +23,15 @@ qtl2 \
 RGCCA
 # Docker inheritance
 
-apt-get update
-RUN R -e 'BiocManager::install(ask = F)' && R -e 'BiocManager::install(c("AnnotationDbi", \
-"Biobase", "BiocGenerics", "GOSemSim", "IRanges", "org.Mm.eg.db", "S4Vectors", ask = F))'
 
+R -e 'BiocManager::install(c("AnnotationDbi", \
+"Biobase" \
+"BiocGenerics" \
+"GOSemSim" \
+"IRanges" \
+"org.Mm.eg.db" \
+"S4Vectors", ask = F))'
+
+%startscript
 cd /payload/
-%runscript
 exec /bin/bash R "$@"
