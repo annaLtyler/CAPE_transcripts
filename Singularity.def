@@ -9,7 +9,9 @@ export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
 && apt-get install -y libglpk-dev \
 libgmp-dev \
 libxml2-dev \
-libcurl4-openssl-dev
+libcurl4-openssl-dev \
+pandoc \
+pandoc-citeproc
 
 install2.r --error \
 bitops \
@@ -21,11 +23,8 @@ igraph \
 Matrix \
 pheatmap \
 qtl2 \
-RGCCA \
-here \
-rmarkdown
+RGCCA
 
 R -e 'BiocManager::install(c("AnnotationDbi", "Biobase", "BiocGenerics", "GOSemSim", "IRanges", "org.Mm.eg.db", "S4Vectors"))'
 
-%startscript
 exec /bin/bash R "$@"

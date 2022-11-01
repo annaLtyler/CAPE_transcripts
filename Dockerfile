@@ -1,10 +1,13 @@
-FROM rocker/r-ver:4.0.2
+FROM bioconductor/bioconductor_docker:devel
 LABEL maintainer="atyler"
 RUN export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
   && apt-get install -y libglpk-dev \
 	libgmp-dev \
 	libxml2-dev \ 
-	libcurl4-openssl-dev
+	libcurl4-openssl-dev \ 
+	pandoc \
+	pandoc-citeproc
+
 RUN install2.r --error \
 	bitops \ 
 	bnstruct \ 
@@ -17,17 +20,8 @@ RUN install2.r --error \
 	qtl2 \ 
 	RGCCA
 
-# Docker inheritance
-FROM bioconductor/bioconductor_docker:devel
+RUN R -e 'BiocManager::install(c("AnnotationDbi", "Biobase", "BiocGenerics", "GOSemSim", "IRanges", "org.Mm.eg.db", "S4Vectors"))'
 
-
-RUN R -e 'BiocManager::install(c("AnnotationDbi" \
-	"Biobase" \ 
-	"BiocGenerics" \ 
-	"GOSemSim" \ 
-	"IRanges" \ 
-	"org.Mm.eg.db" \ 
-	"S4Vectors", ask = F))'
 
 WORKDIR /payload/
 CMD ["R"]
