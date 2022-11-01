@@ -10,6 +10,7 @@ export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
 libgmp-dev \
 libxml2-dev \
 libcurl4-openssl-dev
+
 install2.r --error \
 bitops \
 bnstruct \
@@ -22,10 +23,7 @@ pheatmap \
 qtl2 \
 RGCCA
 
-# Docker inheritance
-
-
-R -e 'BiocManager::install(c("AnnotationDbi", "Biobase", "BiocGenerics", "GOSemSim", "IRanges", "org.Mm.eg.db", "S4Vectors", ask = F))'
+R -e 'BiocManager::install(c("AnnotationDbi", "Biobase", "BiocGenerics", "GOSemSim", "IRanges", "org.Mm.eg.db", "S4Vectors"))'
 
 %startscript
 exec /bin/bash R "$@"
