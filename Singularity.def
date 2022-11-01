@@ -22,7 +22,10 @@ pheatmap \
 qtl2 \
 RGCCA
 
-R -e 'BiocManager::install(c("AnnotationDbi", \
+# Docker inheritance
+
+
+R -e 'BiocManager::install(c("AnnotationDbi" \
 "Biobase" \
 "BiocGenerics" \
 "GOSemSim" \

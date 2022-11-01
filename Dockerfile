@@ -21,7 +21,7 @@ RUN install2.r --error \
 FROM bioconductor/bioconductor_docker:devel
 
 
-RUN R -e 'BiocManager::install(c("AnnotationDbi", \
+RUN R -e 'BiocManager::install(c("AnnotationDbi" \
 	"Biobase" \ 
 	"BiocGenerics" \ 
 	"GOSemSim" \ 
