@@ -28,5 +28,4 @@ RUN R -e 'BiocManager::install(ask = F)' && R -e 'BiocManager::install(c("Annota
 
 cd /payload/
 %runscript
-cd /payload/
 exec /bin/bash R "$@"
