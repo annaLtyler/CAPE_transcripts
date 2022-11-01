@@ -18,7 +18,9 @@ RUN install2.r --error \
 	Matrix \ 
 	pheatmap \ 
 	qtl2 \ 
-	RGCCA
+	RGCCA \
+	here \
+	rmarkdown \
 
 RUN R -e 'BiocManager::install(c("AnnotationDbi", "Biobase", "BiocGenerics", "GOSemSim", "IRanges", "org.Mm.eg.db", "S4Vectors"))'
 

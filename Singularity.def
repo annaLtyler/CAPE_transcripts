@@ -23,7 +23,9 @@ igraph \
 Matrix \
 pheatmap \
 qtl2 \
-RGCCA
+RGCCA \
+here \
+rmarkdown \
 
 R -e 'BiocManager::install(c("AnnotationDbi", "Biobase", "BiocGenerics", "GOSemSim", "IRanges", "org.Mm.eg.db", "S4Vectors"))'
 
