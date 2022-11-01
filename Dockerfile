@@ -16,6 +16,7 @@ RUN install2.r --error \
 	pheatmap \ 
 	qtl2 \ 
 	RGCCA
+
 # Docker inheritance
 FROM bioconductor/bioconductor_docker:devel
 

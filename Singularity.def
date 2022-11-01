@@ -21,8 +21,6 @@ Matrix \
 pheatmap \
 qtl2 \
 RGCCA
-# Docker inheritance
-
 
 R -e 'BiocManager::install(c("AnnotationDbi", \
 "Biobase" \
