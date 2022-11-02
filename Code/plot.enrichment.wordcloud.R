@@ -20,12 +20,9 @@ plot.enrichment.wordcloud <- function(enrichment, num.terms = 10, plot.label = "
         return(NULL)
     }
 
-    require(igraph)
-    require(wordcloud)
+    #require(igraph)
+    #require(wordcloud)
 
-    remove.words <- c("by", "in", "and", "to", "or", "on", "a", "as", "with", 
-        "into", "via", "other", "the", "between", "process", "of")
-    
 
     order.by = order.by[1]
     result <- enrichment$result
@@ -54,11 +51,9 @@ plot.enrichment.wordcloud <- function(enrichment, num.terms = 10, plot.label = "
 
     term.groups <- strsplit(term.names, " ")
     term.words <- unlist(term.groups)
-    remove.idx <- unique(unlist(lapply(remove.words, function(x) which(term.words == x))))
-    if(length(remove.idx) > 0){
-        term.words <- term.words[-remove.idx]
-    }
-    word.count <- sort(table(term.words), decreasing = TRUE)
+    clean.words <- clean_words(term_words)
+
+    word.count <- sort(table(clean.words), decreasing = TRUE)
     word.pos <- matrix(0, nrow = nrow(sub.result), ncol = length(word.count))
     colnames(word.pos) <- names(word.count)
     rownames(word.pos) <- 1:nrow(word.pos)

@@ -23,7 +23,6 @@ igraph \
 Matrix \
 pheatmap \
 qtl2 \
-RGCCA \
 here \
 rmarkdown \
 

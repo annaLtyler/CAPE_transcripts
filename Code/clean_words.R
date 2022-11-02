@@ -7,6 +7,9 @@
 clean_words <- function(words, additional.words.to.remove = NULL,
     remove.truncated.words = TRUE){
 
+    #make all lowercase
+    words <- str_to_lower(words)
+
     if(remove.truncated.words){
         trunc.words <- grep("...", words, fixed = TRUE)
         to.keep <- setdiff(1:length(words), trunc.words)
