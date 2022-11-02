@@ -17,4 +17,4 @@ pandoc \
 pandoc-citeproc \
 libcairo2-dev
 
-exec /bin/bash R "$@"
+exec /bin/bash R --vanilla "$@"
