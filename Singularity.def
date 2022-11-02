@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: bioconductor/bioconductor_docker:devel
+From: rocker/r-ver:4.0.2
 Stage: spython-base
 
 %labels
@@ -7,25 +7,17 @@ maintainer="atyler"
 %post
 export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
 && apt-get install -y libglpk-dev \
-libgmp-dev \
-libxml2-dev \
+git-core \
 libcurl4-openssl-dev \
+libglpk-dev \
+libgmp-dev \
+libssl-dev \
+libxml2-dev \
 pandoc \
-pandoc-citeproc
+pandoc-citeproc \
+libcairo2-dev
 
-install2.r --error \
-bitops \
-bnstruct \
-cluster \
-corpcor \
-gprofiler2 \
-igraph \
-Matrix \
-pheatmap \
-qtl2 \
-here \
-rmarkdown \
-
-R -e 'BiocManager::install(c("AnnotationDbi", "Biobase", "BiocGenerics", "GOSemSim", "IRanges", "org.Mm.eg.db", "S4Vectors"))'
+R --slave -e 'install.packages("here",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("rmarkdown",repos="https://cran.rstudio.com/")'
 
 exec /bin/bash R "$@"
