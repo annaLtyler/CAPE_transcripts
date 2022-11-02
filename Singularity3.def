@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: r-base:latest
+From: rocker/r-ver:4.0.2
 Stage: spython-base
 
 %labels
@@ -20,4 +20,4 @@ libcairo2-dev
 R --slave -e 'install.packages("here",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("rmarkdown",repos="https://cran.rstudio.com/")'
 
-exec /bin/bash R --vanilla "$@"
+exec /bin/bash R "$@"
