@@ -51,7 +51,7 @@ plot.enrichment.wordcloud <- function(enrichment, num.terms = 10, plot.label = "
 
     term.groups <- strsplit(term.names, " ")
     term.words <- unlist(term.groups)
-    clean.words <- clean_words(term_words)
+    clean.words <- clean_words(term.words)
 
     word.count <- sort(table(clean.words), decreasing = TRUE)
     word.pos <- matrix(0, nrow = nrow(sub.result), ncol = length(word.count))

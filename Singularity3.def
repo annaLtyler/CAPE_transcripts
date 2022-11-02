@@ -1,0 +1,20 @@
+Bootstrap: docker
+From: r-base:latest
+Stage: spython-base
+
+%labels
+maintainer="atyler"
+%post
+export DEBIAN_FRONTEND=noninteractive; apt-get -y update \
+&& apt-get install -y libglpk-dev \
+git-core \
+libcurl4-openssl-dev \
+libglpk-dev \
+libgmp-dev \
+libssl-dev \
+libxml2-dev \
+pandoc \
+pandoc-citeproc \
+libcairo2-dev
+
+exec /bin/bash R "$@"
