@@ -17,4 +17,8 @@ pandoc \
 pandoc-citeproc \
 libcairo2-dev
 
+R --slave -e 'install.packages("here",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("rmarkdown",repos="https://cran.rstudio.com/")'
+R --slave -e 'install.packages("knitr",repos="https://cran.rstudio.com/")'
+
 exec /bin/bash R --vanilla "$@"
