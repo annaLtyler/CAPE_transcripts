@@ -1,5 +1,5 @@
 Bootstrap: docker
-From: bioconductor/bioconductor_docker:devel
+From: r-base:latest
 Stage: spython-base
 
 %labels
