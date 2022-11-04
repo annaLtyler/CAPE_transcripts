@@ -59,7 +59,7 @@ plot.enrichment.wordcloud <- function(enrichment, num.terms = 10, plot.label = "
     rownames(word.pos) <- 1:nrow(word.pos)
     
     for(i in 1:length(word.count)){
-        word.idx <- grep(names(word.count)[i], term.groups, fixed = TRUE)
+        word.idx <- grep(names(word.count)[i], term.groups, ignore.case = TRUE)
         word.pos[word.idx,i] <- -log10(sub.result[word.idx,"p_value"])
     }
 
