@@ -163,29 +163,13 @@ sex.col <- rep(cols[2], length(sex))
 sex.col[which(sex == "M")] <- cols[3]
 
 weight.diff <- weight[,3]/weight[,2]
-x.bins <- 100
-y.bins <- 30
-weight.vals <- segment.region(min(weight.diff), max(weight.diff), x.bins, "ends")
-binned.weight <- bin.vector(weight.diff, weight.vals)
-u_weight <- unique(binned.weight)
-weight.idx <- lapply(u_weight, function(x) which(binned.weight == x))
-weight.list <- lapply(weight.idx, function(x) binned.weight[x])
-weight.col <- lapply(weight.idx, function(x) sex.col[x])
-max.len <- max(sapply(weight.list, length))
-yvals <- segment.region(0, 1, max.len, "ends")
-pdf("~/Desktop/test.pdf", height = 5, width = 5)
-plot.new()
-plot.window(xlim = c(min(weight.diff), max(weight.diff)), ylim = c(0,1))
-for(i in 1:length(u_weight)){
-    points(weight.list[[i]], yvals[1:length(weight.list[[i]])], 
-        col = weight.col[[i]], pch = 16)
-}
+hist_with_points(weight.diff, breaks = 100, col = sex.col, 
+    main = "Proportion Weight Change", xlab = "Proportion Weight Change")
 abline(v = 1)
-axis(1);axis(2)
-mtext("Proportion Weight Change", side = 1, line = 2.5)
-mtext("Density", side = 2, line = 2.5)
 legend("topleft", col = cols[c(2,3)], pch = 16, legend = c("Female", "Male"))
-dev.off()
+
+#plot(density(weight.diff[f.locale]), col = cols[2])
+#points(density(weight.diff[m.locale]), col = cols[3], type = "l")
 
 scaled.pheno <- apply(adj.pheno, 2, scale)
 #pheatmap(scaled.pheno, show_rownames = FALSE)
@@ -439,9 +423,9 @@ if(!file.exists(perm.file) || delete_previous){
             outcome.kernel = Kt[[tx]]
         }
         
-        perm_path <- rep(NA, length = num.perm)
-        perm.flags <- rep(NA, length = num.perm)
-        perm.reasons <- rep(NA, length = num.perm)
+        perm_stats <- matrix(NA, nrow = num.perm, ncol = 4)
+        colnames(perm_stats) <- c("path_coef", "X-M", "M-Y", "X-Y")
+        
         for(p in 1:num.perm){
 
             if(is.interactive){report.progress(p, num.perm)}
@@ -454,15 +438,13 @@ if(!file.exists(perm.file) || delete_previous){
             perm_scores <- high_dim_med(causal.matrix = Kg_cent[[tx]], 
                 mediating.matrix = perm_mediator, outcome.matrix = outcome.kernel, 
                 min.weight.diff = 1e-5, max.iter = 15, scheme = "centroid", 
-                verbose = is.interactive, kernel.c = TRUE, kernel.m = TRUE, 
+                verbose = FALSE, kernel.c = TRUE, kernel.m = TRUE, 
                 kernel.o = TRUE)
         
-            perm_path[p] <- path_coef(perm_scores[[1]])
-            perm.flags[p] <- perm_scores[[2]]
-            perm.reasons[p] <- perm_scores[[3]]
+            perm_stats[p,] <- path_coef(perm_scores[[1]])
         }
 
-    all.perms[[tx]] <- perm_path
+    all.perms[[tx]] <- perm_stats
     }
 
     saveRDS(all.perms, perm.file)
@@ -472,9 +454,20 @@ if(!file.exists(perm.file) || delete_previous){
 }
 ```
 
-The following plots show the null distribution for each 
+The following plots show null distributions for each 
 tissue, unless tissues were merged, and then only one
-null distribution is shown.
+set of null distribution is shown. 
+
+The dot plot shows the 
+relationship between the X-M correlation and the M-Y
+correlation. The permutations show that you can make
+one of them quite high, but getting both high is very
+difficult and can only be done with the true data.
+
+The histogram shows the null distribution of the path
+coefficient along with the observed path coeffient.
+The observed path coefficient is well outside the 
+null distribution.
 
 ```{r plot_perm, results = "asis"}
 
@@ -485,11 +478,22 @@ for(tx in 1:max.tx){
         cat("###", tissue.names[tx], "\n")
     }
     
-    tissue.path.coef <- path_coef(model_scores[[tx]])
+    tissue.path.stats <- path_coef(model_scores[[tx]])
+    tissue.path.coef <- tissue.path.stats[1]
 
-    xmax <- max(all.perms[[tx]], tissue.path.coef)
-    xmin <- min(all.perms[[tx]], tissue.path.coef)
-    hist(all.perms[[tx]], xlim = c(xmin, xmax), main = "Permutations", xlab = "")
+    axis.max <- max(c(all.perms[[tx]][,c("X-M", "M-Y")], tissue.path.stats[c("X-M", "M-Y")]))
+    axis.min <- min(c(all.perms[[tx]][,c("X-M", "M-Y")], tissue.path.stats[c("X-M", "M-Y")]))
+
+    plot(all.perms[[tx]][,"X-M"], all.perms[[tx]][,"M-Y"], xlim = c(axis.min, axis.max), 
+        ylim = c(axis.min, axis.max), xlab = "X-M correlation", ylab = "M-Y correlation")
+    points(tissue.path.stats["X-M"], tissue.path.stats["M-Y"], 
+        col = "red", pch = 16)
+    abline(0,1)
+
+    path.min <- min(c(all.perms[[tx]][,"path_coef"], tissue.path.coef))
+    path.max <- max(c(all.perms[[tx]][,"path_coef"], tissue.path.coef))
+    hist(all.perms[[tx]][,"path_coef"], xlim = c(path.min, path.max), 
+        main = "Path Coef. Permutations", xlab = "")
     abline(v = tissue.path.coef, col = "red")
 
     cat("\n\n")
