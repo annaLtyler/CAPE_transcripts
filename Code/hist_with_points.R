@@ -8,7 +8,7 @@
 
 
 hist_with_points <- function(V, breaks = 100, col = "black",
- main, xlab, ylab, add = FALSE){
+ main, xlab, ylab, ylim, add = FALSE){
     
 	if(missing(main)){main = deparse(substitute(V))}
 	if(missing(xlab)){xlab = deparse(substitute(V))}
@@ -31,11 +31,14 @@ hist_with_points <- function(V, breaks = 100, col = "black",
     val.list <- lapply(val.idx, function(x) binned.vals[x])
     val.col <- lapply(val.idx, function(x) cols[x])
     max.len <- max(sapply(val.list, length))
-    yvals <- segment.region(0, 1, max.len, "ends")
+    yvals <- 1:max.len
     
     if(!add){
+        if(missing(ylim)){
+            ylim = c(0,max.len)
+        }
         plot.new()
-        plot.window(xlim = c(min.val, max.val), ylim = c(0,1))
+        plot.window(xlim = c(min.val, max.val), ylim = ylim)
         axis(1);axis(2)
         mtext(xlab, side = 1, line = 2.5)
         mtext(ylab, side = 2, line = 2.5)

@@ -29,9 +29,9 @@ There are several parameters to set.
 args <- commandArgs(trailingOnly=T)
 
 #args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
-args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
+#args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
 #args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
-#args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
+args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
 
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
 use.local.imputation <- as.logical(args[2]) #if TRUE, locally imputed transcripts are used to generate polytranscriptomic risk scores. Otherwise transcripts imputed with the full genetic model are used.
@@ -157,19 +157,33 @@ rownames(scaled.pheno) <- rownames(adj.pheno)
 
 ```{r weight, eval = FALSE}
 cols <- categorical_pal(8)
-weight <- adj.pheno[,18:20]
+weight <- num.pheno[,18:20]
 sex <- pheno[match(rownames(weight), pheno[,1]),"sex"]
 sex.col <- rep(cols[2], length(sex))
 sex.col[which(sex == "M")] <- cols[3]
 
+sex.order <- order(sex, decreasing = TRUE)
 weight.diff <- weight[,3]/weight[,2]
-hist_with_points(weight.diff, breaks = 100, col = sex.col, 
-    main = "Proportion Weight Change", xlab = "Proportion Weight Change")
-abline(v = 1)
-legend("topleft", col = cols[c(2,3)], pch = 16, legend = c("Female", "Male"))
 
-#plot(density(weight.diff[f.locale]), col = cols[2])
-#points(density(weight.diff[m.locale]), col = cols[3], type = "l")
+pdf("~/Desktop/pheno_hist.pdf", width = 5, height = 5)
+hist_with_points(weight.diff[sex.order], breaks = 100, col = sex.col[sex.order], 
+    main = "Proportion Weight Change", xlab = "Proportion Weight Change", 
+    ylim = c(0,20))
+    abline(v = 1)
+    legend("topleft", col = cols[c(2,3)], pch = 16, legend = c("Female", "Male"))
+
+for(i in 1:ncol(adj.pheno)){
+    hist_with_points(num.pheno[sex.order,i], breaks = 100, col = sex.col[sex.order], 
+        main = colnames(adj.pheno)[i], xlab = colnames(adj.pheno)[i])
+    legend("topleft", col = cols[c(2,3)], pch = 16, legend = c("Female", "Male"))
+
+
+}
+dev.off()
+
+
+plot(density(weight.diff[f.locale]), col = cols[2])
+points(density(weight.diff[m.locale]), col = cols[3], type = "l")
 
 scaled.pheno <- apply(adj.pheno, 2, scale)
 #pheatmap(scaled.pheno, show_rownames = FALSE)
@@ -469,7 +483,7 @@ coefficient along with the observed path coeffient.
 The observed path coefficient is well outside the 
 null distribution.
 
-```{r plot_perm, results = "asis"}
+```{r plot_perm, results = "asis", fig.height = 5, fig.width = 5}
 
 for(tx in 1:max.tx){
     if(max.tx == 1){
