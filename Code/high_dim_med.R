@@ -130,7 +130,7 @@ high_dim_med <- function(causal.matrix, mediating.matrix, outcome.matrix,
 
         initial_weights <- c(W1, W2)
 
-        curr_model = rgcca(A, weight.mat, tau = "optimal", verbose = TRUE,
+        curr_model = rgcca(A, weight.mat, tau = "optimal", verbose = FALSE,
             scheme = scheme)
         
         curr_g_score = as.matrix(A[[1]] %*% curr_model$a[[1]])
