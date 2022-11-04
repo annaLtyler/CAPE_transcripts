@@ -783,8 +783,8 @@ if(mediation.text == "complete_mediation"){
 
     #For each tissue, calculate the pressure
     #exerted by each transcript on the phenotype
-    common.large.effect.genes <- vector(mode = "list", length = length(tissue.names))
-    names(common.large.effect.genes) <- tissue.names
+    common.large.effect.genes <- pop.pressure <- vector(mode = "list", length = length(tissue.names))
+    names(common.large.effect.genes) <- names(pop.pressure) <- tissue.names
     for(tx in 1:length(tissue.names)){
         cat("###", tissue.names[tx], "{.tabset .tabset-fade .tabset-pills}\n\n")
     
@@ -806,19 +806,19 @@ if(mediation.text == "complete_mediation"){
         #individuals.
         #get imputed R2 
         tx.r2 <- apply(tissue.imp.gen[[tx]], 2, var)
-        pop.pressure <- tx.r2[common.transcripts]*trans.load[common.transcripts,1]
+        pop.pressure[[tx]] <- tx.r2[common.transcripts]*trans.load[common.transcripts,1]
         #hist(pop.pressure, breaks = 100)
-        pop.neg.pressure <- gost(names(sort(pop.pressure))[1:enrichment.num], 
+        pop.neg.pressure <- gost(names(sort(pop.pressure[[tx]]))[1:enrichment.num], 
             organism = "mmusculus")
-        pop.pos.pressure <- gost(names(sort(pop.pressure, decreasing = TRUE))[1:enrichment.num], 
+        pop.pos.pressure <- gost(names(sort(pop.pressure[[tx]], decreasing = TRUE))[1:enrichment.num], 
             organism = "mmusculus")
 
         cat("#### Population-Level Transcriptional Pressure Enrichments\n")
         par(mfrow = c(1,2))
-        plot.enrichment.wordcloud(pop.neg.pressure, 
-            plot.label = "Transcripts with population-level negative pressure")
         plot.enrichment.wordcloud(pop.pos.pressure, 
             plot.label = "Transcripts with population-level positive pressure")
+        plot.enrichment.wordcloud(pop.neg.pressure, 
+            plot.label = "Transcripts with population-level negative pressure")
 
         #par(mfrow = c(1,2))
         plot.new()
@@ -931,7 +931,7 @@ if(mediation.text == "complete_mediation"){
 
         large.mat <- scaled.expr[[tx]][,u_large]
         par(mfrow = c(1,2))
-        pop.pressure.transcript.col <- colors.from.values(pop.pressure, 
+        pop.pressure.transcript.col <- colors.from.values(pop.pressure[[tx]], 
             use.pheatmap.colors = TRUE)
         individual.pheno.score <- colors.from.values(ind.score, 
             use.pheatmap.colors = TRUE)
@@ -982,21 +982,37 @@ if(mediation.text == "complete_mediation"){
         gene.id <- gene.table[match(rownames(transcript_loadings[[tx]]), gene.table[,"symbol"]),1]
         gene.lod <- lapply(gene.id, function(x) eqtl.table$lod[which(eqtl.table$gene.id == x)])
         max.lod <- sapply(gene.lod, function(x) if(length(x) > 0){max(x)}else{3})
-        pressure.col <- colors.from.values(pop.pressure[gene.id], use.pheatmap.colors = TRUE)
+        pressure.col <- colors.from.values(pop.pressure[[tx]][gene.id], use.pheatmap.colors = TRUE)
         #pdf("~/Desktop/test.pdf")
         #plot in the order of population-level transcriptomic pressure,
         #so we can see the outliers more easily
-        pressure.order <- order(abs(pop.pressure[gene.id]), decreasing = FALSE, na.last = FALSE)
+        pressure.order <- order(abs(pop.pressure[[tx]][gene.id]), decreasing = FALSE, na.last = FALSE)
         xV <- max.lod[pressure.order] 
-        yV <- abs(transcript_loadings[[tx]][,1])[pressure.order]
-        plot(xV, yV, xlab = "Maximum LOD", ylab = "|Loading|", 
+        yV <- transcript_loadings[[tx]][,1][pressure.order]
+        
+        layout(matrix(c(1,1,2,3), ncol = 2, byrow = FALSE), widths = c(1, 0.5))
+        par(mar = c(4,4,4,0))
+        plot(xV, yV, xlab = "Maximum LOD", ylab = "Loading", 
             main = tissue.names[tx], col = pressure.col[pressure.order], 
-            pch = 16)
-        num.label = 15
+            pch = 16, cex = 0.5)
+        num.label = 30
         text(tail(xV, num.label), tail(yV, num.label), 
-            labels = names(tail(yV, num.label)), pos = 4)
-        abline(h = c(0.5, 0, -0.5), col = c("red", "black", "red"))  
-        #dev.off()
+            labels = names(tail(yV, num.label)), pos = 4, cex = 0.7)
+        abline(h = 0)  
+        top.genes <- names(tail(yV, num.label))
+        gene.pressure <- tail(pop.pressure[[tx]][gene.id][pressure.order], num.label)
+        pos.idx <- which(gene.pressure > 0)
+        pos.order <- order(gene.pressure[pos.idx], decreasing = TRUE)
+        pos.par <- words_to_paragraph(top.genes[pos.idx[pos.order]], line.len = 5)
+        par(mar = c(0,0,0,0))
+        plot.text(paste("Positive Pressure Genes", pos.par, sep = "\n\n"))
+        
+        neg.idx <- which(gene.pressure < 0)
+        neg.order <- order(gene.pressure[neg.idx], decreasing = FALSE)
+        neg.par <- words_to_paragraph(top.genes[neg.idx[neg.order]], line.len = 5)
+        par(mar = c(0,0,0,0))
+        plot.text(paste("Negative Pressure Genes", neg.par, sep = "\n\n"))
+
         cat("\n\n")
     }
 }
