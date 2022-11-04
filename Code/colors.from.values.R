@@ -5,7 +5,7 @@ colors.from.values <- function(vals, split.at.vals = FALSE, split.points = 0,
 col.scale = c("green", "purple", "orange", "blue", "brown", "gray"), light.dark = "f", 
 grad.dir = c("high", "low", "middle", "ends"), color.fun = c("linear", "exponential"), 
 exp.steepness = 1, global.color.scale = FALSE, global.min = NULL, global.max = NULL, 
-use.pheatmap.colors = FALSE, na.col = "lightgray"){
+use.pheatmap.colors = FALSE, na.col = "lightgray", custom.colors = NULL){
 
 		require(grid)
 	 	class.mat = NULL
@@ -44,7 +44,11 @@ use.pheatmap.colors = FALSE, na.col = "lightgray"){
 		if(num.classes == 1){
 			class.mat <- rep(1, length(vals))
 			}
-	
+
+		if(num.classes > 1 && !is.null(custom.colors)){
+			stop("I can only do custom colors for a single color scale.")
+		}	
+
 		if(length(col.scale) == (length(split.points)+1)){
 			class.cols <- col.scale
 			}else{
@@ -137,7 +141,11 @@ use.pheatmap.colors = FALSE, na.col = "lightgray"){
 						}
 	
 					#make the function to generate 
-					col.vals <- get.color(col.scale[cl], light.dark)
+					if(is.null(custom.colors)){
+						col.vals <- get.color(col.scale[cl], light.dark)
+					}else{
+						col.vals <- custom.colors
+					}
 					color.locale <- which(names(color.scales) == classes[cl])
 					color.scales[[color.locale]] <- colorRampPalette(col.vals[dir.list[[color.locale]]])
 					

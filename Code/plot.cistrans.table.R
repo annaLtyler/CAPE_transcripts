@@ -87,7 +87,8 @@ plot.cistrans.table <- function(eqtl.table, transcript.pos.table, map, col = NUL
     
     #build a table to hold the transcription 
 	#position for each transcript in the eQTL table
-    eqtl.transcripts <- t(apply(eqtl.table, 1, function(x) transcript.pos.table[which(transcript.pos.table[,1] == x[1]),]))
+	eqtl.idx <- match(eqtl.table[,1], transcript.pos.table[,1])
+	eqtl.transcripts <- transcript.pos.table[eqtl.idx,]
 	
 	#get relative positions for these too.
 	transcript.y <- apply(eqtl.transcripts, 1, function(x) rel.pos(x[2], as.numeric(x[3])))

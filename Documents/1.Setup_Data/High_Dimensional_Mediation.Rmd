@@ -75,7 +75,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 all.packages <- c("pheatmap", "qtl2", "gprofiler2", "Matrix", "RGCCA", 
     "bnstruct", "igraph", "corpcor", "GOSemSim", "cluster", "org.Mm.eg.db",
-    "grid", "wordcloud")
+    "grid", "wordcloud", "stringr")
 load_libraries(all.packages, personal.library = TRUE)
 ```
 
@@ -151,6 +151,7 @@ for(i in 1:length(scaled.expr)){
 }
 scaled.pheno <- apply(adj.pheno, 2, scale)
 rownames(scaled.pheno) <- rownames(adj.pheno)
+
 ```
 
 
@@ -162,15 +163,36 @@ sex.col <- rep(cols[2], length(sex))
 sex.col[which(sex == "M")] <- cols[3]
 
 weight.diff <- weight[,3]/weight[,2]
-stripchart(round(weight.diff, 3), method = "stack", col = "darkgray", 
-    pch = 16, ylim = c(1,2), offset = 0.7, axes = FALSE)
-axis(1);abline(v = 1)
+x.bins <- 100
+y.bins <- 30
+weight.vals <- segment.region(min(weight.diff), max(weight.diff), x.bins, "ends")
+binned.weight <- bin.vector(weight.diff, weight.vals)
+u_weight <- unique(binned.weight)
+weight.idx <- lapply(u_weight, function(x) which(binned.weight == x))
+weight.list <- lapply(weight.idx, function(x) binned.weight[x])
+weight.col <- lapply(weight.idx, function(x) sex.col[x])
+max.len <- max(sapply(weight.list, length))
+yvals <- segment.region(0, 1, max.len, "ends")
+pdf("~/Desktop/test.pdf", height = 5, width = 5)
+plot.new()
+plot.window(xlim = c(min(weight.diff), max(weight.diff)), ylim = c(0,1))
+for(i in 1:length(u_weight)){
+    points(weight.list[[i]], yvals[1:length(weight.list[[i]])], 
+        col = weight.col[[i]], pch = 16)
+}
+abline(v = 1)
+axis(1);axis(2)
+mtext("Proportion Weight Change", side = 1, line = 2.5)
+mtext("Density", side = 2, line = 2.5)
+legend("topleft", col = cols[c(2,3)], pch = 16, legend = c("Female", "Male"))
+dev.off()
 
 scaled.pheno <- apply(adj.pheno, 2, scale)
-pheatmap(scaled.pheno, show_rownames = FALSE)
+#pheatmap(scaled.pheno, show_rownames = FALSE)
 
-pheno.decomp <- plot.decomp(cov(t(scaled.pheno), use = "pairwise.complete.obs"), pc = 20)
-pheno.decomp <- plot.decomp(scaled.pheno, pc = 20)
+pheno.decomp <- plot.decomp(cov(t(scaled.pheno), use = "pairwise.complete.obs"), 
+    pc = 20, plot.results = FALSE)
+pheno.decomp <- plot.decomp(scaled.pheno, pc = 20, plot.results = FALSE)
 decomp.cor <- matrix(NA, nrow = 20, ncol = 20)
 rownames(decomp.cor) <- paste0("PC", 1:20)
 colnames(decomp.cor) <- colnames(scaled.pheno)
@@ -206,11 +228,19 @@ for(i in 1:ncol(scaled.pheno)){
 }
 
 gene.name = "Lep"
+trait.name = "Ins_tAUC"
 gene.id <- gene.table[match(gene.name, gene.table[,"symbol"]),1]
 gene.idx <- lapply(scaled.expr, function(x) which(colnames(x) == gene.id))
 gene.expr <- lapply(1:length(gene.idx), function(x) if(length(gene.idx[[x]]) > 0){scaled.expr[[x]][,gene.idx[[x]]]})
 tx = 4
-plot.with.model(gene.expr[[tx]], scaled.pheno[names(gene.expr[[tx]]),"Ins_tAUC"])
+plot.with.model(gene.expr[[tx]], scaled.pheno[names(gene.expr[[tx]]),trait.name], 
+    xlab = paste(gene.name, "Expression in", tissue.names[tx]), 
+    ylab = trait.name, report = "cor.test")
+
+eqtl.table <- get(data.set.names[[tx]])$lod.peaks$additive
+gene.idx <- which(eqtl.table[[1]] == gene.id)
+
+
 ```
 
 
@@ -459,7 +489,7 @@ for(tx in 1:max.tx){
 
     xmax <- max(all.perms[[tx]], tissue.path.coef)
     xmin <- min(all.perms[[tx]], tissue.path.coef)
-    hist(all.perms[[tx]], xlim = c(xmin, xmax), main = "Permutations")
+    hist(all.perms[[tx]], xlim = c(xmin, xmax), main = "Permutations", xlab = "")
     abline(v = tissue.path.coef, col = "red")
 
     cat("\n\n")
@@ -469,15 +499,10 @@ for(tx in 1:max.tx){
 
 ## Correlation Plots {.tabset .tabset-fade .tabset-pills}
 
-The following plots show the correlations between the 
-pairs of scores for all model scores. With perfect 
-mediation, the product of the genome-transcripts 
-correlation and the transcripts-phenotype correlation
-should be equal to that of the genome-phenotype correlation.
-
-The correlation diff at the top of each figure tells us
-the difference between the ideal correlation and 
-the actual correlation.
+The following plots show the partial correlations between 
+the pairs of scores for all model scores. With perfect 
+mediation of X -> M -> Y, the partial correlation between 
+X and Y should be 0. We get pretty close here.
 
 ```{r plot_cor, results = "asis", fig.height = 6, fig.width = 6}
 
@@ -495,10 +520,23 @@ for(tx in 1:length(tissue.names)){
     
     path.coef <- path_coef(curr_scores)
 
+    all.pairs <- pair.matrix(1:ncol(curr_scores))
+    adj.var <- apply(all.pairs, 1, function(x) setdiff(1:3, x))
+    #pdf("~/Desktop/test.pdf") 
+    par(mfrow = c(2,2))
+    for(i in 1:nrow(all.pairs)){
+        var1 <- all.pairs[i,1]
+        var2 <- all.pairs[i,2]
+        adj.by <- adj.var[i]
+        plot.with.model(adjust(curr_scores[,var1,drop=FALSE], curr_scores[,adj.by,drop=FALSE]), 
+            adjust(curr_scores[,var2,drop=FALSE], curr_scores[,adj.by,drop=FALSE]),
+            xlab = colnames(curr_scores)[all.pairs[i,1]], 
+            ylab = colnames(curr_scores)[all.pairs[i,2]], report = "cor.test")
+    }
     #test <- check_signs(curr_scores)
     #pairs(test[[1]])
 
-    pairs(curr_scores, main = paste(tissue.names[tx], "\nPath  Coef:", round(path.coef, 3)))
+    #pairs(curr_scores, main = paste(tissue.names[tx], "\nPath  Coef:", round(path.coef, 3)))
     cat("\n\n")
 }
 
@@ -550,17 +588,18 @@ if(!file.exists(enrich.file) || delete_previous){
 
 ```
 
-```{r plot_enrichment, results = "asis", fig.width = 10, fig.height = 5, warning = FALSE, messag = FALSE}
+```{r plot_enrichment, results = "asis", fig.width = 10, fig.height = 5, warning = FALSE, message = FALSE}
 for(tx in 1:length(tissue.names)){
     cat("###", tissue.names[tx], "{.tabset .tabset-fade .tabset-pills}\n")
 
     cat("#### Positive Loadings\n")
     par(mfrow = c(1,2))
-    plot.enrichment.wordcloud(all.enrich[[tx]]$top, order.by = "p_value",
+    plot.enrichment.wordcloud(enrichment = all.enrich[[tx]]$top, 
+        order.by = "p_value",
         plot.label = paste(tissue.names[tx], "Positive Loadings"), 
         num.terms = 25, max.term.size = 5000)
 
-    cat("#### Negative Loadings\n")
+    cat("\n#### Negative Loadings\n")
     par(mfrow = c(1,2))
     plot.enrichment.wordcloud(all.enrich[[tx]]$bottom, 
         plot.label = paste(tissue.names[tx], "Negative Loadings"), 
@@ -682,7 +721,7 @@ summarize_enrichment <- function(individual.enrichments, max.term.size = 5000,
             max.term.size = max.term.size, plot.results = FALSE, max.char = max.char)
     
     #add back any individuals that didn't have any significant enrichments
-    missing.names <- setdiff(colnames(expr.by.load), colnames(enrich.mat)) 
+    missing.names <- setdiff(colnames(transcript.pressure), colnames(enrich.mat)) 
     no.enrich.mat <- matrix(0, nrow = nrow(enrich.mat), ncol = length(missing.names))
     colnames(no.enrich.mat) <- missing.names
     enrich.mat <- cbind(enrich.mat, no.enrich.mat)
@@ -696,7 +735,7 @@ summarize_enrichment <- function(individual.enrichments, max.term.size = 5000,
     ind.sim <- get_sim_mat(go.terms = rownames(enrich.mat))
     
     clustered_enrich <- summarize_go_mat(go_term_mat = enrich.mat, 
-        go_term_sim = ind.down.sim, min.cl = min.cl, max.cl = max.cl,
+        go_term_sim = ind.sim, min.cl = min.cl, max.cl = max.cl,
         top.n.terms = top.n.terms, use.pc.mat = TRUE, pc = 2, 
         plot.results = FALSE)
 
@@ -705,6 +744,7 @@ summarize_enrichment <- function(individual.enrichments, max.term.size = 5000,
 ```
 
 ```{r polygenic_risk_score, results = "asis", warning = FALSE, message = FALSE}
+
 if(mediation.text == "complete_mediation"){
     #read in the imputed transcripts generated by Matt
     if(use.local.imputation){
@@ -721,6 +761,7 @@ if(mediation.text == "complete_mediation"){
     large.effect.size = 0.5 #minimum effect size that is considered large
     enrichment.num <- 250 #number of transcripts to use to look for enrichments of top and bottom of lists
     enrich.sig.thresh = 1e-3 #maximum p value for significant enrichments.
+    num.common.genes <- 150
 
     #For each tissue, calculate the pressure
     #exerted by each transcript on the phenotype
@@ -734,10 +775,10 @@ if(mediation.text == "complete_mediation"){
         rownames(trans.load) <- transcript.id
         
         common.transcripts <- intersect(transcript.id, colnames(tissue.imp.gen[[tx]]))
-        expr.by.load <- apply(tissue.imp.gen[[tx]][,common.transcripts], 1, function(x) x*trans.load[common.transcripts,])
-        expr.names <- gene.table[match(rownames(expr.by.load), gene.table[,1]),"symbol"]
-        rownames(expr.by.load) <- expr.names
-        mean.order <- order(colMeans(expr.by.load))
+        transcript.pressure <- apply(tissue.imp.gen[[tx]][,common.transcripts], 1, function(x) x*trans.load[common.transcripts,])
+        expr.names <- gene.table[match(rownames(transcript.pressure), gene.table[,1]),"symbol"]
+        rownames(transcript.pressure) <- expr.names
+        mean.order <- order(colMeans(transcript.pressure))
 
         #also get a population-level transcriptomic pressure for each transcript
         #these are transcripts that are affecting the trait through their 
@@ -765,19 +806,44 @@ if(mediation.text == "complete_mediation"){
         plot.new()
         par(mfrow = c(1,1), mar = c(4,4,4,4))
         cat("#### One Transcriptional Pressure Distribution\n")
-        hist(expr.by.load[,mean.order[1]], breaks = 100, 
+        hist(transcript.pressure[,mean.order[1]], breaks = 100, 
             main = "Polygenic Transcriptional Pressure\non Phenotype Space\nFor Lowest Individual",
             xlab = "Transcriptional Pressure", ylab = "Gene Count")
-        abline(v = mean(expr.by.load[,mean.order[1]]), col = "red")
+        abline(v = mean(transcript.pressure[,mean.order[1]]), col = "red")
 
+         cat("#### Transcriptional Pressure Distributions\n\n")
         
+        #bin transcriptional pressure so we can see all of them.
+        bins <- segment_region(min(transcript.pressure), max(transcript.pressure), 100, "ends")
+        binned.pressure <- apply(transcript.pressure, 2, function(x) hist(x, plot = FALSE, breaks = bins))
+        bin.count <- sapply(binned.pressure, function(x) x$count)
+        ordered.count <- bin.count[,rev(mean.order)]
+
+        layout(matrix(c(1,2), ncol = 1), heights = c(0.6, 1))
+        par(mar = c(0,4,2,4))
+        barplot(colMeans(transcript.pressure[,mean.order]), names = NA, 
+            ylab = "Transcriptional Pressure")
+        par(mar = c(2,4,0,4))
+        imageWithText(log(ordered.count+1), show.text = FALSE, 
+            use.pheatmap.colors = TRUE, col.names = NULL)
+        mtext("Transcript Counts", side = 1, outer = TRUE, line = -2.5)
+        mtext("Transcriptional Pressure", side = 2, -1.5)
+        
+        plot.new() 
+        cat("#### Transcriptional Prediction vs. PC1 of Traits\n\n")
+        common.ind <- intersect(rownames(sub.pheno), colnames(transcript.pressure))
+        ind.score <- colMeans(transcript.pressure)
+        plot.with.model(ind.score[common.ind], trait.pc[common.ind,1], 
+            xlab = "Transcriptionally Predicted Phenotype", 
+            ylab = "First PC of Trait Matrix")
+
         #get enrichment terms for all negatively loaded transcripts across 
         #individuals
         ind.down.enrichment.file <- file.path(results.dir, 
             paste0("Individual_Enrichment_Down_", tissue.names[[tx]], ".RDS"))
         if(!file.exists(ind.down.enrichment.file)){
-            ind.down.enrich <- apply(expr.by.load, 2, 
-                function(x) gost(rownames(expr.by.load)[order(x)[1:enrichment.num]], 
+            ind.down.enrich <- apply(transcript.pressure, 2, 
+                function(x) gost(rownames(transcript.pressure)[order(x)[1:enrichment.num]], 
                 organism = "mmusculus"))
             saveRDS(ind.down.enrich, ind.down.enrichment.file)
         }else{
@@ -787,8 +853,8 @@ if(mediation.text == "complete_mediation"){
         ind.up.enrichment.file <- file.path(results.dir, 
             paste0("Individual_Enrichment_Up_", tissue.names[tx], ".RDS"))
         if(!file.exists(ind.up.enrichment.file)){
-            ind.up.enrich <- apply(expr.by.load, 2, 
-                function(x) gost(rownames(expr.by.load)[order(x, decreasing = TRUE)[1:enrichment.num]], 
+            ind.up.enrich <- apply(transcript.pressure, 2, 
+                function(x) gost(rownames(transcript.pressure)[order(x, decreasing = TRUE)[1:enrichment.num]], 
                 organism = "mmusculus"))
             saveRDS(ind.up.enrich, ind.up.enrichment.file)
         }else{
@@ -801,8 +867,17 @@ if(mediation.text == "complete_mediation"){
 
         pdf(file.path(results.dir, paste0("Clustered_Down_Enrichment_", 
             tissue.names[tx], ".pdf")), width = 18, height = 6)
-        pheatmap(clustered_down_enrich[,colnames(expr.by.load)[mean.order]], 
-            show_colnames = FALSE, cluster_cols = FALSE)
+            pheatmap(clustered_down_enrich[,colnames(transcript.pressure)[mean.order]], 
+                show_colnames = FALSE, cluster_cols = FALSE)
+            row_order <- hclust(dist(clustered_down_enrich))$order
+            col_order <- hclust(dist(t(clustered_down_enrich)))$order
+            layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
+            par(mar = c(0,25,2,2))
+            barplot(ind.score[col_order], names = NA, ylab = "Predicted Score")
+            par(mar = c(0,25,0,2))
+            imageWithText(clustered_down_enrich[row_order, col_order], 
+                use.pheatmap.colors = TRUE, show.text = FALSE, col.names = NULL,
+                row.text.cex = 0.7)
         dev.off()
 
         clustered_up_enrich <- summarize_enrichment(ind.up.enrich, 
@@ -811,87 +886,42 @@ if(mediation.text == "complete_mediation"){
 
         pdf(file.path(results.dir, paste0("Clustered_Up_Enrichment_", 
             tissue.names[tx], ".pdf")), width = 18, height = 6)
-        pheatmap(clustered_up_enrich[,colnames(expr.by.load)[mean.order]], 
-            show_colnames = FALSE, cluster_cols = FALSE)
+            row_order <- hclust(dist(clustered_up_enrich))$order
+            layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
+            par(mar = c(0,30,2,0))
+            barplot(ind.score[mean.order], names = NA, ylab = "Predicted Score")
+            par(mar = c(0,30,0,0))
+            imageWithText(clustered_up_enrich[row_order,colnames(transcript.pressure)[mean.order]], 
+                col.names = NULL, show.text = FALSE, use.pheatmap.colors = TRUE)
+            col_order <- hclust(dist(t(clustered_up_enrich)))$order
+            layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
+            par(mar = c(0,30,2,0))
+            barplot(ind.score[col_order], names = NA, ylab = "Predicted Score")
+            par(mar = c(0,30,0,0))
+            imageWithText(clustered_up_enrich[row_order, col_order], 
+                use.pheatmap.colors = TRUE, show.text = FALSE, col.names = NULL,
+                row.text.cex = 0.7)
         dev.off()
 
-        #a <- t(apply(clustered_down_enrich[,colnames(expr.by.load)], 1, 
-        #    function(x) plot.with.model(x, trait.pc[colnames(expr.by.load),1], 
-        #    plot.results = FALSE)))
-        #plot.with.model(clustered_down_enrich[24,colnames(expr.by.load)], trait.pc[colnames(expr.by.load),1])
 
-
-        #a <- t(apply(clustered_down_terms[,colnames(expr.by.load)], 1, 
-        #    function(x) plot.with.model(x, trait.pc[colnames(expr.by.load),1], 
-        #    plot.results = FALSE)))
-
-        #test <- rbind(clustered_up_terms[,colnames(expr.by.load)[mean.order]], 
-        #    clustered_down_terms[,colnames(expr.by.load)[mean.order]])
-        #pheatmap(test[,mean.order])
-
-        cat("#### Transcriptional Pressure Distributions\n\n")
-        
-        #bin transcriptional pressure so we can see all of them.
-        bins <- segment_region(min(expr.by.load), max(expr.by.load), 100, "ends")
-        binned.pressure <- apply(expr.by.load, 2, function(x) hist(x, plot = FALSE, breaks = bins))
-        bin.count <- sapply(binned.pressure, function(x) x$count)
-        ordered.count <- bin.count[,rev(mean.order)]
-
-        layout(matrix(c(1,2), ncol = 1), heights = c(0.6, 1))
-        par(mar = c(0,4,2,4))
-        barplot(colMeans(expr.by.load[,mean.order]), names = NA, 
-            ylab = "Transcriptional Pressure")
-        par(mar = c(2,4,0,4))
-        imageWithText(log(ordered.count+1), show.text = FALSE, 
-            use.pheatmap.colors = TRUE, col.names = NULL)
-        mtext("Transcript Counts", side = 1, outer = TRUE, line = -2.5)
-        mtext("Transcriptional Pressure", side = 2, -1.5)
-        
-        par(mfrow = c(1,1))
-        cat("#### Transcriptional Prediction vs. PC1 of Traits\n\n")
-        common.ind <- intersect(rownames(sub.pheno), colnames(expr.by.load))
-        ind.score <- colMeans(expr.by.load)
-        plot.with.model(ind.score[common.ind], trait.pc[common.ind,1], 
-            xlab = "Transcriptionally Predicted Phenotype", 
-            ylab = "First PC of Trait Matrix")
-
-
-        large.effect <- apply(expr.by.load, 2, function(x) which(abs(x) > large.effect.size))
+        #looking at large-effect transcripts
+        large.effect <- apply(transcript.pressure, 2, function(x) which(abs(x) > large.effect.size))
         all.large <- unlist(large.effect)
         u_large <- unique(all.large)
         large.ind <- sapply(u_large, function(x) which(all.large == x))
         num.ind <- sapply(large.ind, length)
 
         large.mat <- scaled.expr[[tx]][,u_large]
-        loading.col <- colors.from.values(ind.score, use.pheatmap.colors = TRUE)
-        plot.decomp(t(large.mat), cols = loading.col)
-        row.order <- hclust(dist(large.mat))$order
-        col.order <- hclust(dist(t(large.mat)))$order
-        imageWithText(large.mat[row.order, col.order], show.text = FALSE)
-        ind.order <- order(ind.score)
-
-        pheatmap(large.mat[ind.order,], cluster_rows = FALSE, show_rownames = FALSE, show_colnames = FALSE)
-
-
-        cat("#### Individuals with Specific Large-Effect Transcripts\n\n")
-        plot(sort(num.ind), xlab = "", ylab = "Number of Individuals")
-
-        top.common <- sort(num.ind, decreasing = TRUE)[1:num.common.genes]
-        num.thresh <- min(top.common)
-        abline(h = num.thresh)
-        many.ind <- which(num.ind >= num.thresh)
-        large.effect.transcripts <- sapply(strsplit(names(all.large[match(u_large[many.ind], all.large)]), ".", fixed = TRUE), function(x) x[2])
-        pop.large.effect <- expr.by.load[large.effect.transcripts,]
-        avg.large.effect <- rowMeans(pop.large.effect)
-        effect.order <- order(avg.large.effect, decreasing = TRUE)
-        #pheatmap(pop.large.effect, show_colnames = FALSE)
-
-        cat("#### Top Large-Effect Transcripts\n\n")
-        boxplot(t(pop.large.effect[effect.order,]), las = 2);abline(h = 0, col = "red")
-        #avg.large.effect[effect.order]
-        #cat(names(avg.large.effect), sep = "\n")
-
-        common.large.effect.genes[[tx]] <- avg.large.effect
+        par(mfrow = c(1,2))
+        pop.pressure.transcript.col <- colors.from.values(pop.pressure, 
+            use.pheatmap.colors = TRUE)
+        individual.pheno.score <- colors.from.values(ind.score, 
+            use.pheatmap.colors = TRUE)
+        plot.decomp(t(large.mat), cols = pop.pressure.transcript.col[u_large], 
+            main = "Large-Effect Transcript Decomposition\nby Transcript")
+        plot.decomp(large.mat, cols = individual.pheno.score, 
+            main = "Large-Effect Transcript Decomposition\nby Individual")
+       
         cat("\n\n")
     }
 
@@ -899,23 +929,57 @@ if(mediation.text == "complete_mediation"){
 }
 ```
 
-## Loadings vs. LOD
+## Loadings vs. LOD {.tabset .tabset-fade .tabset-pills}
 
 What is the maximum eQTL LOD score for transcripts compared with 
 their loading?
 
-```{r lod_v_loading}
+```{r eqtl_plot, eval = FALSE}
+for(tx in 1:length(tissue.names)){
+    eqtl.table <- get(data.set.names[[tx]])$lod.peaks$additive
+    lod.col <- colors.from.values(log10(log10(eqtl.table$lod)), 
+        light.dark = "d", grad.dir = "high", 
+        custom.colors = c("#9ecae1", "#6baed6", "#084594", "#000000"))
+    split.pos <- strsplit(eqtl.table$marker.id, "_")
+    eqtl.chr <- sapply(split.pos, function(x) x[1])
+    eqtl.pos <- sapply(split.pos, function(x) x[2])
+    eqtl.mat <- cbind(eqtl.table$gene.id, eqtl.chr, as.numeric(eqtl.pos)/1e6, eqtl.table$lod)
+    colnames(eqtl.mat) <- c("ensembl.id", "chr", "pos", "lod")
+    pos.table <- cbind(gene.table[,1], gene.table[,"chr"], gene.table[,"middle"])
+    pdf(file.path(results.dir, paste0("eqtl_", tissue.names[tx], ".pdf")))
+    plot.cistrans.table(eqtl.mat, pos.table, map = map, col = lod.col, cex = 0.4)
+    dev.off()
+}
+
+
+
+```
+
+```{r lod_v_loading, results = "asis", fig.height = 5, fig.width = 5}
 if(mediation.text == "complete_mediation"){
-    par(mfrow = c(2,2))
     for(tx in 1:length(tissue.names)){
+        cat("###", tissue.names[tx], "\n")
         eqtl.table <- get(data.set.names[[tx]])$lod.peaks$additive
+
         gene.id <- gene.table[match(rownames(transcript_loadings[[tx]]), gene.table[,"symbol"]),1]
         gene.lod <- lapply(gene.id, function(x) eqtl.table$lod[which(eqtl.table$gene.id == x)])
         max.lod <- sapply(gene.lod, function(x) if(length(x) > 0){max(x)}else{3})
-        plot(max.lod, abs(transcript_loadings[[tx]][,1]), xlab = "Maximum LOD", 
-            ylab = "|Loading|", main = tissue.names[tx])
+        pressure.col <- colors.from.values(pop.pressure[gene.id], use.pheatmap.colors = TRUE)
+        #pdf("~/Desktop/test.pdf")
+        #plot in the order of population-level transcriptomic pressure,
+        #so we can see the outliers more easily
+        pressure.order <- order(abs(pop.pressure[gene.id]), decreasing = FALSE, na.last = FALSE)
+        xV <- max.lod[pressure.order] 
+        yV <- abs(transcript_loadings[[tx]][,1])[pressure.order]
+        plot(xV, yV, xlab = "Maximum LOD", ylab = "|Loading|", 
+            main = tissue.names[tx], col = pressure.col[pressure.order], 
+            pch = 16)
+        num.label = 15
+        text(tail(xV, num.label), tail(yV, num.label), 
+            labels = names(tail(yV, num.label)), pos = 4)
         abline(h = c(0.5, 0, -0.5), col = c("red", "black", "red"))  
-
+        #dev.off()
+        cat("\n\n")
     }
 }
 ```
@@ -1125,6 +1189,13 @@ if(mediation.text == "complete_mediation"){
 ```
 
 ## Allele effects by chromosome {.tabset .tabset-fade .tabset-pills}
+
+The following plots show the predicted transcriptomic pressure by 
+founder allele for every transcript. The effects are shown on the
+genome at the position of the encoding gene. Positive effects
+exacerbate the overall phenotype, and negative effects ameliorate
+the overall phenotype. The color of the line indicates the founder
+of the allele. Transcripts with effects greater than 0.5 are labeled.
 
 ```{r effects_by_chr, results = "asis", fig.width = 10, fig.height = 6}
 if(mediation.text == "complete_mediation"){
