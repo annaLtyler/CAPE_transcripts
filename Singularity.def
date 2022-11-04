@@ -37,9 +37,7 @@ R --slave -e 'install.packages("bitops",repos="https://cran.rstudio.com/")'
 R --slave -e 'install.packages("rmarkdown",repos="https://cran.rstudio.com/")'
 
 R --slave -e 'install.packages("BiocManager",repos="https://cran.rstudio.com/")'
-R --slave -e 'BiocManager::install("AnnotationDbi")'
 R --slave -e 'BiocManager::install("GOSemSim")'
 R --slave -e 'BiocManager::install("iRanges")'
-R --slave -e 'BiocManager::install("org.Mm.eg.db")'
 
 exec /bin/bash R "$@"
