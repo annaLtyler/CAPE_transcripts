@@ -793,10 +793,12 @@ summarize_enrichment <- function(individual.enrichments, max.term.size = 5000,
     return(clustered_enrich)        
 }
 
-#This function subsets an enrichment matrix to only terms with
-#a minimum number of individuals (min.ind)
+#This function subsets an enrichment matrix to only the 
+#terms that are significantly correlated with phenotype
+#score. It then clusters th
 subset_enrichment <- function(individual.enrichments, max.term.size = 5000,
-    max.char = 100, enrich.sig.thresh = 1e3, min.ind = 20){
+    max.char = 100, enrich.sig.thresh = 1e3, min.cl = 2, max.cl = 20, 
+    sig.val = 0.05){
 
     enrich.mat <- plot.enrichment.group(individual.enrichments, sort.by = "default", 
             max.term.size = max.term.size, plot.results = FALSE, max.char = max.char)
@@ -813,12 +815,25 @@ subset_enrichment <- function(individual.enrichments, max.term.size = 5000,
     sig.enrich.mat <- enrich.mat[to_keep,]
     names(rownames(sig.enrich.mat)) <- names(rownames(enrich.mat)[to_keep])
 
-    #count the number of individuals with each term
-    num.ind <- apply(sig.enrich.mat, 1, function(x) length(which(x > 0)))
-    sub.mat <- sig.enrich.mat[which(num.ind > min.ind),]
-    #pheatmap(sub.mat, show_colnames = FALSE)
+    common.names <- intersect(colnames(transcript.pressure), colnames(sig.enrich.mat))
+    mean.pressure <- colMeans(transcript.pressure[,common.names])
     
-    return(sub.mat)  
+    bin.enrich <- sig.enrich.mat[,common.names]
+    bin.enrich[which(bin.enrich > 0)] <- 1    
+    ordered.score <- colMeans(transcript.pressure[,common.names])
+    aov.p <- apply(bin.enrich, 1, function(x) summary(aov(ordered.score~x))[[1]][1,"Pr(>F)"])
+
+    sig.cor <- which(aov.p <= sig.val)
+
+    sub.mat <- sig.enrich.mat[sig.cor,]
+    term_cl <- kmeans_cluster_mat(sub.mat)
+    ind_cl <- kmeans_cluster_mat(t(sub.mat))
+
+    #pdf("~/Desktop/test.pdf", width = 10, height = 10)
+    #pheatmap(sub.mat[order(term_cl),order(ind_cl)], cluster_row = FALSE, cluster_col = FALSE)
+    #dev.off()
+
+    return(sub.mat[order(term_cl), order(ind_cl)])  
 }
 ```
 
@@ -856,7 +871,8 @@ if(mediation.text == "complete_mediation"){
         transcript.pressure <- apply(tissue.imp.gen[[tx]][,common.transcripts], 1, function(x) x*trans.load[common.transcripts,])
         expr.names <- gene.table[match(rownames(transcript.pressure), gene.table[,1]),"symbol"]
         rownames(transcript.pressure) <- expr.names
-        mean.order <- order(colMeans(transcript.pressure))
+        ind.score <- colMeans(transcript.pressure)
+        mean.order <- order(ind.score)
 
         #also get a population-level transcriptomic pressure for each transcript
         #these are transcripts that are affecting the trait through their 
@@ -910,7 +926,6 @@ if(mediation.text == "complete_mediation"){
 
         pdf(file.path(results.dir, paste0("Transcriptional_Pressure_v_Trait_PC", tissue.names[tx], ".pdf")), width = 5, height = 5)
         common.ind <- intersect(rownames(sub.pheno), colnames(transcript.pressure))
-        ind.score <- colMeans(transcript.pressure)
         plot.with.model(ind.score[common.ind], trait.pc[common.ind,1], 
             xlab = "Transcriptionally Predicted Phenotype", 
             ylab = "First PC of Trait Matrix")
@@ -939,73 +954,91 @@ if(mediation.text == "complete_mediation"){
         }else{
             ind.up.enrich <- readRDS(ind.up.enrichment.file)
         }
-            
-        #clustered_down_enrich <- summarize_enrichment(individual.enrichments = ind.down.enrich, 
-        #    max.term.size = 5000, max.char = 100, enrich.sig.thresh = 1e3, 
-        #    top.n.terms = 5, min.cl = 2, max.cl = 20)
-
-        #clustered_up_enrich <- summarize_enrichment(ind.up.enrich, 
-        #    max.term.size = 5000, max.char = 100, enrich.sig.thresh = 1e3, 
-        #    top.n.terms = 5, min.cl = 2, max.cl = 20)
 
         clustered_down_enrich <- subset_enrichment(ind.down.enrich, 
-            max.term.size = 5000, max.char = 100, min.ind = 20)
+            max.term.size = 5000, max.char = 100, sig.val = 0.01)
 
         clustered_up_enrich <- subset_enrichment(ind.up.enrich, 
             max.term.size = 5000, max.char = 100, enrich.sig.thresh = 1e3, 
-            min.ind = 20)
+            sig.val = 0.01)
 
+        all_enrich <- rbind(clustered_up_enrich, clustered_down_enrich)
 
         pdf(file.path(results.dir, paste0("Clustered_Enrichment_", 
-            tissue.names[tx], ".pdf")), width = 18, height = 6)
+            tissue.names[tx], ".pdf")), width = 18, height = 10)
             
             left.mar = 20
+            ordered.names <- colnames(transcript.pressure)[mean.order]
 
             #up enrichment ordered by score
-            row_order <- hclust(dist(clustered_up_enrich))$order
             layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
             par(mar = c(0,left.mar,2,0))
             barplot(ind.score[mean.order], names = NA, ylab = "Predicted Score",
                 main = "Up Enrichment")
             par(mar = c(0,left.mar,0,0))
-            imageWithText(clustered_up_enrich[row_order,colnames(transcript.pressure)[mean.order]], 
+            imageWithText(clustered_up_enrich[,ordered.names], 
                 col.names = NULL, show.text = FALSE, use.pheatmap.colors = TRUE,
                 row.text.cex = 0.7)
             
             #up enrichment ordered by enrichment
-            col_order <- hclust(dist(t(clustered_up_enrich)))$order
             layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
             par(mar = c(0,left.mar,2,0))
-            barplot(ind.score[col_order], names = NA, ylab = "Predicted Score",
-                main = "Up Enrichment")
+            barplot(ind.score[colnames(clustered_up_enrich)], names = NA, 
+                ylab = "Predicted Score",main = "Up Enrichment")
             par(mar = c(0,left.mar,0,0))
-            imageWithText(clustered_up_enrich[row_order, col_order], 
+            imageWithText(clustered_up_enrich, 
                 use.pheatmap.colors = TRUE, show.text = FALSE, col.names = NULL,
                 row.text.cex = 0.7)
 
             #down enrichment ordered by score
-            row_order <- hclust(dist(clustered_down_enrich))$order
             layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
             par(mar = c(0,left.mar,2,2))
             barplot(ind.score[mean.order], names = NA, ylab = "Predicted Score",
                 main = "Down Enrichment")
             par(mar = c(0,left.mar,0,2))
-            imageWithText(clustered_down_enrich[row_order, mean.order], 
+            imageWithText(clustered_down_enrich[, ordered.names], 
                 use.pheatmap.colors = TRUE, show.text = FALSE, col.names = NULL,
                 row.text.cex = 0.7)
             
             #down enrichment ordered by enrichment
-            col_order <- hclust(dist(t(clustered_down_enrich)))$order
             layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
             par(mar = c(0,left.mar,2,2))
-            barplot(ind.score[col_order], names = NA, ylab = "Predicted Score",
-                main = "Down Enrichment")
+            barplot(ind.score[colnames(clustered_down_enrich)], 
+                names = NA, ylab = "Predicted Score", main = "Down Enrichment")
             par(mar = c(0,left.mar,0,2))
-            imageWithText(clustered_down_enrich[row_order, col_order], 
+            imageWithText(clustered_down_enrich, 
                 use.pheatmap.colors = TRUE, show.text = FALSE, col.names = NULL,
                 row.text.cex = 0.7)
+
+            #all enrichment ordered by score
+            layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
+            par(mar = c(0,left.mar,2,2))
+            barplot(ind.score[mean.order], names = NA, ylab = "Predicted Score",
+                main = "All Enrichment")
+            par(mar = c(0,left.mar,0,2))
+            imageWithText(all_enrich[,ordered.names], 
+                use.pheatmap.colors = TRUE, show.text = FALSE, col.names = NULL,
+                row.text.cex = 0.7)
+            plot.dim <- par("usr")
+            plot.height <- plot.dim[4]
+            line.height <- plot.height*nrow(clustered_down_enrich)/nrow(all_enrich)-1
+            abline(h = line.height)
+
+            #down enrichment ordered by enrichment
+            layout(matrix(c(1,2), ncol = 1), heights = c(0.5, 1))
+            par(mar = c(0,left.mar,2,2))
+            barplot(ind.score[colnames(all_enrich)], names = NA, 
+                ylab = "Predicted Score", main = "All Enrichment")
+            par(mar = c(0,left.mar,0,2))
+            imageWithText(all_enrich, use.pheatmap.colors = TRUE, 
+                show.text = FALSE, col.names = NULL, row.text.cex = 0.7)
+            abline(h = line.height)
+
         dev.off()
 
+        pdf("~/Desktop/test.pdf", width = 15, height = 15)
+        pheatmap(cor(t(all_enrich)))
+        dev.off()
 
         #looking at large-effect transcripts
         large.effect <- apply(transcript.pressure, 2, function(x) which(abs(x) > large.effect.size))
