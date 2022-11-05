@@ -31,7 +31,7 @@ args <- commandArgs(trailingOnly=T)
 #args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
 #args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
 #args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
-args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
+#args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
 
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
 use.local.imputation <- as.logical(args[2]) #if TRUE, locally imputed transcripts are used to generate polytranscriptomic risk scores. Otherwise transcripts imputed with the full genetic model are used.
@@ -1003,7 +1003,21 @@ if(mediation.text == "complete_mediation"){
 ## Loadings vs. LOD {.tabset .tabset-fade .tabset-pills}
 
 What is the maximum eQTL LOD score for transcripts compared with 
-their loading?
+their loading? The following plots show the loading of each 
+transript vs. its maximum LOD score. We still see a negative
+relationship between loading and LOD score.
+
+```{r to_label}
+num.label = 30 #the number of top genes to label in the plots below
+```
+
+The transcripts are colored by their population level 
+transcriptional pressure. The `r num.label` genes with
+the largest transcriptional pressure magnitudes are labeled.
+These transcripts are along the pareto front of the distribution.
+
+The plots are saved as pdfs called LOD_vs_Loading_tissue_name
+so that the gene names are searchable and highlightable.
 
 ```{r eqtl_plot, eval = FALSE}
 for(tx in 1:length(tissue.names)){
@@ -1022,11 +1036,9 @@ for(tx in 1:length(tissue.names)){
     dev.off()
 }
 
-
-
 ```
 
-```{r lod_v_loading, results = "asis", fig.height = 10, fig.width = 10}
+```{r lod_v_loading}
 if(mediation.text == "complete_mediation"){
     for(tx in 1:length(tissue.names)){
         cat("###", tissue.names[tx], "\n")
@@ -1043,12 +1055,12 @@ if(mediation.text == "complete_mediation"){
         xV <- max.lod[pressure.order] 
         yV <- transcript_loadings[[tx]][,1][pressure.order]
         
+        pdf(file.path(paste("LOD_vs_Loading_", tissue.names[tx], ".pdf")), width = 10, height = 8)
         layout(matrix(c(1,1,2,3), ncol = 2, byrow = FALSE), widths = c(1, 0.5))
         par(mar = c(4,4,4,0))
         plot(xV, yV, xlab = "Maximum LOD", ylab = "Loading", 
             main = tissue.names[tx], col = pressure.col[pressure.order], 
             pch = 16, cex = 0.5)
-        num.label = 30
         text(tail(xV, num.label), tail(yV, num.label), 
             labels = names(tail(yV, num.label)), pos = 4, cex = 0.7)
         abline(h = 0)  
@@ -1065,8 +1077,7 @@ if(mediation.text == "complete_mediation"){
         neg.par <- words_to_paragraph(top.genes[neg.idx[neg.order]], line.len = 5)
         par(mar = c(0,0,0,0))
         plot.text(paste("Negative Pressure Genes", neg.par, sep = "\n\n"))
-
-        cat("\n\n")
+        dev.off()
     }
 }
 ```
