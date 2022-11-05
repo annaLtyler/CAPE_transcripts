@@ -31,7 +31,7 @@ args <- commandArgs(trailingOnly=T)
 #args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
 #args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
 #args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
-args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
+#args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
 
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
 use.local.imputation <- as.logical(args[2]) #if TRUE, locally imputed transcripts are used to generate polytranscriptomic risk scores. Otherwise transcripts imputed with the full genetic model are used.
@@ -825,9 +825,10 @@ subset_enrichment <- function(individual.enrichments, max.term.size = 5000,
 
     sig.cor <- which(aov.p <= sig.val)
 
-    sub.mat <- sig.enrich.mat[sig.cor,]
-    term_cl <- kmeans_cluster_mat(sub.mat)
-    ind_cl <- kmeans_cluster_mat(t(sub.mat))
+    sub.mat <- sig.enrich.mat[sig.cor,,drop=FALSE]
+    max.cl <- min(c(20, nrow(sub.mat)-1))
+    term_cl <- kmeans_cluster_mat(sub.mat, max.cl = max.cl)
+    ind_cl <- kmeans_cluster_mat(t(sub.mat), max.cl = max.cl)
 
     #pdf("~/Desktop/test.pdf", width = 10, height = 10)
     #pheatmap(sub.mat[order(term_cl),order(ind_cl)], cluster_row = FALSE, cluster_col = FALSE)
@@ -1121,7 +1122,7 @@ if(mediation.text == "complete_mediation"){
         xV <- max.lod[pressure.order] 
         yV <- transcript_loadings[[tx]][,1][pressure.order]
         
-        pdf(file.path(paste("LOD_vs_Loading_", tissue.names[tx], ".pdf")), width = 10, height = 8)
+        pdf(file.path(results.dir, paste("LOD_vs_Loading_", tissue.names[tx], ".pdf")), width = 10, height = 8)
         layout(matrix(c(1,1,2,3), ncol = 2, byrow = FALSE), widths = c(1, 0.5))
         par(mar = c(4,4,4,0))
         plot(xV, yV, xlab = "Maximum LOD", ylab = "Loading", 
