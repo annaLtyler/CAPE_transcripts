@@ -45,7 +45,7 @@ summarize_go_mat <- function(go_term_mat, go_term_sim, min.cl = 2,
         }
 
         #merge the rows in the go_term_mat based on the identified clusters
-        cl_term <- lapply(cl_mem, function(x) go_term_mat[x,])
+        cl_term <- lapply(cl_mem, function(x) go_term_mat[x,,drop=FALSE])
         
         #term_sig <- lapply(cl_term, function(x) sort(apply(x, 1, max), decreasing = TRUE))
         #pdf("~/Desktop/test.pdf", width = 10, height = 20)

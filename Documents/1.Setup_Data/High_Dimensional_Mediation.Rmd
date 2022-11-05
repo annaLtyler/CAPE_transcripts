@@ -781,7 +781,7 @@ summarize_enrichment <- function(individual.enrichments, max.term.size = 5000,
     sig_vals  <- apply(enrich.mat, 1, max)
     to_keep <- which(sig_vals > -log10(enrich.sig.thresh))
     sig.enrich.mat <- enrich.mat[to_keep,]
-    names(rownames(sig.enrich.mat)) <- names(rownames(enrich.mat)[to_keep])
+    names(rownames(sig.enrich.mat)) <- names(rownames(enrich.mat)[to_keep])    
 
     ind.sim <- get_sim_mat(go.terms = rownames(enrich.mat))
     
@@ -791,6 +791,34 @@ summarize_enrichment <- function(individual.enrichments, max.term.size = 5000,
         plot.results = FALSE)
 
     return(clustered_enrich)        
+}
+
+#This function subsets an enrichment matrix to only terms with
+#a minimum number of individuals (min.ind)
+subset_enrichment <- function(individual.enrichments, max.term.size = 5000,
+    max.char = 100, enrich.sig.thresh = 1e3, min.ind = 20){
+
+    enrich.mat <- plot.enrichment.group(individual.enrichments, sort.by = "default", 
+            max.term.size = max.term.size, plot.results = FALSE, max.char = max.char)
+    
+    #add back any individuals that didn't have any significant enrichments
+    missing.names <- setdiff(colnames(transcript.pressure), colnames(enrich.mat)) 
+    no.enrich.mat <- matrix(0, nrow = nrow(enrich.mat), ncol = length(missing.names))
+    colnames(no.enrich.mat) <- missing.names
+    enrich.mat <- cbind(enrich.mat, no.enrich.mat)
+        
+    #filter for the most significant terms
+    sig_vals  <- apply(enrich.mat, 1, max)
+    to_keep <- which(sig_vals > -log10(enrich.sig.thresh))
+    sig.enrich.mat <- enrich.mat[to_keep,]
+    names(rownames(sig.enrich.mat)) <- names(rownames(enrich.mat)[to_keep])
+
+    #count the number of individuals with each term
+    num.ind <- apply(sig.enrich.mat, 1, function(x) length(which(x > 0)))
+    sub.mat <- sig.enrich.mat[which(num.ind > min.ind),]
+    #pheatmap(sub.mat, show_colnames = FALSE)
+    
+    return(sub.mat)  
 }
 ```
 
@@ -819,7 +847,6 @@ if(mediation.text == "complete_mediation"){
     common.large.effect.genes <- pop.pressure <- vector(mode = "list", length = length(tissue.names))
     names(common.large.effect.genes) <- names(pop.pressure) <- tissue.names
     for(tx in 1:length(tissue.names)){
-        cat("###", tissue.names[tx], "{.tabset .tabset-fade .tabset-pills}\n\n")
     
         trans.load <- transcript_loadings[[tx]]
         transcript.id <- gene.table[match(rownames(trans.load), gene.table[,"symbol"]),"gene.id"]
@@ -913,19 +940,26 @@ if(mediation.text == "complete_mediation"){
             ind.up.enrich <- readRDS(ind.up.enrichment.file)
         }
             
-        clustered_down_enrich <- summarize_enrichment(ind.down.enrich, 
-            max.term.size = 5000, max.char = 100, enrich.sig.thresh = 1e3, 
-            top.n.terms = 5, min.cl = 2, max.cl = 20)
+        #clustered_down_enrich <- summarize_enrichment(individual.enrichments = ind.down.enrich, 
+        #    max.term.size = 5000, max.char = 100, enrich.sig.thresh = 1e3, 
+        #    top.n.terms = 5, min.cl = 2, max.cl = 20)
 
-        clustered_up_enrich <- summarize_enrichment(ind.up.enrich, 
+        #clustered_up_enrich <- summarize_enrichment(ind.up.enrich, 
+        #    max.term.size = 5000, max.char = 100, enrich.sig.thresh = 1e3, 
+        #    top.n.terms = 5, min.cl = 2, max.cl = 20)
+
+        clustered_down_enrich <- subset_enrichment(ind.down.enrich, 
+            max.term.size = 5000, max.char = 100, min.ind = 20)
+
+        clustered_up_enrich <- subset_enrichment(ind.up.enrich, 
             max.term.size = 5000, max.char = 100, enrich.sig.thresh = 1e3, 
-            top.n.terms = 5, min.cl = 2, max.cl = 20)
+            min.ind = 20)
 
 
         pdf(file.path(results.dir, paste0("Clustered_Enrichment_", 
             tissue.names[tx], ".pdf")), width = 18, height = 6)
             
-            left.mar = 50
+            left.mar = 20
 
             #up enrichment ordered by score
             row_order <- hclust(dist(clustered_up_enrich))$order
@@ -993,7 +1027,6 @@ if(mediation.text == "complete_mediation"){
             main = "Large-Effect Transcript Decomposition\nby Individual")
         dev.off()
 
-        cat("\n\n")
     }
 
     #cat(names(common.large.effect.genes[[1]]), sep = "\n")

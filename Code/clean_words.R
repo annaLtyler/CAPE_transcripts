@@ -10,6 +10,10 @@ clean_words <- function(words, additional.words.to.remove = NULL,
     #make all lowercase
     words <- str_to_lower(words)
 
+    #remove words with one character
+    keep.words <- which(nchar(words) >= 2)
+    words <- words[keep.words]
+
     if(remove.truncated.words){
         trunc.words <- grep("...", words, fixed = TRUE)
         to.keep <- setdiff(1:length(words), trunc.words)
@@ -17,7 +21,7 @@ clean_words <- function(words, additional.words.to.remove = NULL,
     }
 
     #remove punctuation
-    punct <- c(";", ",", ".")
+    punct <- c(";", ",", ".", "(", ")")
     for(i in 1:length(punct)){
         words <- gsub(punct[i], "", words, fixed = TRUE)
     }
