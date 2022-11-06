@@ -899,8 +899,9 @@ if(mediation.text == "complete_mediation"){
         dev.off()
 
         #par(mfrow = c(1,2))
-        pdf(file.path(results.dir, paste0("Individual_Level_Transcriptional_Pressure_", tissue.names[tx], ".pdf")), width = 5, height = 5)
-        hist(transcript.pressure[,mean.order[1]], breaks = 100, 
+        png(file.path(results.dir, paste0("Individual_Level_Transcriptional_Pressure_", tissue.names[tx], ".png")), width = 5, height = 5, units = "in", res = 200)
+        hist_with_points(transcript.pressure[,mean.order[[1]]], breaks = 100, 
+            col = "gray",
             main = "Polygenic Transcriptional Pressure\non Phenotype Space\nFor Lowest Individual",
             xlab = "Transcriptional Pressure", ylab = "Gene Count")
         abline(v = mean(transcript.pressure[,mean.order[1]]), col = "red")
