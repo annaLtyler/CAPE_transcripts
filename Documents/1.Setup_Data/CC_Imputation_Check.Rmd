@@ -17,7 +17,7 @@ args <- commandArgs(trailingOnly = T)
 tissue.name <- args[1]
 
 if(is.na(tissue.name)){
-    tissue.name <- "Adipose"
+    tissue.name <- "islet"
 }
 
 is.interactive <- FALSE
@@ -59,12 +59,13 @@ if(!data.loaded){
     groups <- read.csv(file.path(cc.dir, "Groups.csv"), row.names = 1)
     group.def <- colnames(groups)
     load(here("Data", "dataset.DO.CUBE.multissue.RData")) #DO data for eQTL LOD scores
-    data.set.name <- paste0("dataset.DO.Cube.", tissue.name)
+    name.idx <- grep(tissue.name, all.var, ignore.case = TRUE)
+    data.set.name <- all.var[name.idx]
     do.pheno <- read.csv(here("Data", "DO_clinical_phenotypes.csv"))
     gene.table <- as.matrix(get(data.set.name)$annot.mrna)
 }
 
-do.expr <- get(paste0("dataset.DO.Cube.", tissue.name))
+do.expr <- get(data.set.name)
 do.covar <- do.expr$covar.matrix
 expr.annot <- do.expr$annot.mrna
 expr.lod <- do.expr$lod.peaks
@@ -147,7 +148,7 @@ do.imputed.local <- readRDS(here("Data", "imputed",
     paste0("DO_", tissue.name, "_imputed_transcriptome_local.RDS")))
 
 do.imputed.genetic <- readRDS(here("Data", "imputed", 
-    paste0("DO_", tissue.name, "_imputed_transcriptome_genetic.RDS")))
+   paste0("DO_", tissue.name, "_imputed_transcriptome_genetic.RDS")))
 
 ```
 
@@ -212,7 +213,11 @@ ind.mom.idx <- sapply(ind.mom, function(x) grep(x, rownames(imp.cc.expr[[1]])))
 ind.dad.idx <- sapply(ind.dad, function(x) grep(x, colnames(imp.cc.expr[[1]])))
 
 ind.auto.expr <- t(sapply(1:length(ind.mom.idx), function(x) imp.cc.expr[[1]][ind.mom.idx[x], ind.dad.idx[x],]))
-rownames(ind.auto.expr) <- ind.cross
+rownames(ind.auto.expr) <- tissue.info[,1]
+
+saveRDS(ind.auto.expr, here("Data", "imputed", 
+    paste0("Expanded_Imputed_CC-RIX_Expression_", tissue.name, ".RDS")))
+
 ```
 
 ## Correlation between measured and imputed expression
@@ -223,11 +228,13 @@ imputed gene expression and measured gene expression.
 
 ```{r match_transcripts}
 common.transcripts <- intersect(colnames(adj.cc.expr), colnames(ind.auto.expr))
+common.ind <- intersect(rownames(adj.cc.expr), rownames(ind.auto.expr))
 #test.transcript <- sample(common.transcripts, 1)
 #plot.with.model(adj.cc.expr[,test.transcript], ind.auto.expr[,test.transcript],
 #    xlab = "CC-RIX expression", ylab = "Imputed Expression")
 
-all.cor <- sapply(common.transcripts, function(x) cor(adj.cc.expr[,x], ind.auto.expr[,x]))
+all.cor <- sapply(common.transcripts, function(x) cor(adj.cc.expr[common.ind,x], 
+    ind.auto.expr[common.ind,x]))
 med.cor <- median(all.cor, na.rm = TRUE)
 hist(all.cor, breaks = 100);abline(v = med.cor, col = "red")
 

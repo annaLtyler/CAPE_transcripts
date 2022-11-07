@@ -33,11 +33,15 @@ args <- commandArgs(trailingOnly=T)
 #args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
 #args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
 
+args <- c(1,1,1,1,0) #merged tissues, local imputation, mediation mode, weight adjusted
+
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
 use.local.imputation <- as.logical(args[2]) #if TRUE, locally imputed transcripts are used to generate polytranscriptomic risk scores. Otherwise transcripts imputed with the full genetic model are used.
 weight.adjusted <- as.logical(args[3]) #if TRUE, body weight is adjusted out of the phenotypes and transcriptome before running mediation
 complete.mediation <- as.logical(args[4]) #if TRUE use a mediation network. If FALSE use a reactive network
 delete_previous <- as.logical(args[5])
+
+if(is.na(merge.tissues)){stop("Please set the parameters for this run.")}
 
 merge.text.options <- c("tissue_sep", "tissue_together")
 imputation.options <- c("full_imp", "local_imp")
@@ -74,7 +78,7 @@ for(i in 1:length(all.fun)){source(all.fun[i])}
 
 ```{r load_libraries, message = FALSE, warning = FALSE, error = FALSE}
 all.packages <- c("pheatmap", "qtl2", "gprofiler2", "Matrix", "RGCCA", 
-    "bnstruct", "igraph", "corpcor", "GOSemSim", "cluster", "org.Mm.eg.db",
+    "bnstruct", "igraph", "corpcor", "cluster",
     "grid", "wordcloud", "stringr")
 load_libraries(all.packages, personal.library = TRUE)
 ```
@@ -727,71 +731,9 @@ the html. Filenames and descriptions are the following:
 The genes that have large effects across multiple organisms seem to be rather
 obscure. Some are known diabetes genes, but most of them seem pretty irrelevant.
 
-```{r gosem}
-mf <- godata('org.Mm.eg.db', ont="MF", computeIC=TRUE)
-cc <- godata('org.Mm.eg.db', ont="CC", computeIC=TRUE)
-bp <- godata('org.Mm.eg.db', ont="BP", computeIC=TRUE)
 
-
-get_sim_mat <- function(go.terms){
-
-    #classify go terms
-    mf.idx <- which(names(go.terms) %in% mf@geneAnno$GO)
-    cc.idx <- which(names(go.terms) %in% cc@geneAnno$GO)
-    bp.idx <- which(names(go.terms) %in% bp@geneAnno$GO)
-    
-    bp.sim <- goSim(names(go.terms)[bp.idx], names(go.terms)[bp.idx], 
-        semData = bp, measure = "Rel")
-    bp.sim.mat <- matrix(bp.sim, nrow = length(bp.idx), ncol = length(bp.idx))
-    rownames(bp.sim.mat) <- colnames(bp.sim.mat) <- go.terms[bp.idx]
-    #pheatmap(bp.sim.mat)
-    
-    cc.sim <- goSim(names(go.terms)[cc.idx], names(go.terms)[cc.idx], 
-        semData = cc, measure = "Rel")
-    cc.sim.mat <- matrix(cc.sim, nrow = length(cc.idx), ncol = length(cc.idx))
-    rownames(cc.sim.mat) <- colnames(cc.sim.mat) <- go.terms[cc.idx]
-    #pheatmap(cc.sim.mat)
-
-    mf.sim <- goSim(names(go.terms)[mf.idx], names(go.terms)[mf.idx], 
-        semData = mf, measure = "Rel")
-    mf.sim.mat <- matrix(mf.sim, nrow = length(mf.idx), ncol = length(mf.idx))
-    rownames(mf.sim.mat) <- colnames(mf.sim.mat) <- go.terms[mf.idx]
-    #pheatmap(mf.sim.mat)
-
-    result <- list("BP" = bp.sim.mat, "CC" = cc.sim.mat, "MF" = mf.sim.mat)
-    return(result)
-}
-```
 
 ```{r summarize_enrichment_fun}
-summarize_enrichment <- function(individual.enrichments, max.term.size = 5000,
-    max.char = 100, enrich.sig.thresh = 1e3, top.n.terms = 5, min.cl = 2, 
-    max.cl = 20){
-
-    enrich.mat <- plot.enrichment.group(individual.enrichments, sort.by = "default", 
-            max.term.size = max.term.size, plot.results = FALSE, max.char = max.char)
-    
-    #add back any individuals that didn't have any significant enrichments
-    missing.names <- setdiff(colnames(transcript.pressure), colnames(enrich.mat)) 
-    no.enrich.mat <- matrix(0, nrow = nrow(enrich.mat), ncol = length(missing.names))
-    colnames(no.enrich.mat) <- missing.names
-    enrich.mat <- cbind(enrich.mat, no.enrich.mat)
-        
-    #filter for the most significant terms
-    sig_vals  <- apply(enrich.mat, 1, max)
-    to_keep <- which(sig_vals > -log10(enrich.sig.thresh))
-    sig.enrich.mat <- enrich.mat[to_keep,]
-    names(rownames(sig.enrich.mat)) <- names(rownames(enrich.mat)[to_keep])    
-
-    ind.sim <- get_sim_mat(go.terms = rownames(enrich.mat))
-    
-    clustered_enrich <- summarize_go_mat(go_term_mat = enrich.mat, 
-        go_term_sim = ind.sim, min.cl = min.cl, max.cl = max.cl,
-        top.n.terms = top.n.terms, use.pc.mat = TRUE, pc = 2, 
-        plot.results = FALSE)
-
-    return(clustered_enrich)        
-}
 
 #This function subsets an enrichment matrix to only the 
 #terms that are significantly correlated with phenotype
@@ -884,6 +826,20 @@ if(mediation.text == "complete_mediation"){
         #get imputed R2 
         tx.r2 <- apply(tissue.imp.gen[[tx]], 2, var)
         pop.pressure[[tx]] <- tx.r2[common.transcripts]*trans.load[common.transcripts,1]
+        
+        #write out cmap tables for these too
+        top.pressure <- sort(pop.pressure[[tx]], decreasing = TRUE)[1:200]
+        top.hum.id <- mouse_to_human_entrez(names(top.pressure), hum.mus.ortho)
+        bottom.pressure <- sort(pop.pressure[[tx]], decreasing = FALSE)[1:200]
+        bottom.hum.id <- mouse_to_human_entrez(names(bottom.pressure), hum.mus.ortho)
+
+        pressure.cmap.table <- cbind(top.hum.id[,"Human.Entrez"], bottom.hum.id[,"Human.Entrez"])
+        colnames(pressure.cmap.table) <- c("Positive", "Negative")
+        write.table(pressure.cmap.table, 
+            file.path(results.dir, paste0("CMAP_Pop_Pressure_", tissue.names[tx], ".txt")),
+            quote = FALSE, row.names = FALSE, sep = "\t")
+
+
         #hist(pop.pressure, breaks = 100)
         pop.neg.pressure <- gost(names(sort(pop.pressure[[tx]]))[1:enrichment.num], 
             organism = "mmusculus")
@@ -907,22 +863,30 @@ if(mediation.text == "complete_mediation"){
         abline(v = mean(transcript.pressure[,mean.order[1]]), col = "red")
         dev.off()
          
-        pdf(file.path(results.dir, paste0("Transcriptional_Pressure_Distribution_", tissue.names[tx], ".pdf")), width = 10, height = 5)
-        #bin transcriptional pressure so we can see all of them.
-        bins <- segment_region(min(transcript.pressure), max(transcript.pressure), 100, "ends")
-        binned.pressure <- apply(transcript.pressure, 2, function(x) hist(x, plot = FALSE, breaks = bins))
-        bin.count <- sapply(binned.pressure, function(x) x$count)
-        ordered.count <- bin.count[,rev(mean.order)]
+        png(file.path(results.dir, paste0("Transcriptional_Pressure_Distribution_", tissue.names[tx], ".png")), width = 10, height = 5, units = "in", res = 200)
+        #make a boxplot of the top and bottom extremes of the distribution
+        top.ind <- 10
+        top.names <- names(sort(ind.score, decreasing = TRUE))[1:top.ind]
+        bottom.names <- names(sort(ind.score, decreasing = FALSE))[1:top.ind]
+        boxplot(transcript.pressure[,c(bottom.names, top.names)], main = tissue.names[tx], las = 2)
+        abline(h = 0, col = "red")
+        abline(v = top.ind+0.5, lwd = 2)
 
-        layout(matrix(c(1,2), ncol = 1), heights = c(0.6, 1))
-        par(mar = c(0,4,2,4))
-        barplot(colMeans(transcript.pressure[,mean.order]), names = NA, 
-            ylab = "Transcriptional Pressure")
-        par(mar = c(2,4,0,4))
-        imageWithText(log(ordered.count+1), show.text = FALSE, 
-            use.pheatmap.colors = TRUE, col.names = NULL)
-        mtext("Transcript Counts", side = 1, outer = TRUE, line = -2.5)
-        mtext("Transcriptional Pressure", side = 2, -1.5)
+        #bin transcriptional pressure so we can see all of them.
+        #bins <- segment_region(min(transcript.pressure), max(transcript.pressure), 100, "ends")
+        #binned.pressure <- apply(transcript.pressure, 2, function(x) hist(x, plot = FALSE, breaks = bins))
+        #bin.count <- sapply(binned.pressure, function(x) x$count)
+        #ordered.count <- bin.count[,rev(mean.order)]
+
+        #layout(matrix(c(1,2), ncol = 1), heights = c(0.6, 1))
+        #par(mar = c(0,4,2,4))
+        #barplot(colMeans(transcript.pressure[,mean.order]), names = NA, 
+        #    ylab = "Transcriptional Pressure")
+        #par(mar = c(2,4,0,4))
+        #imageWithText(log(ordered.count+1), show.text = FALSE, 
+        #    use.pheatmap.colors = TRUE, col.names = NULL)
+        #mtext("Transcript Counts", side = 1, outer = TRUE, line = -2.5)
+        #mtext("Transcriptional Pressure", side = 2, -1.5)
         dev.off()
 
 
@@ -1066,6 +1030,8 @@ if(mediation.text == "complete_mediation"){
 
     #cat(names(common.large.effect.genes[[1]]), sep = "\n")
 }
+
+saveRDS(pop.pressure, file.path(results.dir, "Population_Pressure_Loadings.RDS"))
 ```
 
 ## Loadings vs. LOD {.tabset .tabset-fade .tabset-pills}

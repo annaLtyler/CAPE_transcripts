@@ -99,6 +99,32 @@ for(i in 1:length(expr)){
 saveRDS(expr, file.path(data.dir, "Expression.by.Tissue.RDS"))
 ```
 
+Generate similar matrices for the imputed expression.
+
+```{r imp_expr}
+#read in imputed expression tables
+expr.files <- get.files(here("Data", "imputed"), want = "CC", full.names = TRUE)
+imp.expr <- lapply(expr.files, readRDS)
+
+split.strains <- strsplit(expr.mouse.info.table[,"User.Defined.Strain"], " ")
+strain1 <- sapply(split.strains, function(x) x[1])
+strain2 <- sapply(split.strains, function(x) x[3])
+
+exp.imp.expr <- vector(mode = "list", length = length(imp.expr))
+names(exp.imp.expr) <- gsub("_imputed_transcriptome_local.RDS", "", gsub("CC-RIX_", "", basename(expr.files)))
+
+for(tx in 1:length(exp.imp.expr)){
+    strain1.idx <- sapply(strain1, function(x) grep(x, rownames(imp.expr[[tx]]$Auto)))
+    strain2.idx <- sapply(strain2, function(x) grep(x, rownames(imp.expr[[tx]]$Auto)))
+    full.imp.expr <- t(sapply(1:length(strain1.idx), function(x) imp.expr[[tx]]$Auto[strain1.idx[x], strain2.idx[x],]))
+    rownames(full.imp.expr) <- expr.mouse.info.table[,1]
+    exp.imp.expr[[tx]] <- full.imp.expr
+}
+saveRDS(exp.imp.expr, here("Data", "imputed", "Expanded_Imputed_CC-RIX_Expression.RDS"))
+```
+
+
+
 ## Phenotypes
 
 Read in the phenotypes.
