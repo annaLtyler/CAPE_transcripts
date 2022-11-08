@@ -5,8 +5,8 @@
 ## set and then rename the results file accordingly.
 ##=====================================================================================##
 
-merge_tissues=TRUE
-local_imputation=TRUE
+merge_tissues=FALSE
+local_imputation=FALSE
 weight_adjusted=FALSE
 complete_mediation=TRUE
 delete_previous=FALSE

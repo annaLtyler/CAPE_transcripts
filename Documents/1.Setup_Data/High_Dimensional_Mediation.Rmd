@@ -28,10 +28,10 @@ There are several parameters to set.
 ```{r get_args}
 args <- commandArgs(trailingOnly=T)
 
-#args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
 #args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
-#args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
+#args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
 #args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
+#args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
 
 args <- c(1,1,1,1,0) #merged tissues, local imputation, mediation mode, weight adjusted
 
@@ -842,16 +842,29 @@ if(mediation.text == "complete_mediation"){
 
         #hist(pop.pressure, breaks = 100)
         pop.neg.pressure <- gost(names(sort(pop.pressure[[tx]]))[1:enrichment.num], 
-            organism = "mmusculus")
+            organism = "mmusculus", sources = c("GO", "KEGG", "REACTOME"))
         pop.pos.pressure <- gost(names(sort(pop.pressure[[tx]], decreasing = TRUE))[1:enrichment.num], 
-            organism = "mmusculus")
+            organism = "mmusculus", sources = c("GO", "KEGG", "REACTOME"))
 
         pdf(file.path(results.dir, paste0("Population_Pressure_Enrichments_", tissue.names[tx], ".pdf")), width = 10, height = 5)
+       
+         plot.enrichment(pop.pos.pressure, max.term.size = 5000,
+            plot.label = "Transcripts with population-level positive pressure",
+            num.terms = 20, order.by = "p_value")
         par(mfrow = c(1,2))
         plot.enrichment.wordcloud(pop.pos.pressure, max.term.size = 5000,
-            plot.label = "Transcripts with population-level positive pressure")
+            plot.label = "Transcripts with population-level positive pressure",
+            num.terms = 20, order.by = "p_value")
+        par(mfrow = c(1,1))
+        plot.enrichment(pop.neg.pressure, max.term.size = 5000,
+            plot.label = "Transcripts with population-level positive pressure",
+            num.terms = 20, order.by = "p_value")
+        
+        par(mfrow = c(1,2))
         plot.enrichment.wordcloud(enrichment = pop.neg.pressure, max.term.size = 5000,
-            plot.label = "Transcripts with population-level negative pressure")
+            plot.label = "Transcripts with population-level negative pressure",
+            num.terms = 20, order.by = "p_value", max.vertex.cex = 20)
+
         dev.off()
 
         #par(mfrow = c(1,2))
@@ -1002,9 +1015,9 @@ if(mediation.text == "complete_mediation"){
 
         dev.off()
 
-        pdf("~/Desktop/test.pdf", width = 15, height = 15)
-        pheatmap(cor(t(all_enrich)))
-        dev.off()
+        #pdf("~/Desktop/test.pdf", width = 15, height = 15)
+        #pheatmap(cor(t(all_enrich)))
+        #dev.off()
 
         #looking at large-effect transcripts
         large.effect <- apply(transcript.pressure, 2, function(x) which(abs(x) > large.effect.size))
@@ -1260,6 +1273,85 @@ model.
 ```{r all_strains, fig.width = 5, fig.height = 5}
 if(mediation.text == "complete_mediation"){
     pheatmap(overall.strain.effect[rev(effect.order),], cluster_rows = FALSE)
+}
+```
+
+## CC-RIX prediction
+
+Can we predict where each CC-RIX strain will end up in phenotype space
+when placed on a high-fat diet?
+
+```{r read_geno}
+cc.geno <- readRDS(here("Data", "CC-RIX", "Genoprobs.RDS"))
+cc.map <- readRDS(here("Data", "CC-RIX", "Map.RDS"))
+cc.bw <- read.csv(here("Data", "CC-RIX", "Weight.Summarized.csv"))
+manifest <- read.csv(here("Data", "CC-RIX", "Original_Samples_Manifest.csv"))
+diet.idx <- which(manifest[,"Diet"] == "44% fat + fiber")
+treatment.idx <- which(manifest[,"Treatment"] == "None")
+
+#group weight by strain and sex
+split.strain <- strsplit(rownames(cc.geno[[1]]), "_")
+strain1 <- sapply(split.strain, function(x) x[1])
+strain2 <- sapply(split.strain, function(x) x[2])
+sex <- sapply(split.strain, function(x) x[3])
+strain.weight <- vector(mode = "list", length = nrow(cc.geno[[1]]))
+names(strain.weight) <- rownames(cc.geno[[1]])
+for(st in 1:nrow(cc.geno[[1]])){
+    strain.idx <- which(manifest[,"User.Defined.Strain"] == paste(strain1[st], "X", strain2[st]))
+    sex.idx <- which(manifest[,"Sex"] == sex[st])
+    overlap.idx <- Reduce("intersect", list(strain.idx, sex.idx, diet.idx, treatment.idx))
+    mouse.ids <- manifest[overlap.idx,"Barcode.1"]
+    weight.idx <- which(cc.bw[,1] %in% mouse.ids)
+    strain.weight[[st]] <- cc.bw[weight.idx,2]
+}
+mean.weight <- sapply(strain.weight, mean)
+f.weight.locale <- which(sex == "Female")
+m.weight.locale <- which(sex == "Male")
+
+f.pressure.locale <- grep("Female", rownames(cc.geno[[1]]))
+m.pressure.locale <- grep("Male", rownames(cc.geno[[1]]))
+
+for(tx in 1:length(tissue.names)){
+    tissue.effects <- tissue.inbred.effects[[tx]]
+
+    cc.tissue.effects <- matrix(NA, nrow = nrow(tissue.effects), ncol = nrow(cc.geno[[1]]))
+    rownames(cc.tissue.effects) <- rownames(tissue.effects)
+    colnames(cc.tissue.effects) <- rownames(cc.geno[[1]])
+    #get the genotype for each individual at each marker ID
+    for(tr in 1:nrow(tissue.effects)){
+        report.progress(tr, nrow(tissue.effects))
+        trans.id <- rownames(tissue.effects)[tr]
+        trans.chr <- gene.table[tr,"chr"]
+        good.chr <- trans.chr %in% c(1:19, "X")
+        if(good.chr){
+            trans.pos <- as.numeric(gene.table[tr,"start"])
+            chr.idx <- which(names(cc.geno) == trans.chr)
+            marker.name <- names(get.nearest.pt(cc.map[[chr.idx]], trans.pos))
+            trans.geno <- cc.geno[[chr.idx]][,,marker.name]
+
+            trans.idx <- which(rownames(tissue.effects) == gene.table[tr,1])
+            cc.effect <- rowMeans(trans.geno*tissue.effects[trans.id,])
+            cc.tissue.effects[tr,] <- cc.effect
+        }
+    }
+
+    not.na <- which(!is.na(rowSums(cc.tissue.effects)))
+    cc.tissue.effects <- cc.tissue.effects[not.na,]
+    cc.mean <- colMeans(cc.tissue.effects)
+    mean.order <- order(cc.mean)
+    #boxplot(cc.tissue.effects[,mean.order], las = 2)
+    #abline(h = 0, col = "red")
+    #plot.decomp(t(cc.tissue.effects), label.points = TRUE)
+
+    plot.with.model(mean.weight[f.weight.locale], cc.mean[f.pressure.locale], main = "Female")
+    plot.with.model(mean.weight[m.weight.locale], cc.mean[m.pressure.locale], main = "Male")
+
+    df <- data.frame("weight" = mean.weight, "sex" = sex, 
+        "transcriptomic_pressure" = cc.mean)
+    library(ggplot2)
+    p <- qplot(weight, transcriptomic_pressure, data = df, 
+        geom = c("point", "smooth"), facets = ~sex)
+    p    
 }
 ```
 
