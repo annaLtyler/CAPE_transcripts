@@ -374,6 +374,19 @@ for(i in 1:length(all.chem.expr.cor)){
 }
 ```
 
+### Tissues and Chemistries Separated by Group
+
+```{r cor_by_chem, fig.width = 9, fig.height = 4}
+
+for(i in 1:length(all.chem.expr.cor)){
+    par(mfrow = c(2,5), mar = c(8,4,4,1))
+    for(j in 1:ncol(all.chem.expr.cor[[i]])){
+        boxplot(abs(all.chem.expr.cor[[i]][,j])~as.factor(groups[,"Diet"])*as.factor(groups[,"Sex"]), 
+        las = 2, main = paste(names(all.chem.expr.cor)[i], colnames(all.chem.expr.cor[[i]])[j]), 
+        xlab = "", ylim = c(0,0.6), ylab = colnames(all.chem.expr.cor[[i]][j]))
+    }
+}
+```
 
 ## Gene expression and body weight {.tabset .tabset-fade .tabset-pills}
 
@@ -424,6 +437,37 @@ The following plot summarizes the correlations across tissues.
 ```{r bw_cor_box}
 boxplot(all.bw.cor)
 ```
+
+### Diet Comparison
+
+```{r weight_cor_by_diet, fig.width = 9, fig.height = 3}
+par(mfrow = c(1,3))
+for(tx in 1:length(all.bw.cor)){
+    boxplot(abs(all.bw.cor[[tx]])~as.factor(groups[,"Diet"]), ylab = "Body Weight Correlation",
+    xlab = "", main = names(all.bw.cor)[tx])
+}
+```
+
+### Sex Comparison
+
+```{r weight_cor_by_sex, fig.width = 9, fig.height = 3}
+par(mfrow = c(1,3))
+for(tx in 1:length(all.bw.cor)){
+    boxplot(abs(all.bw.cor[[tx]])~as.factor(groups[,"Sex"]), ylab = "Body Weight Correlation",
+    xlab = "", main = names(all.bw.cor)[tx])
+}
+```
+
+### Sex and Diet Comparison
+
+```{r weight_cor_by_sex_diet, fig.width = 8, fig.height = 8}
+par(mfrow = c(2,2))
+for(tx in 1:length(all.bw.cor)){
+    boxplot(abs(all.bw.cor[[tx]])~as.factor(groups[,"Diet"])*as.factor(groups[,"Sex"]), ylab = "Body Weight Correlation",
+    xlab = "", main = names(all.bw.cor)[tx], las = 2)
+}
+```
+
 
 ## Allele Effects {.tabset .tabset-fade .tabset-pills}
 
