@@ -28,12 +28,12 @@ There are several parameters to set.
 ```{r get_args}
 args <- commandArgs(trailingOnly=T)
 
-#args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
+args <- c(1,1,0,1,0) #merged tissues, local imputation, mediation model
 #args <- c(1,1,0,0,0) #merged tissues, local imputation, reactive model
 #args <- c(0,0,0,1,0) #sep tissues, full imputation, mediation model
 #args <- c(0,0,0,0,0) #sep tissues, full imputation, reactive model
 
-args <- c(1,1,1,1,0) #merged tissues, local imputation, mediation mode, weight adjusted
+#args <- c(1,1,1,1,0) #merged tissues, local imputation, mediation mode, weight adjusted
 
 merge.tissues <- as.logical(args[1]) #if TRUE tissue transcriptome kernels are averaged. Otherwise they are used separtely
 use.local.imputation <- as.logical(args[2]) #if TRUE, locally imputed transcripts are used to generate polytranscriptomic risk scores. Otherwise transcripts imputed with the full genetic model are used.
@@ -130,7 +130,7 @@ Also adjust out weight from phenotypes and expression if specified.
 tissue.expr <- lapply(data.set.names, function(x) get(x)$data$norm)
 tissue.adj.expr <- lapply(tissue.expr, function(x) adjust(x, adj.covar))
 
-#adjust wei
+#adjust weight
 if(weight.adjusted){
     #try adjusting out weight
     weight.col <- grep("weight", colnames(adj.pheno))
@@ -1083,6 +1083,84 @@ for(tx in 1:length(tissue.names)){
     dev.off()
 }
 
+
+
+tx = 1
+test.id <- 1
+eqtl.table <- get(data.set.names[[tx]])$lod.peaks$additive
+
+gene.name <- "Wfdc21"
+trans.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1][1]
+
+#trans.id <- "ENSMUSG00000037266"
+#gene.name = gene.table[which(gene.table[,1] == trans.id),"symbol"][1]
+
+test.idx <- which(eqtl.table[[1]] == trans.id)
+max.idx <- which.max(eqtl.table$lod[test.idx])
+marker.id <- eqtl.table[test.idx[max.idx][test.id],]$marker.id
+split.marker <- strsplit(marker.id, "_")
+test.ch <- split.marker[[1]][1]
+test.pos <- as.numeric(split.marker[[1]][2])/1e6
+ch.idx <- which(names(genoprobs) == test.ch)
+test.scan <- scan1coef(genoprobs[,ch.idx], scaled.expr[[tx]][,trans.id])
+plot_coefCC(test.scan, map = map, main = gene.name)
+abline(v = test.pos, lwd = 2)
+
+#ind.geno <- genoprobs[[ch.idx]]["DO072",,marker.id]
+#imageWithText(matrix(round(ind.geno), nrow = 1), use.pheatmap.colors = TRUE, cex = 1)
+
+test.geno <- genoprobs[[ch.idx]][,,marker.id]
+local.effect <- test.scan[marker.id,1:8]
+imp.effect <- apply(test.geno, 1, function(x) sum(x*local.effect))
+#hist(imp.effect)
+row.order <- order(imp.effect)
+
+layout(matrix(c(1,2), ncol = 2), widths = c(1,0.5))
+par(mar = c(4,2,2,0))
+imageWithText(test.geno[rev(row.order),], use.pheatmap.colors = TRUE, row.names = NULL,
+    show.text = FALSE, col.text.rotation = 0, col.text.shift = 0.03,
+    col.names = NULL)
+par(xpd = TRUE)
+text(x = 1:8, y = rep(0, 8), labels = names(CCcolors), col = CCcolors, srt = 90,
+ adj = 1, font = 2, cex = 1.2)
+par(xpd = FALSE)
+
+par(mar = c(4,0,2,2))
+plot(x = imp.effect[row.order], y = 1:length(imp.effect), 
+    axes = FALSE, xlim = c(-1, 1.5), xlab = "",
+    pch = 16, col = "darkgray")
+abline(v = 0)
+mtext("Imputed Expression", side = 1, line = 2.2)
+axis(1)
+
+common.names <- intersect(names(imp.effect), rownames(scaled.expr[[tx]]))
+plot.with.model(imp.effect[common.names], scaled.expr[[tx]][common.names,trans.id],
+    xlab = "Imputed Expression", ylab = "Measured Expression")
+
+plot.with.model(scaled.expr[[tx]][common.names,trans.id], trait.pc[common.names,1],
+    xlab = "Imputed Expression", ylab = "Measured Expression")
+
+test.mat <- cbind(imp.effect[common.names], scaled.expr[[tx]][common.names,trans.id], trait.pc[common.names,1])
+colnames(test.mat) <- c("Genotype", "Transcript", "Phenotype")
+pcor.mat <- pcor.shrink(test.mat)
+par(mar = c(4,8,2,2))
+imageWithText(pcor.mat, use.pheatmap.colors = TRUE, cex = 1, 
+    col.text.rotation = 0, col.text.shift = 0.3, col.text.adj = 0.5, 
+    row.text.shift = 0.3)
+
+all.pairs <- pair.matrix(1:ncol(test.mat))
+adj.var <- apply(all.pairs, 1, function(x) setdiff(1:3, x))
+par(mfrow = c(2,2))
+for(i in 1:nrow(all.pairs)){
+    var1 <- all.pairs[i,1]
+    var2 <- all.pairs[i,2]
+    adj.by <- adj.var[i]
+    plot.with.model(adjust(test.mat[,var1,drop=FALSE], test.mat[,adj.by,drop=FALSE]), 
+        adjust(test.mat[,var2,drop=FALSE], test.mat[,adj.by,drop=FALSE]),
+        xlab = colnames(test.mat)[all.pairs[i,1]], 
+        ylab = colnames(test.mat)[all.pairs[i,2]], report = "cor.test")
+}
+
 ```
 
 ```{r lod_v_loading}
@@ -1206,6 +1284,7 @@ if(mediation.text == "complete_mediation"){
     overall.strain.effect <- sapply(tissue.inbred.effects, function(x) colMeans(x, na.rm = TRUE))
     barplot(rowMeans(overall.strain.effect)[three.bears], 
         col = CCcolors[three.bears], ylab = "Phenotype")
+    abline(h = 0)
 }
 ```
 
@@ -1256,7 +1335,8 @@ source of resistance to diet-induced obesity and insulin resistance.
 
 ```{r tissue_effects}
 if(mediation.text == "complete_mediation"){
-    pheatmap(overall.strain.effect[rev(three.bears),], cluster_rows = FALSE)
+    pheatmap(overall.strain.effect[rev(three.bears),], cluster_rows = FALSE,
+    cluster_cols = FALSE)
 }
 ```
 
@@ -1274,6 +1354,129 @@ model.
 if(mediation.text == "complete_mediation"){
     pheatmap(overall.strain.effect[rev(effect.order),], cluster_rows = FALSE)
 }
+```
+
+## Founders in the context of the DO
+
+Here we show where the founders are predicted to land among 
+the DO based on their PtRS.
+
+```{r do_plus_founder, fig.width = 10, fig.height = 4}
+tissue.pressure <- vector(mode = "list", length = length(tissue.names))
+names(tissue.pressure) <- tissue.names
+for(tx in 1:length(tissue.names)){
+    trans.load <- transcript_loadings[[tx]]
+    transcript.id <- gene.table[match(rownames(trans.load), gene.table[,"symbol"]),"gene.id"]
+    rownames(trans.load) <- transcript.id
+    
+    common.transcripts <- intersect(transcript.id, colnames(tissue.imp.gen[[tx]]))
+    tissue.pressure[[tx]] <- apply(tissue.imp.gen[[tx]][,common.transcripts], 1, function(x) x*trans.load[common.transcripts,])
+    do_scores <- colMeans(tissue.pressure[[tx]], na.rm = TRUE)
+    inbred_scores <- colMeans(tissue.inbred.effects[[tx]], na.rm = TRUE)
+    all_scores <- c(do_scores, inbred_scores)
+    score_cols <- c(rep("gray", length(do_scores)), CCcolors)
+    score_order <- order(all_scores, decreasing = FALSE)
+    
+    do.idx <- which(score_cols[score_order] == "gray")
+    founder.idx <- which(score_cols[score_order] != "gray")
+    plot(x = do.idx, y = all_scores[score_order[do.idx]], col = "gray", type = "h", 
+        lwd = 3, main = tissue.names[tx])
+    points(x = founder.idx, y = all_scores[score_order[founder.idx]], 
+            col = score_cols[score_order[founder.idx]], 
+        type = "h", lwd = 3)
+}
+
+common.ind <- Reduce("intersect", lapply(tissue.pressure, colnames))
+all.tissue.do <- sapply(tissue.pressure, function(x) colMeans(x[,common.ind]))
+all.overall <- rbind(all.tissue.do, overall.strain.effect)
+all.col <- c(rep("gray", nrow(all.tissue.do)), CCcolors)
+
+overall.do <- rowMeans(all.tissue.do)
+do.order <- order(overall.do)
+overall.all <- rowMeans(all.overall)
+all.order <- order(overall.all)
+
+do.idx <- which(all.col[all.order] == "gray")
+founder.idx <- which(all.col[all.order] != "gray")
+plot(x = do.idx, y = overall.all[all.order[do.idx]], col = "gray", type = "h", 
+    lwd = 3, main = "Overall")
+points(x = founder.idx, y = overall.all[all.order[founder.idx]], 
+        col = all.col[all.order[founder.idx]], type = "h", lwd = 3)
+```
+
+The following plots show the tissue scores for individual DO animals
+and founders. The animals are shown in order of their PtRS. The founders
+are labeled.
+
+```{r do_tissue_heatmaps, fig.width = 4, fig.height = 6}
+test <- all.overall
+rownames(test) <- c(rep("", 371), names(CCcolors))
+pheatmap(test[all.order,], cluster_rows = FALSE, cluster_cols = FALSE, 
+    main = "PtRS by DO individual by tissue")
+```
+
+```{r score_v_final_weight}
+#I looked at the correlation between the final weight
+#and PtRS. final weight was not in the original phenotype 
+#matrix. It is still very highly correlated with PtRS.
+#Also, the overall PtRS is more highly correlated with 
+#weight than any of the individual tissue scores, or any
+#pairs of tissues, including adipose and islet together.
+clin.data <- readRDS(here("Data", "Clinical_Phenotypes_V11.RDS"))
+covar <- clin.data$annot.samples
+weight.col <- c(paste("weight", 5:24, sep = "_"), "weight_final")
+weight <- clin.data$data[,weight.col]
+#take out outliers that are obviously mistakes
+weight[which(weight > 100)] <- NA 
+weight[which(weight < 10)] <- NA 
+
+imp.weight <- bnstruct::knn.impute(weight)
+adj.weight <- adjust(imp.weight, matrix(as.numeric(as.factor(covar$"Sex"))-1, ncol = 1))
+
+common.ind <- intersect(rownames(all.tissue.do), rownames(adj.weight))
+par(mfrow = c(2,2))
+for(tx in 1:ncol(all.tissue.do)){
+    plot.with.model(all.tissue.do[common.ind,tx], 
+    adj.weight[common.ind,"weight_final"], main = tissue.names[tx])
+}
+full.score <- overall.do <- rowMeans(all.tissue.do[,3:4])
+plot.with.model(full.score[common.ind], adj.weight[common.ind,"weight_final"])
+```
+
+## DO mice as individuals
+
+We have the sense that each DO mouse is an individual in its
+complement of risk and protective alleles, but how do we quantify 
+this? We need some way to say that the large-effect genes/loci
+are NOT consistent across animals. 
+
+The correlation of PtRS between individuals is rather reminiscent 
+of the kinship matrix. 
+
+What does it mean for an individual to be an individual?
+The individuals have low correlation to each other in terms of
+    mediated genetic effects
+    This is true for the most part. 
+        Most correlations run between 0 and 0.25
+    There are only 9 pairs that have negative correlations
+    There are a few pairs with correlations higher than 0.3
+        These animals are highly related
+
+Transcripts have a relatively uniform rank across animals?
+    The rankings look fairly uniform, but a ks test disagrees, 
+    maybe because there are too few animals?
+
+```{r do_ind}
+par(mfrow = c(2,2))
+for(tx in 1:length(tissue.names)){
+    ind.cor <- cor(tissue.pressure[[tx]])
+    no.diag <- ind.cor[upper.tri(ind.cor, diag = FALSE)]
+    a <- hist(no.diag, breaks = 100, plot = FALSE)
+    plot(a$mids, a$counts, type = "h", lwd = 2, main = tissue.names[tx], 
+        ylab = "Counts", xlab = "MGE Correlation")
+}
+
+
 ```
 
 ## CC-RIX prediction
@@ -1457,3 +1660,15 @@ if(mediation.text == "complete_mediation"){
 }
 
 ```
+
+```{r genes, eval = FALSE}
+gene.name = "Wfdc21"
+gene.name = "Tnip1"
+
+gene.id <- gene.table[which(gene.table[,"symbol"] == gene.name),1]
+gene.idx <- which(names(pop.pressure[[1]]) == gene.id)
+hist(pop.pressure[[1]])
+abline(v = pop.pressure[[1]][gene.idx], col = "red")
+which(names(sort(pop.pressure[[1]], decreasing = TRUE)) == gene.id)
+```
+

@@ -374,17 +374,19 @@ for(i in 1:length(all.chem.expr.cor)){
 }
 ```
 
-### Tissues and Chemistries Separated by Group
+### Tissues and Chemistries Separated by Group {.tabset .tabset-fade .tabset-pills}
 
-```{r cor_by_chem, fig.width = 9, fig.height = 4}
+```{r cor_by_chem_by_group, fig.width = 9, fig.height = 4, results = "asis"}
 
 for(i in 1:length(all.chem.expr.cor)){
+    cat("####", names(all.chem.expr.cor)[i], "\n")
     par(mfrow = c(2,5), mar = c(8,4,4,1))
     for(j in 1:ncol(all.chem.expr.cor[[i]])){
         boxplot(abs(all.chem.expr.cor[[i]][,j])~as.factor(groups[,"Diet"])*as.factor(groups[,"Sex"]), 
         las = 2, main = paste(names(all.chem.expr.cor)[i], colnames(all.chem.expr.cor[[i]])[j]), 
         xlab = "", ylim = c(0,0.6), ylab = colnames(all.chem.expr.cor[[i]][j]))
     }
+    cat("\n\n")
 }
 ```
 

@@ -11,7 +11,7 @@ output:
 ---
 
 ## Introduction
-The purpose of this workflow is to use wrangle some CC-RIX data in 
+The purpose of this workflow is to wrangle some CC-RIX data in 
 preparation for validation of the Sash3 hypothesis and other 
 hypotheses developed in the DO CCA analysis. 
 
