@@ -1,0 +1,272 @@
+---
+title: "High Dimensional Mediation TRiAGE"
+author: Anna L Tyler
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: 
+  html_document:
+    code_folding: hide
+    collapsed: no
+    toc: yes
+    toc_float: yes
+---
+
+## Introduction
+This workflow explores the possibility of using TRiAGE to interpret
+high-dimensional mediation results.
+
+```{r code}
+library(here)
+all.fun <- list.files(here("Code"), pattern = ".R", full.names = TRUE)
+for(i in 1:length(all.fun)){source(all.fun[i])}
+```
+
+```{r libraries}
+needed.libraries <- c("Matrix", "knitr", "here", "igraph", "DescTools", "pheatmap", 
+"e1071", "parallel", "doParallel", "gprofiler2", "clusterProfiler", "DT",
+"plotly", "qtl2") 
+load_libraries(needed.libraries)
+```
+
+```{r param}
+fntm.tissue.name <- "adipose tissue"; tissue.name <- "Adipose"
+n.genes = 250 #number of genes to select from top and bottom of the list
+results.dir <-  here("Results", "Prioritization")
+project.name <- paste("HDM", tissue.name, sep = "_")
+n.cores = detectCores()-1
+```
+
+```{r read_data}
+#exp.name <- "tissue_sep-full_imp-_-complete_mediation"
+exp.name <- "tissue_together-local_imp-_-complete_mediation"
+mge <- readRDS(here("Results", "High_Dim_Med", exp.name, "Population_Pressure_Loadings.RDS"))
+tissue.mge <- mge[[which(names(mge) == tissue.name)]]
+triage.genes <- c(sort(tissue.mge, decreasing = TRUE)[1:n.genes], sort(tissue.mge, decreasing = FALSE)[1:n.genes])
+mouse.gene.info <- read.delim(here("Data", "mouse_gene_info.txt"))
+```
+
+
+```{r download_net, eval = TRUE, echo = FALSE}
+#Download the network if it hasn't been previously downloaded. 
+#full list available at:  http://fntm.princeton.edu
+tissue.type = gsub(" ", "_", fntm.tissue.name)
+net.file <- here("Data", "FNTM", paste0(tissue.type, "_top.RDS"))
+if(!file.exists(net.file)){
+    download.tissue.net(tissue.type, organism = "mouse", top.edges.only = TRUE, 
+    project.dir = here("Data"))
+    }
+```
+
+```{r read_net, echo = FALSE}
+#Read in the downloaded network.
+all.var <- ls()
+net.loaded <- as.logical(length(which(all.var == "tissue.net")))
+if(!net.loaded){
+    tissue.net <- readRDS(net.file)
+}
+```
+
+Get entrez gene IDs for training set genes.
+
+```{r entrez}
+gene.id <- names(triage.genes)
+entrezgene <- gconvert(gene.id, organism = "mmusculus", target = "ENTREZGENE_ACC")
+```
+
+## Setup Positive-Labeled Gene Features
+
+Get the connection weights of the positive-labeled genes to each other
+in the tissue network. Not all of the genes will have Entrez IDs, and 
+not all of the genes will have connections to the other genes in the 
+tissue network. We trim off positive-labeled genes that are not 
+connected to any other positive-labeled genes.
+
+```{r pos_net, echo = FALSE}
+tissue.adj <- tissue.adj.mat(tissue.net, entrezgene[,"target"], inc.all.genes = FALSE)
+```
+
+After identifying all Entrezgene IDs and building the positive-labeled network,
+we have `r nrow(tissue.adj)` positive-labeled genes for training.
+
+## Train SVM
+We used this positive-labeled network as features to train 100 SVMs to classify
+TB- and not TB-related genes. In each of the 100 SVMs, we selected a balanced
+set of unlabeled genes for training. We write each of the trained models to a 
+file for further analysis.
+
+```{r train_models, message = FALSE, warning = FALSE, error = FALSE, eval = TRUE}
+generate.triage.models(path = results.dir, project.name = project.name, 
+trait.genes = entrezgene[,"target"], fgn = tissue.net, n.trials = 100, 
+cluster.modules = FALSE, cluster.threshold = 700, max.cluster.size = 600, 
+min.cluster.size = 10, use.SVD = FALSE, verbose = TRUE, n.cores = n.cores)
+```
+
+## ROC Curves
+
+We calculated ROC curves for each SVM, as well as the overal AUC for
+the group. The plot below shows the ROC curves for all 100 models
+along with the average AUC.
+
+```{r roc, fig.height = 5, fig.width = 5}
+all.fptp <- svm.ROC(results.dir, n.cores = n.cores, plot.results = TRUE)
+all.auc <- sapply(all.fptp, function(x) smooth.auc(Reduce("rbind", x), plot = FALSE))
+```
+
+## Score all genes
+
+We then used the trained models to classify all expressed genes.
+
+```{r score_genes}
+all.gene.id <- gconvert(names(tissue.mge), organism = "mmusculus", target = "ENTREZGENE_ACC")
+score.candidates(results.dir, 
+    candidate.genes = as.numeric(all.gene.id[,"target"]),
+    verbose = TRUE, plot.results = FALSE)
+
+merge.svm.gene.info(results.dir, mouse.gene.info)
+```
+
+
+```{r get_fp, error = FALSE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 5}
+fp.mat <- get.all.fp(results.dir)
+hist(-log10(fp.mat[,1]))
+
+fp.order <- order(-log10(fp.mat[,1]), decreasing = TRUE)
+#head(fp.mat[fp.order,,drop=FALSE])
+```
+
+There is a positive correlation between MGE and FPR.
+Are genes that rank high on both scales good targets?
+What about genes that rank highly on one or the other scale?
+
+If the gene is high on just the TRiAGE scale, it might be a good target 
+because it is highly related to the genes that are changing, but doesn't 
+have a lot of genetic variation.
+
+On the other hand, a gene that ranks high on both scales could 
+be good, because we have a causal link between that gene and 
+the phenotype.
+
+```{r rank_genes}
+fp.gene.id <- mouse.gene.info[match(rownames(fp.mat), mouse.gene.info[,"external_gene_name"]),"ensembl_gene_id"]
+fp.idx <- match(fp.gene.id, names(tissue.mge))
+plot.with.model(abs(tissue.mge[fp.idx]), -log10(fp.mat), xlab = "|MGE|",
+    ylab = "-log10(FPR)")
+
+ranked.genes <- rank.2D(cbind(abs(tissue.mge[fp.idx]), -log10(fp.mat)))
+rank.order <- order(ranked.genes[,1], decreasing = FALSE)
+head(ranked.genes[rank.order,,drop=FALSE])
+
+rank.col <- colors.from.values(ranked.genes[,1], grad.dir = "low", col.scale = "blue")
+plot.with.model(abs(tissue.mge[fp.idx]), -log10(fp.mat), xlab = "|MGE|",
+    ylab = "-log10(FPR)", col = rank.col)
+```
+
+The following genes rank highly on both scales:
+
+```{r both_scales}
+mge.idx <- match(rownames(ranked.genes)[rank.order], names(tissue.mge))
+fpr.idx <- match(rownames(ranked.genes)[rank.order], fp.gene.id)
+merged.table <- data.frame("id" = rownames(ranked.genes)[rank.order], 
+    "name" = rownames(fp.mat)[fpr.idx], 
+    "rank" = ranked.genes[rank.order,], "MGE" = tissue.mge[mge.idx], 
+    "neg_log10_FPR" = -log10(fp.mat[fpr.idx,1]))
+```
+
+Genes that are highly ranked on both axes are enriched for 
+immune function. This is very common for these kinds of 
+enrichment. It is definitely relevant, but I think immune
+genes tend to vary more than other genes in general.
+
+```{r top_enrich, fig.width = 7, fig.height = 5}
+top.enrich <- gost(merged.table[1:50,1], organism = "mmusculus")
+plot.enrichment(top.enrich, num.terms = 30)
+```
+
+The top-ranked gene for adipose tissues is Retsat. This gene has a large negative
+MGE, meaning that decreased expression is associated with a more diabetes-like
+phenotype. Retsat is retinol saturase and is involved in retinol metabolism.
+It is located in the ER membrane and nuclear outer membrane. KO mice exhibit 
+increased adiposity, consistent with the negative MGE.
+
+What about genes that are high only on the TRiAGE scale?
+These are enriched for metabolic processes. These are 
+genes that either do not vary much, or whose variation
+is not related to the traits, but are highly related
+to the top MGE genes according to TRiAGE.
+
+Where does the variance of these genes come from?
+
+```{r var}
+var.comp <- readRDS(here("Data", "imputed", paste0("DO_", tissue.name, "_imputed_variance_decomposition.RDS")))
+var.idx <- match(merged.table[,"id"], rownames(var.comp))
+merged.table <- cbind(merged.table, var.comp[var.idx,])
+
+boxplot(merged.table[1:50,c("local_VE", "distal_VE")])
+```
+
+```{r triage_scale}
+gene.idx <- order(merged.table[,"neg_log10_FPR"], decreasing = TRUE)[1:15]
+just.triage <- merged.table[gene.idx,]
+print(just.triage)
+
+enrich <- gost(just.triage[,1], organism = "mmusculus")
+plot.enrichment(enrich)
+```
+
+These genes have a greater distal component than the genes
+that rank highly on both scales.
+
+```{r triage_var}
+triage.genes <- just.triage[,1] #for neg genes
+triage.idx <-  match(triage.genes, merged.table[,"name"])
+pairs(merged.table[triage.idx,c("local_VE", "distal_VE")])
+```
+
+The genes with a large local component just don't have any
+effect on the trait, but the genes with a large distal 
+component may be more relevant. The gene with the largest
+distal component by far, is Anxa7. This gene is related
+to insulin secretion in pancreatic beta cells, but doesn't
+seem to have a known relationship in adipose tissue. Ugh.
+
+```{r distal}
+filtered.genes <- merged.table[which(merged.table[triage.idx,"distal_VE"] > 0.2),"name"]
+```
+
+
+Overall, the genes that are high on just the TRiAGE scal are enriched 
+for mitochondrial function.
+
+Hfe, Oas1g, and Bckdhb have all been related to metabolic traits.
+Hfe is also related to iron homeostasis.
+
+Iron metabolism has a tight and complex relationship with diabetes
+and obesity [@pmid35466128,@pmid33876811,@pmid32752277]. Adipose
+tissue macrophages have systemic effects on metabolism through manipulation
+of local iron concentrations [@pmid36329217]. Adding an iron chelator to 
+an HFD reduces weight gain in mice compared with HFD alone [@pmid35031684]. 
+The mice fed the chelator had more beige fat than their control counterparts.
+Isogenic ob/ob mice fed iron in a high-fat diet have a wide range of responses 
+[@pmid34646852], suggesting a response more complex than "simple" genetic control.
+
+```{r literature}
+library(easyPubMed)
+
+lit.genes <- just.triage[,1]
+all.pubmed <- lapply_pb(as.vector(lit.genes), 
+    function(x) get_pubmed_ids(paste("Diabetes", "AND ", x)))
+num.papers <- sapply(all.pubmed, function(x) x$Count)
+with.papers <- which(num.papers != 0)
+cbind(lit.genes, num.papers)
+cbind(lit.genes[with.papers], num.papers[with.papers])
+has.data <- all.pubmed[with.papers]
+#all.abstracts <- lapply(has.data, function(x) fetch_pubmed_data(x, format = "abstract"))
+#names(all.abstracts) <- lit.genes[with.papers]
+#str(all.abstracts)
+```
+
+The following genes have been connected to adipose and diabetes in the
+literature:
+
+```{r diabetes_genes}
+cat(names(all.abstracts), sep = "\n")
+```

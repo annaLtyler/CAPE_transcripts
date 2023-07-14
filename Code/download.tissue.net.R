@@ -52,7 +52,7 @@ top.edges.only = TRUE, project.dir = "."){
 	cat("Reading in network file...\n")
 	tissue.net <- read.table(gsub(".gz", "", dest.file))
 	cat("Saving R binary version of network file...\n")
-	saveRDS(tissue.net, gsub(".gz", ".RData", dest.file))
+	saveRDS(tissue.net, gsub(".gz", ".RDS", dest.file))
 	unlink(gsub(".gz", "", dest.file))
 
 	invisible(tissue.net)

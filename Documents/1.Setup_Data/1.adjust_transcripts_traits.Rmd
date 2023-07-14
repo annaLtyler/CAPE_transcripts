@@ -23,10 +23,10 @@ exp.name = args[1]
 delete_previous <- as.logical(args[2])
 
 if(is.na(delete_previous)){
-    #exp.name = "all_traits"; weight.adjusted = FALSE
+    exp.name = "all_traits"; weight.adjusted = FALSE
     #exp.name = "weight_adjusted"; weight.adjusted = TRUE
     #exp.name = "imputed_genetic"; weight.adjusted = FALSE
-    exp.name = "imputed_local"; weight.adjusted = FALSE
+    #exp.name = "imputed_local"; weight.adjusted = FALSE
     delete_previous <- FALSE
 }
 
@@ -149,7 +149,12 @@ imputed data, read it in here and overwrite the measured
 expression data.
 
 ```{r adjust_covar}
-adj.expr.file <- here("Data", "imputed", paste0("Adjusted_Expression_DO_", exp.name, ".RDS"))
+if(use.imputed){
+    adj.expr.file <- here("Data", "imputed", paste0("Adjusted_Expression_DO_", exp.name, ".RDS"))
+}else{
+    adj.expr.file <- here("Data", "Adjusted_Expression.RDS")
+}
+
 
 if(use.imputed){
     if(exp.name == "imputed_local"){
@@ -211,13 +216,11 @@ if(!file.exists(adj.expr.file)){
 }
 ```
 
-
 ## Tissue Gene Expression Decomposition
 
 ```{r expr_decomp}
 transcript.list <- lapply(adj.expr, colnames)
 
-if(is.interactive){quartz()}
 plotVenn(transcript.list)
 
 common.transcripts <- Reduce("intersect", transcript.list)
@@ -226,16 +229,16 @@ common.ind <- Reduce("intersect", lapply(adj.expr, rownames))
 common.ind.idx <- lapply(adj.expr, function(x) match(common.ind, rownames(x)))
 
 matched.expr <- lapply(1:length(adj.expr), 
-function(x) adj.expr[[x]][common.ind.idx[[x]], common.transcript.idx[[x]]])
+    function(x) adj.expr[[x]][common.ind.idx[[x]], common.transcript.idx[[x]]])
 
 tissue.label <- unlist(lapply(1:length(matched.expr), 
-function(x) rep(names(adj.expr)[x], ncol(matched.expr[[x]]))))
+    function(x) rep(names(adj.expr)[x], nrow(matched.expr[[x]]))))
 
-all.expr <- Reduce("cbind", matched.expr)
+all.expr <- Reduce("rbind", matched.expr)
 
-expr.decomp.file <- here(results.dir, paste0("all.expr.decomp.", exp.name, ".RDS"))
+expr.decomp.file <- here(results.dir, paste0("all.expr.decomp.RDS"))
 if(!file.exists(expr.decomp.file)){
-    expr.decomp <- plot.decomp(t(all.expr), plot.results = FALSE)
+    expr.decomp <- plot.decomp(all.expr, plot.results = FALSE)
     saveRDS(expr.decomp, expr.decomp.file)
 }else{
     expr.decomp <- readRDS(expr.decomp.file)
@@ -246,14 +249,6 @@ xlab = "PC1", ylab = "PC2")
 legend("topleft", legend = levels(as.factor(tissue.label)), 
 col = 1:length(unique(tissue.label)), pch = 16)
 
-xlim <- c(min(expr.decomp$u[,1]), max(expr.decomp$u[,1]))
-ylim <- c(min(expr.decomp$u[,2]), max(expr.decomp$u[,2]))
-par(mfrow = c(2,2))
-for(i in 1:length(adj.expr)){
-    tissue.locale <- which(tissue.label == names(adj.expr)[i])
-    plot(expr.decomp$u[tissue.locale,], pch = 16, xlim = xlim, ylim = ylim,
-    xlab = "PC1", ylab = "PC2", main = names(adj.expr)[i])
-}
 ```
 
 ## Transcript Correlation
@@ -265,8 +260,12 @@ The following plot shows the distribution of correlations across
 individuals of transcript i in one tissue with transcript i in another 
 tissue. 
 
-Transcripts in one tisse are expressed very differently across 
-individuals than the same transcript in another tissue.
+Overall, transcripts in one tissue are expressed very 
+differently across individuals than the same transcript 
+in another tissue.
+
+However, there are subsets of transcripts that are very
+highly correlated. Is this related to local LOD score?
 
 ```{r plot_transcript_cor, fig.height = 10, fig.width = 3.5}
 tissue.pairs <- pair.matrix(1:length(tissue.names))
@@ -276,8 +275,9 @@ for(i in 1:nrow(tissue.pairs)){
     function(x) cor(matched.expr[[tissue.pairs[i,1]]][,x], matched.expr[[tissue.pairs[i,2]]][,x]))
 }
 
-if(is.interactive){quartz(height = 9, width = 3.5)}
-par(mfrow = c(length(matched.expr),1), mar = c(0, 2, 0, 2))
+if(is.interactive){pdf(file.path(results.dir, "Transcript_Correlation_Across_Tissues.pdf"), height = 9, width = 3.5)}
+layout(matrix(1:(length(matched.expr)+1), ncol = 1), heights = c(rep(1, length(matched.expr)), 0.2))
+par(mar = c(0, 2, 0, 2))
 for(i in 1:length(matched.expr)){
     tissue1 <- tissue.names[tissue.pairs[i,1]]
     tissue2 <- tissue.names[tissue.pairs[i,2]]
@@ -285,13 +285,95 @@ for(i in 1:length(matched.expr)){
     ylab = "", main = "", breaks = 100, border = NA)
     points(x = median(tissue.expr.comp[[i]]), y = 0, pch = "*", 
     col = "#2b8cbe", cex = 3)
-    text(x = -0.1, y = max(a$counts)*0.75, paste(tissue1, tissue2, sep = "-"), 
-    adj = 1, cex = 2)
+    mtext(side = 2, paste(tissue1, tissue2, sep = "-"))
+    abline(h = 0, col = "darkgray")
 }
+par(mar = c(2,2,0,2))
+plot.new()
+plot.window(xlim = c(-1, 1), ylim = c(0,1))
 axis(1, cex.axis = 2)
 par(xpd = NA)
-abline(v = 0, col = "darkgray", lty = 2)
+abline(v = seq(-1, 1, 0.5), col = "darkgray", lty = c(1,2,2,2,1), lwd = 1)
 par(xpd = FALSE)
+if(is.interactive){dev.off()}
+```
+
+## Transcript Correlations by local LOD score
+
+```{r cis_coef}
+get_cis_coef <- function(transcript.id, eqtl.table, bp.buffer = 1e6){
+    tr.idx <- which(gene.table[,1] == transcript.id)
+
+    if(length(tr.idx) == 0){
+        cis.cof <- rep(NA, ncol = eqtl.table)
+    }else{
+        gene.chr <- as.numeric(gene.table[tr.idx,"chr"])
+        gene.start <- as.numeric(gene.table[tr.idx,"start"])*1e6
+        gene.end <- as.numeric(gene.table[tr.idx,"end"])*1e6
+
+        eqtl.idx <- which(eqtl.table$gene.id == transcript.id)
+
+        if(length(eqtl.idx) == 0){
+            cis.coef <- rep(NA, ncol(eqtl.table))
+        }else{
+
+            eqtl.id <- strsplit(eqtl.table$marker.id[eqtl.idx], "_")
+            eqtl.chr <- sapply(eqtl.id, function(x) x[1])
+            eqtl.pos <- as.numeric(sapply(eqtl.id, function(x) x[2]))
+
+            on.chr <- which(eqtl.chr %in% gene.chr)
+            nearby <- which(eqtl.pos[on.chr] >= (gene.start-bp.buffer) || eqtl.pos[on.chr] <= (gene.end+bp.buffer))
+            if(length(nearby) > 0){
+                cis.coef <- unlist(eqtl.table[eqtl.idx[on.chr[nearby]],])
+            }else{
+                cis.coef <- rep(NA, ncol(eqtl.table))
+            }
+        }
+    }
+    return(cis.coef)
+}
+
+#pull out only local eQTL coefficients for this test.
+local.coef.file <- file.path(results.dir, "local_eQTL_coef.RDS")
+
+if(!file.exists(local.coef.file)){
+    local.coef <- vector(mode = "list", length = length(tissue.names))
+    names(local.coef) <- tissue.names
+    for(tx in 1:length(tissue.names)){
+        tissue.data <- get(paste0("dataset.DO.Cube.", tissue.names[tx]))
+        tissue.eqtl <- tissue.data$lod.peaks$additive
+        eqtl.transcripts <- tissue.eqtl$gene.id
+
+        cis.coef <- t(sapply(eqtl.transcripts, function(x) get_cis_coef(x, tissue.eqtl)))
+        colnames(cis.coef) <- colnames(tissue.eqtl)
+        local.coef[[tx]] <- cis.coef
+    }
+    saveRDS(local.coef, local.coef.file)
+}else{
+    local.coef <- readRDS(local.coef.file)
+}
+```
+
+```{r cor_by_LOD, fig.width = 8, fig.height = 12}
+#pdf("~/Desktop/test.pdf", width = 8, height = 12)
+par(mfrow = c(3,2))
+for(i in 1:nrow(tissue.pairs)){
+    tx.idx1 <- tissue.pairs[i,1]
+    tx.idx2 <- tissue.pairs[i,2]
+
+    local.lod1 <- as.numeric(local.coef[[tx.idx1]][match(common.transcripts, rownames(local.coef[[tx.idx1]])),"lod"])
+    local.lod2 <- as.numeric(local.coef[[tx.idx2]][match(common.transcripts, rownames(local.coef[[tx.idx2]])),"lod"])
+    cor.col <- colors.from.values(tissue.expr.comp[[i]], split.at.vals = TRUE, 
+        col.scale = c("blue", "brown"), grad.dir = "ends")
+    cor.order <- order(tissue.expr.comp[[i]], decreasing = FALSE)
+    plot(local.lod1[cor.order], local.lod2[cor.order], col = cor.col[cor.order], 
+        pch = 16, 
+        xlab = paste("Local LOD score in", tissue.names[tx.idx1]), 
+        ylab = paste("Local LOD score in", tissue.names[tx.idx2]),
+        main = paste(tissue.names[tx.idx1], "vs.", tissue.names[tx.idx2]))
+    abline(0,1)
+}
+#dev.off()
 ```
 
 ## Tissue Pairs
@@ -305,13 +387,13 @@ The following plots show how well mean expression for common transcripts
 align across tissue pairs. Transcripts in different tissues have different
 relative expression levels.
 
-In each case below the expression of the tissues mean compared are adjusted
-to have the same overall mean.
+In each case below the expression is scaled before 
 
 
 ```{r tissue.correlation, fig.height = 8, fig.width = 8}
+mean.tx <- lapply(adj.expr, function(x) rowMeans(apply(x, 1, scale)))
+
 par(mfrow = c(2,2))
-mean.tx <- sapply(adj.expr, colMeans)
 for(i in 1:nrow(tissue.pairs)){
     tissue1.idx <- tissue.pairs[i,1]
     tissue2.idx <- tissue.pairs[i,2]
@@ -323,14 +405,55 @@ for(i in 1:nrow(tissue.pairs)){
     tissue1.mean <- tissue1.mean - mean.diffs[1]
     tissue2.mean <- tissue2.mean - mean.diffs[2]
 
-    common.tx <- intersect(names(tissue1.mean), names(tissue2.mean))
+    common.tx <- intersect(colnames(adj.expr[[tissue1.idx]]), colnames(adj.expr[[tissue2.idx]]))
+    common.idx1 <- match(common.tx, colnames(adj.expr[[tissue1.idx]]))
+    common.idx2 <- match(common.tx, colnames(adj.expr[[tissue2.idx]]))
 
-    plot.with.model(tissue1.mean[common.tx], tissue2.mean[common.tx], 
+    plot.with.model(tissue1.mean[common.idx1], tissue2.mean[common.idx2], 
         main = paste(tissue.names[tissue1.idx], "vs.", tissue.names[tissue2.idx]),
         xlab = tissue.names[tissue1.idx], ylab = tissue.names[tissue2.idx],
         report = "cor.test")
+    abline(0,1,col = "red")
 }
+```
 
+## eQTL coefficient correlations
+
+The following plots show the correlations between eQTL haplotype coefficients
+across pairs of tissues.
+
+```{r coef_cor}
+
+
+pdf(file.path(results.dir, "DO_Coefficient_Correlations.pdf"), width = 8, height = 12)
+par(mfrow = c(3,2))
+for(i in 1:nrow(tissue.pairs)){
+    tissue.idx1 <- tissue.pairs[i,1]
+    tissue.idx2 <- tissue.pairs[i,2]
+
+    tissue.data1 <- get(paste0("dataset.DO.Cube.", tissue.names[tissue.idx1]))
+    tissue.eqtl1 <- tissue.data1$lod.peaks$additive
+
+    tissue.data2 <- get(paste0("dataset.DO.Cube.", tissue.names[tissue.idx2]))
+    tissue.eqtl2 <- tissue.data2$lod.peaks$additive
+
+    common.transcripts <- intersect(tissue.eqtl1$gene.id, tissue.eqtl2$gene.id)
+    cis.coef1 <- t(sapply(common.transcripts, function(x) get_cis_coef(x, tissue.eqtl1)))
+    cis.coef2 <- t(sapply(common.transcripts, function(x) get_cis_coef(x, tissue.eqtl2)))
+    colnames(cis.coef1) <- colnames(cis.coef2) <- colnames(tissue.eqtl1)
+
+    coef.cor <- rep(NA, length(common.transcripts))
+    names(coef.cor) <- common.transcripts    
+    for(tr in 1:length(common.transcripts)){
+        if(!is.na(cis.coef1[tr,1]) && !is.na(cis.coef2[tr,1])){
+            coef.cor[tr] <- cor(as.numeric(cis.coef1[tr,LETTERS[1:8]]), as.numeric(cis.coef2[tr,LETTERS[1:8]]))
+        }
+    }
+
+    hist(coef.cor, main = paste(tissue.names[tissue.idx1], "-", tissue.names[tissue.idx2]),
+        xlab = "Pearson Correlation")
+}
+dev.off()
 ```
 
 ## eQTL and Trait correlations {.tabset .tabset-fade .tabset-pills}

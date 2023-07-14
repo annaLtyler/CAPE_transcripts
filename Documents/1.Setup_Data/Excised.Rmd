@@ -1125,3 +1125,63 @@ for(i in 1:length(tissue.names)){
 }
 
 ```
+
+
+## From High_Dimensional_Mediation.Rmd
+
+## In silico complementation 
+
+Can we predict the effect of a given allele swap into B6?
+Since we can't do all possible allele swaps among strains, 
+we will use B6 as the reference, since this is the preferred
+model and best for CRISPR.
+
+To further reduce the combinations we look at, we will only
+consider the allele swap that is likely to have the biggest
+effect. That is, the one with the largest difference in 
+effect from B6.
+
+To perform a swap, we simply replace the transcript effect 
+calculated for B6 with the transcript effect calculated for
+the strain with the maximum difference to B6. This does igore
+kinship, and so we should do this swap only with transcript
+effects estimated from local effects.
+
+
+```{r allele_swaps, eval = FALSE}
+if(mediation.text == "complete_mediation"){
+    for(tx in 1:length(tissue.names)){
+        inbred.effects <- tissue.inbred.effects[[tx]]
+        gene.names <- gene.table[match(rownames(inbred.effects), gene.table[,1]),"symbol"]
+        b6.allele.pheno <- inbred.effects[,"B6",drop=FALSE]
+        b6.start.pheno <- mean(b6.allele.pheno, na.rm = TRUE)
+        num.alleles <- length(which(!is.na(b6.allele.pheno)))
+        
+        max.diff <- lapply(1:nrow(inbred.effects), 
+            function(x) which.max(abs(inbred.effects[x,2]-inbred.effects[x,])))
+        b6.swap.pheno <- lapply(1:length(max.diff), 
+            function(x) b6.start.pheno-(b6.allele.pheno[x,1]/num.alleles)+(inbred.effects[x,max.diff[[x]]]/num.alleles))
+        vals.used <- which(sapply(b6.swap.pheno, length) == 1)
+        final.table <- cbind(unlist(b6.swap.pheno), unlist(max.diff)) 
+        colnames(final.table) <- c("B6_swap_pheno", "allele")
+        rownames(final.table) <- rownames(inbred.effects)[vals.used]
+
+        b6.diff.pheno <- b6.start.pheno - final.table[,1]
+
+        trans.table <- gene.table[match(rownames(final.table), gene.table[,1]),]
+        u_chr <- unique(trans.table[,"chr"])
+        ylim = c(min(b6.diff.pheno), max(b6.diff.pheno))
+        layout(matrix(1:20, nrow = 1))
+        par(mar = c(2,0,2,0))
+        for(ch in c(1:19, "X")){
+            ch.locale <- which(trans.table[,"chr"] == ch)
+            plot(as.numeric(trans.table[ch.locale,"start"]), b6.diff.pheno[ch.locale], 
+                type = "h", axes = FALSE, ylim = ylim, col = CCcolors[final.table[ch.locale,2]])
+            mtext(side = 1, ch)
+            abline(h = 0, col = "red")
+            #axis(1)
+        }
+    }
+}
+
+```

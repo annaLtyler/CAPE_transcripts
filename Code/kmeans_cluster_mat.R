@@ -13,7 +13,7 @@ kmeans_cluster_mat <- function(mat, min.cl = 2, max.cl = 20, use.pc = TRUE, pc =
     if(use.pc){
         k.test <- test.pam.k(decomp$u, min.cl:max.cl, plot.results = FALSE)
     }else{
-        k.test <- test.pam.k(sub_go_sim, min.cl:max.cl, plot.results = FALSE)
+        k.test <- test.pam.k(mat, min.cl:max.cl, plot.results = FALSE)
     }
 
     mean.cl <- sapply(k.test[[1]], mean)

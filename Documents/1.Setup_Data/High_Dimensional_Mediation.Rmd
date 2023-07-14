@@ -575,7 +575,7 @@ for analysis in CMAP.
 
 ```{r enrichment}
 enrich.file <- file.path(results.dir, "Top_Bottom_Enrichment.RDS")
-hum.mus.ortho <- as.matrix(read.delim(here("Data", "human.mouse.orthologs.txt"), 
+hum.mus.ortho <- as.matrix(read.delim(here("Data", "general", "human.mouse.orthologs.txt"), 
     stringsAsFactors = FALSE))
 
 if(!file.exists(enrich.file) || delete_previous){
@@ -588,12 +588,14 @@ if(!file.exists(enrich.file) || delete_previous){
         top.enrich <- gost(names(top.genes), organism = "mmusculus")
         
         top.id <- gene.table[match(names(top.genes), gene.table[,"symbol"]),1]
-        top.hum.id <- mouse_to_human_entrez(top.id, hum.mus.ortho)
+        top.hum.id <- mouse_to_human_ensembl(mouse_ensembl = top.id, 
+            hum.mus.ortho = hum.mus.ortho)
 
         bottom.genes <- sort(transcript_loadings[[tx]][,1], decreasing = FALSE)[1:top.n]
         bottom.enrich <- gost(names(bottom.genes), organism = "mmusculus")
         bottom.id <- gene.table[match(names(bottom.genes), gene.table[,"symbol"]),1]
-        bottom.hum.id <- mouse_to_human_entrez(bottom.id, hum.mus.ortho)
+        bottom.hum.id <- mouse_to_human_ensembl(mouse_ensembl = bottom.id, 
+            hum.mus.ortho = hum.mus.ortho)
         
         cmap.table <- cbind(top.hum.id[,"Human.Entrez"], bottom.hum.id[,"Human.Entrez"])
         colnames(cmap.table) <- c("Positive", "Negative")
@@ -817,6 +819,11 @@ if(mediation.text == "complete_mediation"){
         ind.score <- colMeans(transcript.pressure)
         mean.order <- order(ind.score)
 
+        #Do the effect sizes follow a power law?
+        a <- hist(as.vector(abs(transcript.pressure)), plot = FALSE, breaks = 25)
+        plot(log10(a$mids), log10(a$counts+1e-6), xlab = "log Effect Size", 
+            ylab = "log Frequency", main = paste(tissue.names[tx], "\nlog-log plot of effect size vs. frequency"))
+
         #also get a population-level transcriptomic pressure for each transcript
         #these are transcripts that are affecting the trait through their 
         #transcription AND have some population-level variation in transcription
@@ -829,9 +836,11 @@ if(mediation.text == "complete_mediation"){
         
         #write out cmap tables for these too
         top.pressure <- sort(pop.pressure[[tx]], decreasing = TRUE)[1:200]
-        top.hum.id <- mouse_to_human_entrez(names(top.pressure), hum.mus.ortho)
+        top.hum.id <- mouse_to_human_ensembl(mouse_ensembl = names(top.pressure), 
+            hum.mus.ortho = hum.mus.ortho)
         bottom.pressure <- sort(pop.pressure[[tx]], decreasing = FALSE)[1:200]
-        bottom.hum.id <- mouse_to_human_entrez(names(bottom.pressure), hum.mus.ortho)
+        bottom.hum.id <- mouse_to_human_ensembl(mouse_ensembl = names(bottom.pressure), 
+            hum.mus.ortho = hum.mus.ortho)
 
         pressure.cmap.table <- cbind(top.hum.id[,"Human.Entrez"], bottom.hum.id[,"Human.Entrez"])
         colnames(pressure.cmap.table) <- c("Positive", "Negative")
@@ -1025,6 +1034,23 @@ if(mediation.text == "complete_mediation"){
         u_large <- unique(all.large)
         large.ind <- sapply(u_large, function(x) which(all.large == x))
         num.ind <- sapply(large.ind, length)
+
+        #trp.decomp <- plot.decomp(transcript.pressure)
+        #trp.decomp$var.exp[1:5]
+        #pc.order <- order(trp.decomp$u[,1], decreasing = TRUE)
+        #pc.order <- order(trp.decomp$u[,1], decreasing = FALSE)
+        #enrich <- gost(rownames(transcript.pressure)[pc.order[1:100]], organism = "mmusculus")
+        #plot.enrichment(enrich)
+
+        mean.pressure <- rowMeans(transcript.pressure)
+        sorted.mean <- sort(mean.pressure)
+        n.on.end <- 15
+        low.idx <- 1:n.on.end
+        high.idx <- c((length(sorted.mean)-n.on.end):length(sorted.mean))
+        #boxplot(t(transcript.pressure[names(sorted.mean)[c(low.idx, high.idx)],]), las = 2,
+        #    main = "Extreme Ends of Mediated Genetic Effects\nDistribution Across Individuals")
+        #abline(h = 0)
+        
 
         pdf(file.path(results.dir, paste0("Large_Effect_Transcript_Decomp", tissue.names[tx], ".pdf")), width = 10, height = 5)
         large.mat <- scaled.expr[[tx]][,u_large]
@@ -1484,13 +1510,30 @@ for(tx in 1:length(tissue.names)){
 Can we predict where each CC-RIX strain will end up in phenotype space
 when placed on a high-fat diet?
 
-```{r CC_prediction, eval = FALSE}
+Here, we created a riskome for each CC-RIX strain using genotype at
+each cis locus. For each transcript, we identified the genotype at
+the closest marker, and averaged the mediated genetic effect calculated
+in the DO for the haplotypes at that locus. The mean of the whole genome 
+for each animal is the predicted response to the high-fat diet.
+
+When we plot the predicted weight for each strain vs. its actual weight,
+we don't see any overall relationship.
+
+There is a positive correlation between predicted and actual mean body
+weight in the female mice (for adipose, islet, and skeletal muscle), 
+but this correlation is much weaker when looking by individual. 
+I'm not convinced that this is a real correlation.
+
+There is also no overall correlation when looking at sex-adjusted 
+weight.
+
+```{r CC_prediction, fig.width = 9, fig.height = 6}
 cc.geno <- readRDS(here("Data", "CC-RIX", "Genoprobs.RDS"))
 cc.map <- readRDS(here("Data", "CC-RIX", "Map.RDS"))
 cc.bw <- read.csv(here("Data", "CC-RIX", "Weight.Summarized.csv"))
 manifest <- read.csv(here("Data", "CC-RIX", "Original_Samples_Manifest.csv"))
-diet.idx <- which(manifest[,"Diet"] == "44% fat + fiber")
-treatment.idx <- which(manifest[,"Treatment"] == "None")
+diet.idx <- which(manifest[,"Diet"] == "44% fat + fiber") #use the HFD animals
+treatment.idx <- which(manifest[,"Treatment"] == "None") #use animals with no metformin
 
 #group weight by strain and sex
 split.strain <- strsplit(rownames(cc.geno[[1]]), "_")
@@ -1504,8 +1547,8 @@ for(st in 1:nrow(cc.geno[[1]])){
     sex.idx <- which(manifest[,"Sex"] == sex[st])
     overlap.idx <- Reduce("intersect", list(strain.idx, sex.idx, diet.idx, treatment.idx))
     mouse.ids <- manifest[overlap.idx,"Barcode.1"]
-    weight.idx <- which(cc.bw[,1] %in% mouse.ids)
-    strain.weight[[st]] <- cc.bw[weight.idx,2]
+    weight.idx <- which(rownames(cc.bw) %in% mouse.ids)
+    strain.weight[[st]] <- cc.bw[weight.idx,1]
 }
 mean.weight <- sapply(strain.weight, mean)
 f.weight.locale <- which(sex == "Female")
@@ -1546,73 +1589,28 @@ for(tx in 1:length(tissue.names)){
     #abline(h = 0, col = "red")
     #plot.decomp(t(cc.tissue.effects), label.points = TRUE)
 
-    plot.with.model(mean.weight[f.weight.locale], cc.mean[f.pressure.locale], main = "Female")
-    plot.with.model(mean.weight[m.weight.locale], cc.mean[m.pressure.locale], main = "Male")
+    layout(matrix(c(1,2,5,3,4,0), nrow = 2, byrow = TRUE))
+    plot.with.model(mean.weight[f.weight.locale], cc.mean[f.pressure.locale], 
+        main = "Female Mean Weight")
+    plot.with.model(mean.weight[m.weight.locale], cc.mean[m.pressure.locale], 
+        main = "Male Mean Weight")
 
-    df <- data.frame("weight" = mean.weight, "sex" = sex, 
-        "transcriptomic_pressure" = cc.mean)
-    library(ggplot2)
-    p <- qplot(weight, transcriptomic_pressure, data = df, 
-        geom = c("point", "smooth"), facets = ~sex)
-    p    
+    #replicate the predicted weight for each strain to match individual weights
+    rep.f.pred <- sapply(1:length(cc.mean[f.pressure.locale]), 
+        function(x) rep(cc.mean[f.pressure.locale][x], length(strain.weight[f.pressure.locale][[x]])))
+    rep.m.pred <- sapply(1:length(cc.mean[m.pressure.locale]), 
+        function(x) rep(cc.mean[m.pressure.locale][x], length(strain.weight[m.pressure.locale][[x]])))
+    
+    #plot predicted weight vs. each individuals weight
+    plot.with.model(unlist(strain.weight[f.pressure.locale]), unlist(rep.f.pred), xlab = "weight",
+        ylab = "predicted weight", main = "Female Individual Weight")
+    plot.with.model(unlist(strain.weight[m.pressure.locale]), unlist(rep.m.pred),
+        xlab = "weight", ylab = "predicted weight", main = "Male Individual Weight")
+
+    sex.adj.weight <- residuals(lm(mean.weight~sex))
+    plot.with.model(cc.mean, sex.adj.weight, report = "cor.test", 
+        main = "Overall, sex adjusted")
 }
-```
-
-## In silico complementation 
-
-Can we predict the effect of a given allele swap into B6?
-Since we can't do all possible allele swaps among strains, 
-we will use B6 as the reference, since this is the preferred
-model and best for CRISPR.
-
-To further reduce the combinations we look at, we will only
-consider the allele swap that is likely to have the biggest
-effect. That is, the one with the largest difference in 
-effect from B6.
-
-To perform a swap, we simply replace the transcript effect 
-calculated for B6 with the transcript effect calculated for
-the strain with the maximum difference to B6. This does igore
-kinship, and so we should do this swap only with transcript
-effects estimated from local effects.
-
-
-```{r allele_swaps, eval = FALSE}
-if(mediation.text == "complete_mediation"){
-    for(tx in 1:length(tissue.names)){
-        inbred.effects <- tissue.inbred.effects[[tx]]
-        gene.names <- gene.table[match(rownames(inbred.effects), gene.table[,1]),"symbol"]
-        b6.allele.pheno <- inbred.effects[,"B6",drop=FALSE]
-        b6.start.pheno <- mean(b6.allele.pheno, na.rm = TRUE)
-        num.alleles <- length(which(!is.na(b6.allele.pheno)))
-        
-        max.diff <- lapply(1:nrow(inbred.effects), 
-            function(x) which.max(abs(inbred.effects[x,2]-inbred.effects[x,])))
-        b6.swap.pheno <- lapply(1:length(max.diff), 
-            function(x) b6.start.pheno-(b6.allele.pheno[x,1]/num.alleles)+(inbred.effects[x,max.diff[[x]]]/num.alleles))
-        vals.used <- which(sapply(b6.swap.pheno, length) == 1)
-        final.table <- cbind(unlist(b6.swap.pheno), unlist(max.diff)) 
-        colnames(final.table) <- c("B6_swap_pheno", "allele")
-        rownames(final.table) <- rownames(inbred.effects)[vals.used]
-
-        b6.diff.pheno <- b6.start.pheno - final.table[,1]
-
-        trans.table <- gene.table[match(rownames(final.table), gene.table[,1]),]
-        u_chr <- unique(trans.table[,"chr"])
-        ylim = c(min(b6.diff.pheno), max(b6.diff.pheno))
-        layout(matrix(1:20, nrow = 1))
-        par(mar = c(2,0,2,0))
-        for(ch in c(1:19, "X")){
-            ch.locale <- which(trans.table[,"chr"] == ch)
-            plot(as.numeric(trans.table[ch.locale,"start"]), b6.diff.pheno[ch.locale], 
-                type = "h", axes = FALSE, ylim = ylim, col = CCcolors[final.table[ch.locale,2]])
-            mtext(side = 1, ch)
-            abline(h = 0, col = "red")
-            #axis(1)
-        }
-    }
-}
-
 ```
 
 ## Allele effects by chromosome {.tabset .tabset-fade .tabset-pills}
@@ -1660,6 +1658,231 @@ if(mediation.text == "complete_mediation"){
 }
 
 ```
+
+## Tissues of Action in Humans {.tabset .tabset-fade .tabset-pills}
+
+The study Torres et al. (2020) characterized "tissues of action"
+for multiple genes by combining GWAS data and eQTL data from 
+GTEx.
+
+Here we compare their hits with ours. We look for enrichment
+of their genes among our mediating genes in each tissue.
+We use the population pressure scores, since these combine
+both correlation with the transcriptional mediator, and 
+the eQTL effects.
+
+The paper is [here](https://www.sciencedirect.com/science/article/pii/S0002929720303670)
+We downloaded the tissues of action assigned to genes from
+[here](https://ars.els-cdn.com/content/image/1-s2.0-S0002929720303670-mmc2.xlsx)
+
+I copied the supplementary table 1 to a csv file.
+It includes a list of SNPs and their assigned genes
+and tissue-specific scores for each. Tissues were
+assigned based on whether the score in each tissue
+crossed a given threshold.
+
+I translated these genes to the mouse orthologs.
+and made a corresponding table of mediated genetic
+effects for each ortholog. We took the absolute
+value of the mediated genetic effect in mice
+because we care about the magnitude, not the
+direction of the effect.
+
+
+```{r toa}
+toa <- as.matrix(read.csv(here("Data", "TOA_scores.csv")))
+
+#There are multiple SNPs per gene, and each has its own
+#score. We only have genes in our study. Rather than 
+#condensing the TOA table, I think it makes more sense
+#to use all the SNPs and replicate our genes across
+#all SNPs.
+
+score.col <- sapply(c("adipose", "islet", "liver", "muscle"), 
+    function(x) grep(x, colnames(toa), ignore.case = TRUE))
+u_genes <- unique(toa[,1])
+
+hum.ensembl <- gconvert(u_genes, organism = "hsapiens", target = "ENSG")
+common.genes <- intersect(u_genes, hum.ensembl[,"input"])
+common.idx <- match(common.genes, hum.ensembl[,"input"])
+sub.table <- hum.ensembl[common.idx,]
+common.id <- intersect(hum.mus.ortho[,"Human.Ensembl"], hum.ensembl[,"target"])
+sub.idx <- match(common.id, hum.ensembl[,"target"])
+sub.hum <- hum.ensembl[sub.idx,c("input", "target")]
+colnames(sub.hum) <- c("Human.Name", "Human.Ensembl")
+mus.idx <- match(sub.hum[,"Human.Ensembl"], hum.mus.ortho[,"Human.Ensembl"])
+
+temp.table <- cbind(sub.hum, hum.mus.ortho[mus.idx,"Mouse.Ortholog.Ensembl",drop=FALSE])
+common.mus <- intersect(temp.table[,"Mouse.Ortholog.Ensembl"], gene.table[,1])
+common.mus.idx <- match(common.mus, gene.table[,1])
+common.hum.idx <- match(common.mus, temp.table[,"Mouse.Ortholog.Ensembl"])
+
+final.table <- cbind(temp.table[common.hum.idx,], gene.table[common.mus.idx,"symbol"])
+colnames(final.table)[4] <- "Mouse.Name"
+```
+
+```{r assign_scores}
+#make a list of SNP scores for each gene in the human data set
+gene.idx <- lapply(final.table[,1], function(x) which(toa[,1] == x))
+hum.snp.score <- lapply(gene.idx, function(x) toa[x,score.col,drop=FALSE])
+names(hum.snp.score) <- final.table[,"Human.Name"]
+
+#Build a corresponding set of scores for mediated genetic effect
+#scores in the mice.
+#use the absolute value, because we care about the magnitude
+#of the effect but not the direction. (Is that right?)
+mus.score.table <- matrix(NA, nrow = nrow(final.table), ncol = 4)
+rownames(mus.score.table) <- final.table[,"Mouse.Name"]
+colnames(mus.score.table) <- tissue.names
+for(g in 1:nrow(mus.score.table)){
+    mus.scores <- sapply(pop.pressure, 
+        function(x) x[which(names(x) == final.table[g,"Mouse.Ortholog.Ensembl"])])
+    mus.score.table[g,] <- abs(as.numeric(mus.scores))
+}
+```
+
+There were `r length(u_genes)` genes listed in the TOA table 
+from the paper. We identified orthologs and corresponding scores
+in mouse for `r nrow(mus.score.table)` genes.
+
+We asked whether the tissue-based scores in the human
+data set were correlated with the mediated genetic effects
+in mice. In other words, did genes have similar tissue 
+contributions in the two organisms? Did genes with large 
+TOA scores in adipose in humans also have relatively large
+mediated genetic effects in mice?
+
+To answer this question, we performed a Spearman rank correlation
+test between the human tissue scores and the mouse mediated 
+genetic effects. We did this for each gene individually
+across all tissues. We used the absolute value of the
+mediated genetic effect because we care more about the
+magnitude of the effect than the direction of the effect.
+
+The following histogram shows the distribution of
+correlations across genes. There does not appear to be
+an overall relationship between the tissues of action 
+between two organisms. 
+
+The mean of the distribution is just above 0, but not 
+much above 0.
+
+```{r score_cor, warning = FALSE}
+#There is no correlation between the tissue score in 
+#humans and the magnitude of the tissue score in mice
+cor.list <- vector(mode = "list", length = nrow(final.table))
+names(cor.list) <- final.table[,1]
+for(g in 1:length(cor.list)){
+    gene.cor <- apply(hum.snp.score[[g]], 1, 
+        function(x) cor(as.numeric(x), mus.score.table[g,], method = "spearman", 
+        use = "pairwise.complete.obs"))
+    cor.list[[g]] <- gene.cor
+}
+hist(unlist(cor.list), main = "Tissue Ranking Correlations", 
+    xlab = "Spearman Correlation", breaks = 50)
+abline(v = mean(unlist(cor.list), na.rm = TRUE), col = "red")
+```
+
+Even if we look just at the maximum score for each gene across
+all SNPs, there still isn't much of an overall correlation. 
+
+```{r max_score}
+just.max <- sapply(cor.list, function(x) if(!all(is.na(x))){max(x, na.rm = TRUE)}else{NA})
+hist(just.max, xlab = "Spearman Correlation", main = "Maximum Spearman Correlation by Gene", breaks = 50)
+abline(v = mean(just.max, na.rm = TRUE), col = "red")
+```
+
+The plot below shows each human gene plotted at its maximum 
+correlation with a mouse gene. Genes at the top are potentially
+interesting for translation, although these could also just 
+be randomly correlated with human tissue effects.
+
+```{r sorted_cor, fig.width = 5, fig.height = 20}
+with.vals <- sort(just.max[which(!is.na(just.max))], decreasing = FALSE)
+
+#pdf("~/Desktop/test.pdf", width = 5, height = 20)
+plot(with.vals, 1:length(with.vals), pch = 16, cex = 0.5, xlim = c(-1, 1.2),
+    main = "Max correlations between mouse gene and human SNP",
+    xlab = "Spearman Correlation")
+abline(v = seq(-1, 1, 0.25), col = "gray", lty = "dotted")
+text(x = with.vals, y = 1:length(with.vals), labels = names(with.vals), 
+    pos = 4, cex = 0.5, adj = 1)
+abline(v = 0)
+#dev.off()
+```
+
+The following heatmap shows the tissue-specific effects
+of mouse and human genes together. Each organism's matrix
+has been scaled across tissues to create a ranked order
+of the effects across tissues. For the mouse scores, we
+used the absolute value of the mediated genetic effect.
+
+There is no real clustering of effects by tissue.
+
+```{r tissue_heat, fig.width = 5, fig.height = 7}
+#combine scaled versions of the two sets of scores.
+hum.score.table <- Reduce("rbind", hum.snp.score)
+hum.scaled.table <- t(apply(hum.score.table, 1, function(x) scale(as.numeric(x))))
+mus.scaled.table <- Reduce("rbind", lapply(1:nrow(mus.score.table), function(x) matrix(rep(scale(mus.score.table[x,]), nrow(hum.snp.score[[x]])), ncol = 4, byrow = TRUE)))
+gene.labels <- unlist(lapply(1:nrow(mus.score.table), function(x) paste(rownames(mus.score.table)[x], 1:nrow(hum.snp.score[[x]]), sep = "_")))
+
+combined.scores <- cbind(hum.scaled.table, mus.scaled.table)
+colnames(combined.scores) <- c(paste0("human_", tissue.names), paste0("mouse_", tissue.names))
+rownames(combined.scores) <- gene.labels
+
+not.na <- which(!is.na(rowSums(combined.scores)))
+pheatmap(combined.scores[not.na,])
+
+cols <- brewer.pal(8, "Paired")
+col.order <- c(seq(1,7,2), seq(2,8,2))
+ordered.cols <- cols[col.order]
+names(ordered.cols) <- colnames(test)
+
+plot.decomp(t(combined.scores[not.na,]), xlim = c(-0.8, 1.5), 
+    label.points = TRUE, cols = ordered.cols)
+
+```
+
+The following plots show the scores for the mouse and human 
+genes plotted against each other. They also show the functional
+enrichments for the set of genes that have positive scores in 
+both mouse and human.
+
+```{r enrich, fig.width = 8, fig.height = 8, results = "asis", warning = FALSE}
+hum.col <- 1:4
+mouse.col <- 5:8
+#pdf("~/Desktop/test.pdf", width = 8, height = 8)
+for(i in 1:length(hum.col)){
+    cat("###", tissue.names[i], "\n")
+    ranked.genes <- rank.2D(combined.scores[,c(hum.col[i], mouse.col[i])])
+    ordered.genes <- rownames(combined.scores)[order(ranked.genes, decreasing = FALSE)]
+    top.gene.idx <- intersect(which(combined.scores[,hum.col[i]] > 0), which(combined.scores[,mouse.col[i]] > 0))
+    layout(matrix(c(1,1,1,2,3,3,4,4), nrow = 2, byrow = TRUE))
+    par(mar = c(4,4,4,2))
+    plot(combined.scores[,c(hum.col[i], mouse.col[i])], 
+        col = colors.from.values(ranked.genes, col.scale = "blue", grad.dir = "low"), 
+        pch = 16, xlim = c(-1.5, 2), main = tissue.names[i])
+    plot.dim <- par("usr")
+    segments(x0 = 0, y0 = plot.dim[3], y1 = plot.dim[4])
+    segments(y0 = 0, x0 = plot.dim[1], x1 = plot.dim[2])
+    text(combined.scores[,c(hum.col[i], mouse.col[i])], 
+        labels = rownames(combined.scores), pos = 4, cex = 0.7)
+    top.genes <- rownames(combined.scores)[top.gene.idx]
+    gene.text <- words_to_paragraph(top.genes, line.len = 3)
+    par(mar = c(0,2,0,2))
+    plot.text(paste("Shared Genes", "\n", gene.text))
+    ordered.enrich <- gost(top.genes, organism = "mmusculus", source = c("GO", "KEGG", "REACTOME"))
+    par(mar = c(4,4,4,2))
+    plot.enrichment.wordcloud(ordered.enrich, num.terms = 30, plot.label = "")
+    cat("\n\n")
+}
+#dev.off()
+```
+
+Even though the tissue rankings don't agree 
+across the board, looking at the shared top 
+genes in the species may help identify processes
+that are similar across the two species.
 
 ```{r genes, eval = FALSE}
 gene.name = "Wfdc21"

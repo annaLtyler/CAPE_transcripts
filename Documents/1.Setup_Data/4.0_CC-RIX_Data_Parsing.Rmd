@@ -123,8 +123,6 @@ for(tx in 1:length(exp.imp.expr)){
 saveRDS(exp.imp.expr, here("Data", "imputed", "Expanded_Imputed_CC-RIX_Expression.RDS"))
 ```
 
-
-
 ## Phenotypes
 
 Read in the phenotypes.
@@ -343,8 +341,7 @@ for(g in 1:nrow(groups)){
     cat("###", paste(groups[g,], collapse = " "), "\n")
     group.locale <- Reduce("intersect", lapply(group.def, 
         function(x) which(chem.mat[,x] == groups[g,x])))
-    #pairs(apply(chem.mat[group.locale,5:ncol(chem.mat)], 2, as.numeric), log = "xy",
-    #    main = paste(groups[g,], collapse = " "))
+    #pairs(apply(chem.mat[group.locale,5:ncol(chem.mat)], 2, as.numeric), main = paste(groups[g,], collapse = " "))
     num.mat <- apply(chem.mat[group.locale,5:ncol(chem.mat)], 2, function(x) rankZ(as.numeric(x)))
     cor.mat <- cor(num.mat, use = "pairwise.complete.obs")
     pheatmap(cor.mat, main = paste(groups[g,], collapse = " "), display_numbers = TRUE)
@@ -352,6 +349,56 @@ for(g in 1:nrow(groups)){
 }   
 
 write.csv(chem.mat, file.path(data.dir, "Blood.Chemistries.Summarized.csv"))
+```
+
+```{r test, eval = FALSE}
+#are there any mice with low/normal glucose 
+#and high WPIC
+gi <- apply(chem.mat[,c(9:12)], 2, as.numeric)
+log.gi <- log10(gi+1)
+gi.covar <- get_num_covar(chem.mat[,1])
+adj.gi <- adjust(log.gi, gi.covar)
+
+sex.col <- gi.covar[,1]+1
+diet.treat.pch <- gi.covar[,2]+1
+diet.treat.pch[which(gi.covar == 1)] <- diet.treat.pch[which(gi.covar == 1)] + 15
+plot(c(adj.gi[,1], adj.gi[,2]), c(adj.gi[,3], adj.gi[,4]),
+    xlab = "Glucose", ylab = "Insulin", col = sex.col,
+    pch = diet.treat.pch)
+
+Strain <- expr.mouse.info.table[match(chem.mat[,1], expr.mouse.info.table[,1]), "User.Defined.Strain"]
+
+timepoint <- c(rep("Early", nrow(gi)), rep("Late", nrow(gi)))
+df <- data.frame("Glucose" = c(gi[,1], gi[,2]), "Insulin" = c(gi[,3], gi[,4]),
+    "Sex" = chem.mat[,"Sex"], "Diet" = chem.mat[,"Diet"], 
+    "Treatment" = chem.mat[,"Treatment"], "Strain" = Strain, 
+    "ID" = chem.mat[,"Mouse.ID"], 
+    "Diet_Treat" = apply(chem.mat[,c("Diet", "Treatment")], 1, function(x) paste(x, collapse = "_")),
+    "Timepoint" = timepoint)
+
+
+
+library(plotly)
+library(htmlwidgets)
+fig <- plot_ly(df,
+    x = ~Glucose,
+    y = ~Insulin,
+    color = ~Sex,
+    symbol = ~Diet,
+    stroke = ~Treatment,
+    hovertext = paste("<br> Sex :", df$Sex,
+                        "<br> Diet :", df$Diet,
+                        "<br> Treatment :", df$Treatment,
+                        "<br> Strain :", df$Strain,
+                        "<br> ID :", df$ID,
+                        "<br> Timepoint :", df$Timepoint),
+    size = 2,
+    type = "scatter",
+    mode = "markers"
+    )
+fig
+
+saveWidget(fig, "~/Desktop/Insulin_Glucose.html", selfcontained = TRUE)
 ```
 
 I am going to save the food and water processing for another time. 
